@@ -279,7 +279,7 @@ MIT - Sinta-se libre para usar em projetos comerciais
 
 ## 👨‍💻 Desenvolvedor
 
-**GitHub Copilot** - Implementação completa SaaS  
+**Juan Ícaro** - Implementação completa SaaS  
 **Data**: Fevereiro 20, 2026  
 **Versão**: 2.0.0
 
