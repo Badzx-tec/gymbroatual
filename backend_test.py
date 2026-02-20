@@ -275,6 +275,177 @@ class GymBroAPITester:
             return True
         return False
 
+    def test_dashboard_charts(self):
+        """Test dashboard charts data endpoint"""
+        success, response = self.run_test("Dashboard Charts", "GET", "/api/dashboard/charts", 200)
+        if success:
+            required_fields = ['receita_por_plano', 'acessos_por_hora', 'alunos_por_status', 'receita_mensal']
+            for field in required_fields:
+                if field not in response:
+                    print(f"❌ Missing field in charts response: {field}")
+                    return False
+            print(f"✅ Charts fields complete: {len(required_fields)} chart types present")
+            print(f"✅ Revenue by plan entries: {len(response.get('receita_por_plano', []))}")
+            print(f"✅ Access by hour entries: {len(response.get('acessos_por_hora', []))}")
+            return True
+        return False
+
+    def test_academies_crud(self):
+        """Test academies (multi-tenancy) CRUD operations"""
+        print("\n🏢 Testing Academies CRUD...")
+        
+        # List academies
+        success, academies = self.run_test("List Academies", "GET", "/api/academies", 200)
+        if not success:
+            return False
+        
+        initial_count = len(academies)
+        print(f"✅ Initial academy count: {initial_count}")
+        
+        # Test academy stats for existing academy if any
+        if academies:
+            academy_id = academies[0]['academy_id']
+            success, stats = self.run_test("Academy Stats", "GET", f"/api/academies/{academy_id}/stats", 200)
+            if success:
+                required_stats = ['total_alunos', 'alunos_ativos', 'alunos_inativos', 'faturamento']
+                for field in required_stats:
+                    if field not in stats:
+                        print(f"❌ Missing field in academy stats: {field}")
+                        return False
+                print(f"✅ Academy stats complete for {academy_id}")
+        
+        # Create academy
+        test_academy = {
+            "nome": f"Test Academy {datetime.now().strftime('%H%M%S')}",
+            "endereco": "Test Address, 123",
+            "telefone": "(11) 99999-0000",
+            "cnpj": "00.000.000/0001-00",
+            "email": "test@academy.com",
+            "catraca_ip": "192.168.1.10",
+            "catraca_port": 7878,
+            "ativo": True
+        }
+        
+        success, created = self.run_test("Create Academy", "POST", "/api/academies", 200, data=test_academy)
+        if not success:
+            return False
+            
+        academy_id = created.get('academy_id')
+        if not academy_id:
+            print("❌ No academy_id in create response")
+            return False
+        
+        print(f"✅ Academy created with ID: {academy_id}")
+        
+        # Update academy
+        update_data = {"nome": "Updated Test Academy", "ativo": False}
+        success, updated = self.run_test("Update Academy", "PUT", f"/api/academies/{academy_id}", 200, data=update_data)
+        if not success or updated.get('nome') != "Updated Test Academy":
+            return False
+        
+        # Delete academy
+        success, _ = self.run_test("Delete Academy", "DELETE", f"/api/academies/{academy_id}", 200)
+        
+        return success
+
+    def test_notifications(self):
+        """Test notifications system"""
+        print("\n🔔 Testing Notifications...")
+        
+        # List notifications
+        success, notifications = self.run_test("List Notifications", "GET", "/api/notifications", 200)
+        if not success:
+            return False
+        
+        initial_count = len(notifications)
+        print(f"✅ Initial notification count: {initial_count}")
+        
+        # Check for expiring subscriptions
+        success, response = self.run_test("Check Expiring Subscriptions", "POST", "/api/notifications/check-expiring", 200)
+        if not success:
+            return False
+        
+        message = response.get('message', '')
+        total_vencendo = response.get('total_vencendo', 0)
+        print(f"✅ Expiring check result: {message}")
+        print(f"✅ Students expiring in 7 days: {total_vencendo}")
+        
+        # List notifications again to see if new ones were created
+        success, new_notifications = self.run_test("List Notifications After Check", "GET", "/api/notifications", 200)
+        if success:
+            new_count = len(new_notifications)
+            print(f"✅ Notifications after expiring check: {new_count}")
+            
+            # Test mark as read if we have notifications
+            if new_notifications:
+                notif_id = new_notifications[0]['notif_id']
+                success, _ = self.run_test("Mark Notification Read", "PUT", f"/api/notifications/{notif_id}/read", 200)
+                if success:
+                    print(f"✅ Notification {notif_id} marked as read")
+        
+        return True
+
+    def test_reports_exports(self):
+        """Test report export endpoints (returns binary data)"""
+        print("\n📊 Testing Report Exports...")
+        
+        # Test Excel exports (should return binary data)
+        exports = [
+            ("Students Excel", "/api/reports/students/excel"),
+            ("Students PDF", "/api/reports/students/pdf"),
+            ("Access Logs Excel", "/api/reports/access-logs/excel"),
+            ("Financial Excel", "/api/reports/financial/excel")
+        ]
+        
+        all_passed = True
+        for export_name, endpoint in exports:
+            success, _ = self.run_test(export_name, "GET", endpoint, 200, headers={'Accept': 'application/octet-stream'})
+            if success:
+                print(f"✅ {export_name} export working")
+            else:
+                all_passed = False
+                print(f"❌ {export_name} export failed")
+        
+        return all_passed
+
+    def test_catraca_commands(self):
+        """Test catraca remote control commands"""
+        print("\n🚪 Testing Catraca Commands...")
+        
+        # List existing commands
+        success, commands = self.run_test("List Catraca Commands", "GET", "/api/catraca/commands", 200)
+        if not success:
+            return False
+        
+        initial_count = len(commands)
+        print(f"✅ Initial command count: {initial_count}")
+        
+        # Test different command types
+        command_tests = [
+            {"action": "release_entry", "message": ""},
+            {"action": "release_exit", "message": ""},
+            {"action": "block", "message": ""},
+            {"action": "message", "message": "TEST MSG"}
+        ]
+        
+        all_passed = True
+        for cmd_data in command_tests:
+            success, response = self.run_test(f"Catraca Command - {cmd_data['action']}", "POST", "/api/catraca/command", 200, data=cmd_data)
+            if success:
+                cmd_id = response.get('cmd_id', '')
+                status = response.get('status', '')
+                print(f"✅ Command {cmd_data['action']} queued with ID: {cmd_id}, status: {status}")
+            else:
+                all_passed = False
+        
+        # List commands again to verify they were created
+        success, new_commands = self.run_test("List Commands After Creation", "GET", "/api/catraca/commands", 200)
+        if success:
+            new_count = len(new_commands)
+            print(f"✅ Commands after creation: {new_count}")
+        
+        return all_passed
+
     def test_seed_data(self):
         """Test seed data endpoint"""
         success, response = self.run_test("Seed Data", "POST", "/api/seed", 200)
