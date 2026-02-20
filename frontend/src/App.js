@@ -8,6 +8,9 @@ import Dashboard from './pages/Dashboard';
 import StudentsPage from './pages/StudentsPage';
 import PlansPage from './pages/PlansPage';
 import AccessLogsPage from './pages/AccessLogsPage';
+import AcademiesPage from './pages/AcademiesPage';
+import NotificationsPage from './pages/NotificationsPage';
+import CatracaPage from './pages/CatracaPage';
 import AdminLayout from './components/AdminLayout';
 
 function AppRouter() {
@@ -25,6 +28,9 @@ function AppRouter() {
         <Route path="alunos" element={<StudentsPage />} />
         <Route path="planos" element={<PlansPage />} />
         <Route path="acessos" element={<AccessLogsPage />} />
+        <Route path="franquias" element={<AcademiesPage />} />
+        <Route path="notificacoes" element={<NotificationsPage />} />
+        <Route path="catraca" element={<CatracaPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -45,12 +51,8 @@ function ProtectedRoute({ children }) {
           const data = await res.json();
           localStorage.setItem('gymbro_user', JSON.stringify(data));
           setOk(true);
-        } else {
-          setOk(false);
-        }
-      } catch {
-        setOk(false);
-      }
+        } else { setOk(false); }
+      } catch { setOk(false); }
       setChecking(false);
     };
     checkCookie();
