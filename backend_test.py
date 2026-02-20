@@ -337,7 +337,8 @@ def main():
     if tester.failed_tests:
         print(f"\n🔍 Failed Test Details:")
         for failure in tester.failed_tests:
-            print(f"  • {failure['test']}: {failure.get('error', f\"Expected {failure['expected']}, got {failure['actual']}\")}")
+            error_msg = failure.get('error', f"Expected {failure.get('expected', 'N/A')}, got {failure.get('actual', 'N/A')}")
+            print(f"  • {failure['test']}: {error_msg}")
     
     print(f"\n🔗 API Base URL: {tester.base_url}")
     
