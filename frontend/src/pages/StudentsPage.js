@@ -89,9 +89,10 @@ export default function StudentsPage() {
             <FileText className="w-4 h-4 text-red-400" /> PDF
           </button>
           <button data-testid="add-student-btn" onClick={openCreate}
-          className="flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-6 py-2.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-0.5">
-          <Plus className="w-4 h-4" /> Novo Aluno
-        </button>
+            className="flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-6 py-2.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-0.5">
+            <Plus className="w-4 h-4" /> Novo Aluno
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
