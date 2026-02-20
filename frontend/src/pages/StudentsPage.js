@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Plus, Search, Edit2, Trash2, X, User, FileSpreadsheet, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const emptyStudent = { nome: '', email: '', cpf: '', telefone: '', plano_id: '', tag_rfid: '', biometria_id: '', status: 'ativo', data_vencimento: '' };
+const emptyStudent = { nome: '', email: '', cpf: '', telefone: '', plano_id: '', tag_rfid: '', biometria_id: '', status: 'ativo', data_vencimento: '', peso_kg: '', idade: '', altura_cm: '', treino: '', dias_frequencia: 0 };
 
 export default function StudentsPage() {
   const [students, setStudents] = useState([]);
@@ -37,7 +37,7 @@ export default function StudentsPage() {
 
   const openCreate = () => { setForm(emptyStudent); setEditId(''); setModal('create'); };
   const openEdit = (s) => {
-    setForm({ nome: s.nome, email: s.email, cpf: s.cpf, telefone: s.telefone || '', plano_id: s.plano_id || '', tag_rfid: s.tag_rfid || '', biometria_id: s.biometria_id || '', status: s.status, data_vencimento: s.data_vencimento ? s.data_vencimento.split('T')[0] : '' });
+    setForm({ nome: s.nome, email: s.email, cpf: s.cpf, telefone: s.telefone || '', plano_id: s.plano_id || '', tag_rfid: s.tag_rfid || '', biometria_id: s.biometria_id || '', status: s.status, data_vencimento: s.data_vencimento ? s.data_vencimento.split('T')[0] : '', peso_kg: s.peso_kg ?? '', idade: s.idade ?? '', altura_cm: s.altura_cm ?? '', treino: s.treino || '', dias_frequencia: s.dias_frequencia ?? 0 });
     setEditId(s.student_id);
     setModal('edit');
   };
@@ -69,6 +69,17 @@ export default function StudentsPage() {
   };
 
   const getPlanName = (pid) => plans.find(p => p.plan_id === pid)?.nome || '-';
+
+  const handleRegisterBiometria = async () => {
+    if (!editId || !form.biometria_id) return toast.error('Informe o ID de biometria');
+    try {
+      await api.registerBiometria(editId, form.biometria_id);
+      toast.success('Biometria cadastrada com sucesso');
+      loadData();
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-[#ccff00] border-t-transparent rounded-full animate-spin" /></div>;
 
@@ -222,6 +233,32 @@ export default function StudentsPage() {
                     <input data-testid="student-bio-input" value={form.biometria_id} onChange={e => setForm({ ...form, biometria_id: e.target.value })}
                       className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
                   </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Peso (kg)</label>
+                    <input type="number" step="0.1" value={form.peso_kg} onChange={e => setForm({ ...form, peso_kg: e.target.value === '' ? '' : Number(e.target.value) })}
+                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Idade</label>
+                    <input type="number" value={form.idade} onChange={e => setForm({ ...form, idade: e.target.value === '' ? '' : Number(e.target.value) })}
+                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Altura (cm)</label>
+                    <input type="number" step="0.1" value={form.altura_cm} onChange={e => setForm({ ...form, altura_cm: e.target.value === '' ? '' : Number(e.target.value) })}
+                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Dias de frequência</label>
+                    <input type="number" value={form.dias_frequencia} onChange={e => setForm({ ...form, dias_frequencia: e.target.value === '' ? 0 : Number(e.target.value) })}
+                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Treino</label>
+                    <textarea value={form.treino} onChange={e => setForm({ ...form, treino: e.target.value })}
+                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm min-h-20 p-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
+                  </div>
                   <div>
                     <label className="text-sm font-medium text-zinc-400 mb-1 block">Status</label>
                     <select data-testid="student-status-select" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}
@@ -241,6 +278,11 @@ export default function StudentsPage() {
                     className="flex-1 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-10 rounded-sm hover:bg-[#b3e600] transition-all disabled:opacity-50">
                     {saving ? 'Salvando...' : 'Salvar'}
                   </button>
+                  {modal === 'edit' && (
+                    <button type="button" onClick={handleRegisterBiometria} className="px-4 bg-blue-700 text-white font-semibold uppercase tracking-wide text-xs h-10 rounded-sm hover:bg-blue-600">
+                      Registrar biometria
+                    </button>
+                  )}
                   <button type="button" onClick={() => setModal(null)} className="px-6 bg-zinc-800 text-white font-semibold uppercase tracking-wide text-sm h-10 rounded-sm hover:bg-zinc-700">
                     Cancelar
                   </button>

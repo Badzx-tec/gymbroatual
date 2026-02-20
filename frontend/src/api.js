@@ -29,6 +29,8 @@ function downloadBlob(blob, filename) {
 
 export const api = {
   login: (data) => request('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+  requestEmailCode: (email) => request('/api/auth/email/request-code', { method: 'POST', body: JSON.stringify({ email }) }),
+  confirmEmailCode: (email, code) => request('/api/auth/email/confirm-code', { method: 'POST', body: JSON.stringify({ email, code }) }),
   register: (data) => request('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   googleSession: (sid) => request('/api/auth/google/session', { method: 'POST', body: JSON.stringify({ session_id: sid }) }),
   me: () => request('/api/auth/me'),
@@ -41,6 +43,7 @@ export const api = {
   createStudent: (data) => request('/api/students', { method: 'POST', body: JSON.stringify(data) }),
   getStudent: (id) => request(`/api/students/${id}`),
   updateStudent: (id, data) => request(`/api/students/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  registerBiometria: (id, biometria_id) => request(`/api/students/${id}/biometria`, { method: 'POST', body: JSON.stringify({ biometria_id }) }),
   deleteStudent: (id) => request(`/api/students/${id}`, { method: 'DELETE' }),
 
   listPlans: () => request('/api/plans'),
@@ -72,9 +75,13 @@ export const api = {
   exportAccessExcel: () => request('/api/reports/access-logs/excel', { isBlob: true }).then(b => downloadBlob(b, 'acessos_gymbro.xlsx')),
   exportFinancialExcel: () => request('/api/reports/financial/excel', { isBlob: true }).then(b => downloadBlob(b, 'financeiro_gymbro.xlsx')),
 
+
+  createAcademySubscriptionCheckout: (data) => request('/api/payments/academy/subscription/checkout', { method: 'POST', body: JSON.stringify(data) }),
+
   // Catraca
   catracaCommand: (data) => request('/api/catraca/command', { method: 'POST', body: JSON.stringify(data) }),
   catracaCommands: () => request('/api/catraca/commands'),
+  catracaIlnet2Execute: (data) => request('/api/catraca/ilnet2/execute', { method: 'POST', body: JSON.stringify(data) }),
 
   seed: () => request('/api/seed', { method: 'POST' }),
 };

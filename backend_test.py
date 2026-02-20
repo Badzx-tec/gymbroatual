@@ -3,11 +3,12 @@
 import requests
 import sys
 import json
+import os
 from datetime import datetime
 
 class GymBroAPITester:
-    def __init__(self, base_url="https://dc844492-030e-4afd-8c2e-9ccf8817b6b9.preview.emergentagent.com"):
-        self.base_url = base_url
+    def __init__(self, base_url=None):
+        self.base_url = base_url or os.environ.get('BASE_URL', 'http://localhost:8000')
         self.token = None
         self.session = requests.Session()
         self.tests_run = 0
@@ -42,9 +43,9 @@ class GymBroAPITester:
                 self.tests_passed += 1
                 print(f"✅ Passed - Status: {response.status_code}")
                 try:
-                    return True, response.json()
+                    return True, response.json(), response
                 except:
-                    return True, {}
+                    return True, {}, response
             else:
                 print(f"❌ Failed - Expected {expected_status}, got {response.status_code}")
                 self.failed_tests.append({
@@ -54,7 +55,7 @@ class GymBroAPITester:
                     "actual": response.status_code,
                     "response": response.text[:200]
                 })
-                return False, {}
+                return False, {}, response
 
         except Exception as e:
             print(f"❌ Failed - Error: {str(e)}")
@@ -64,16 +65,16 @@ class GymBroAPITester:
                 "expected": expected_status,
                 "error": str(e)
             })
-            return False, {}
+            return False, {}, None
 
     def test_health(self):
         """Test health endpoint"""
-        success, response = self.run_test("Health Check", "GET", "/api/health", 200)
+        success, response, _ = self.run_test("Health Check", "GET", "/api/health", 200)
         return success and response.get("status") == "ok"
 
     def test_login(self):
         """Test admin login"""
-        success, response = self.run_test(
+        success, response, _ = self.run_test(
             "Admin Login",
             "POST",
             "/api/auth/login",
@@ -88,7 +89,7 @@ class GymBroAPITester:
 
     def test_dashboard(self):
         """Test dashboard stats"""
-        success, response = self.run_test("Dashboard Stats", "GET", "/api/dashboard", 200)
+        success, response, _ = self.run_test("Dashboard Stats", "GET", "/api/dashboard", 200)
         if success:
             required_fields = ['total_alunos', 'alunos_ativos', 'alunos_inativos', 
                              'total_planos', 'faturamento_mensal', 'acessos_hoje', 'ultimos_acessos']
@@ -105,7 +106,7 @@ class GymBroAPITester:
         print("\n📋 Testing Students CRUD...")
         
         # List students
-        success, students = self.run_test("List Students", "GET", "/api/students", 200)
+        success, students, _ = self.run_test("List Students", "GET", "/api/students", 200)
         if not success:
             return False
         
@@ -121,7 +122,7 @@ class GymBroAPITester:
             "status": "ativo"
         }
         
-        success, created = self.run_test("Create Student", "POST", "/api/students", 200, data=test_student)
+        success, created, _ = self.run_test("Create Student", "POST", "/api/students", 200, data=test_student)
         if not success:
             return False
             
@@ -133,21 +134,21 @@ class GymBroAPITester:
         print(f"✅ Student created with ID: {student_id}")
         
         # Get student
-        success, student = self.run_test("Get Student", "GET", f"/api/students/{student_id}", 200)
+        success, student, _ = self.run_test("Get Student", "GET", f"/api/students/{student_id}", 200)
         if not success or student.get('student_id') != student_id:
             return False
         
         # Update student
         update_data = {"nome": "Updated Test Student", "status": "inativo"}
-        success, updated = self.run_test("Update Student", "PUT", f"/api/students/{student_id}", 200, data=update_data)
+        success, updated, _ = self.run_test("Update Student", "PUT", f"/api/students/{student_id}", 200, data=update_data)
         if not success or updated.get('nome') != "Updated Test Student":
             return False
         
         # Delete student
-        success, _ = self.run_test("Delete Student", "DELETE", f"/api/students/{student_id}", 200)
+        success, _, _ = self.run_test("Delete Student", "DELETE", f"/api/students/{student_id}", 200)
         
         # Verify deletion
-        success, _ = self.run_test("Verify Student Deleted", "GET", f"/api/students/{student_id}", 404)
+        success, _, _ = self.run_test("Verify Student Deleted", "GET", f"/api/students/{student_id}", 404)
         
         return success
 
@@ -156,7 +157,7 @@ class GymBroAPITester:
         print("\n🏷️  Testing Plans CRUD...")
         
         # List plans
-        success, plans = self.run_test("List Plans", "GET", "/api/plans", 200)
+        success, plans, _ = self.run_test("List Plans", "GET", "/api/plans", 200)
         if not success:
             return False
         
@@ -172,7 +173,7 @@ class GymBroAPITester:
             "ativo": True
         }
         
-        success, created = self.run_test("Create Plan", "POST", "/api/plans", 200, data=test_plan)
+        success, created, _ = self.run_test("Create Plan", "POST", "/api/plans", 200, data=test_plan)
         if not success:
             return False
             
@@ -185,12 +186,12 @@ class GymBroAPITester:
         
         # Update plan
         update_data = {"nome": "Updated Test Plan", "valor": 199.99}
-        success, updated = self.run_test("Update Plan", "PUT", f"/api/plans/{plan_id}", 200, data=update_data)
+        success, updated, _ = self.run_test("Update Plan", "PUT", f"/api/plans/{plan_id}", 200, data=update_data)
         if not success or updated.get('nome') != "Updated Test Plan":
             return False
         
         # Delete plan
-        success, _ = self.run_test("Delete Plan", "DELETE", f"/api/plans/{plan_id}", 200)
+        success, _, _ = self.run_test("Delete Plan", "DELETE", f"/api/plans/{plan_id}", 200)
         
         return success
 
@@ -200,7 +201,7 @@ class GymBroAPITester:
         temp_token = self.token
         self.token = None
         
-        success, plans = self.run_test("Public Plans", "GET", "/api/plans/public", 200)
+        success, plans, _ = self.run_test("Public Plans", "GET", "/api/plans/public", 200)
         
         # Restore token
         self.token = temp_token
@@ -212,7 +213,7 @@ class GymBroAPITester:
 
     def test_access_logs(self):
         """Test access logs endpoint"""
-        success, logs = self.run_test("Access Logs", "GET", "/api/access-logs", 200)
+        success, logs, _ = self.run_test("Access Logs", "GET", "/api/access-logs", 200)
         if success:
             print(f"✅ Access logs returned: {len(logs)} log entries")
             return True
@@ -230,7 +231,7 @@ class GymBroAPITester:
             "tipo": "rfid"
         }
         
-        success, response = self.run_test("Access Validation - Valid RFID", "POST", "/api/access/validate", 200, data=validation_data)
+        success, response, _ = self.run_test("Access Validation - Valid RFID", "POST", "/api/access/validate", 200, data=validation_data)
         
         # Test with invalid tag
         invalid_data = {
@@ -238,7 +239,7 @@ class GymBroAPITester:
             "tipo": "rfid"
         }
         
-        success2, response2 = self.run_test("Access Validation - Invalid RFID", "POST", "/api/access/validate", 200, data=invalid_data)
+        success2, response2, _ = self.run_test("Access Validation - Invalid RFID", "POST", "/api/access/validate", 200, data=invalid_data)
         
         # Restore token
         self.token = temp_token
@@ -264,7 +265,7 @@ class GymBroAPITester:
             }
         }
         
-        success, response = self.run_test("Mercado Pago Webhook", "POST", "/api/webhooks/mercadopago", 200, data=webhook_payload)
+        success, response, _ = self.run_test("Mercado Pago Webhook", "POST", "/api/webhooks/mercadopago", 200, data=webhook_payload)
         
         # Restore token
         self.token = temp_token
@@ -277,7 +278,7 @@ class GymBroAPITester:
 
     def test_dashboard_charts(self):
         """Test dashboard charts data endpoint"""
-        success, response = self.run_test("Dashboard Charts", "GET", "/api/dashboard/charts", 200)
+        success, response, _ = self.run_test("Dashboard Charts", "GET", "/api/dashboard/charts", 200)
         if success:
             required_fields = ['receita_por_plano', 'acessos_por_hora', 'alunos_por_status', 'receita_mensal']
             for field in required_fields:
@@ -295,7 +296,7 @@ class GymBroAPITester:
         print("\n🏢 Testing Academies CRUD...")
         
         # List academies
-        success, academies = self.run_test("List Academies", "GET", "/api/academies", 200)
+        success, academies, _ = self.run_test("List Academies", "GET", "/api/academies", 200)
         if not success:
             return False
         
@@ -305,7 +306,7 @@ class GymBroAPITester:
         # Test academy stats for existing academy if any
         if academies:
             academy_id = academies[0]['academy_id']
-            success, stats = self.run_test("Academy Stats", "GET", f"/api/academies/{academy_id}/stats", 200)
+            success, stats, _ = self.run_test("Academy Stats", "GET", f"/api/academies/{academy_id}/stats", 200)
             if success:
                 required_stats = ['total_alunos', 'alunos_ativos', 'alunos_inativos', 'faturamento']
                 for field in required_stats:
@@ -326,7 +327,7 @@ class GymBroAPITester:
             "ativo": True
         }
         
-        success, created = self.run_test("Create Academy", "POST", "/api/academies", 200, data=test_academy)
+        success, created, _ = self.run_test("Create Academy", "POST", "/api/academies", 200, data=test_academy)
         if not success:
             return False
             
@@ -339,12 +340,12 @@ class GymBroAPITester:
         
         # Update academy
         update_data = {"nome": "Updated Test Academy", "ativo": False}
-        success, updated = self.run_test("Update Academy", "PUT", f"/api/academies/{academy_id}", 200, data=update_data)
+        success, updated, _ = self.run_test("Update Academy", "PUT", f"/api/academies/{academy_id}", 200, data=update_data)
         if not success or updated.get('nome') != "Updated Test Academy":
             return False
         
         # Delete academy
-        success, _ = self.run_test("Delete Academy", "DELETE", f"/api/academies/{academy_id}", 200)
+        success, _, _ = self.run_test("Delete Academy", "DELETE", f"/api/academies/{academy_id}", 200)
         
         return success
 
@@ -353,7 +354,7 @@ class GymBroAPITester:
         print("\n🔔 Testing Notifications...")
         
         # List notifications
-        success, notifications = self.run_test("List Notifications", "GET", "/api/notifications", 200)
+        success, notifications, _ = self.run_test("List Notifications", "GET", "/api/notifications", 200)
         if not success:
             return False
         
@@ -361,7 +362,7 @@ class GymBroAPITester:
         print(f"✅ Initial notification count: {initial_count}")
         
         # Check for expiring subscriptions
-        success, response = self.run_test("Check Expiring Subscriptions", "POST", "/api/notifications/check-expiring", 200)
+        success, response, _ = self.run_test("Check Expiring Subscriptions", "POST", "/api/notifications/check-expiring", 200)
         if not success:
             return False
         
@@ -371,7 +372,7 @@ class GymBroAPITester:
         print(f"✅ Students expiring in 7 days: {total_vencendo}")
         
         # List notifications again to see if new ones were created
-        success, new_notifications = self.run_test("List Notifications After Check", "GET", "/api/notifications", 200)
+        success, new_notifications, _ = self.run_test("List Notifications After Check", "GET", "/api/notifications", 200)
         if success:
             new_count = len(new_notifications)
             print(f"✅ Notifications after expiring check: {new_count}")
@@ -379,7 +380,7 @@ class GymBroAPITester:
             # Test mark as read if we have notifications
             if new_notifications:
                 notif_id = new_notifications[0]['notif_id']
-                success, _ = self.run_test("Mark Notification Read", "PUT", f"/api/notifications/{notif_id}/read", 200)
+                success, _, _ = self.run_test("Mark Notification Read", "PUT", f"/api/notifications/{notif_id}/read", 200)
                 if success:
                     print(f"✅ Notification {notif_id} marked as read")
         
@@ -399,9 +400,16 @@ class GymBroAPITester:
         
         all_passed = True
         for export_name, endpoint in exports:
-            success, _ = self.run_test(export_name, "GET", endpoint, 200, headers={'Accept': 'application/octet-stream'})
-            if success:
-                print(f"✅ {export_name} export working")
+            success, _, resp = self.run_test(export_name, "GET", endpoint, 200, headers={'Accept': 'application/octet-stream'})
+            if success and resp is not None:
+                ctype = resp.headers.get('Content-Type', '')
+                size = len(resp.content or b'')
+                is_binary = ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' in ctype) or ('application/pdf' in ctype) or ('application/octet-stream' in ctype)
+                if not is_binary or size == 0:
+                    all_passed = False
+                    print(f"❌ {export_name} invalid binary response. content-type={ctype}, size={size}")
+                else:
+                    print(f"✅ {export_name} export working (content-type={ctype}, size={size})")
             else:
                 all_passed = False
                 print(f"❌ {export_name} export failed")
@@ -413,7 +421,7 @@ class GymBroAPITester:
         print("\n🚪 Testing Catraca Commands...")
         
         # List existing commands
-        success, commands = self.run_test("List Catraca Commands", "GET", "/api/catraca/commands", 200)
+        success, commands, _ = self.run_test("List Catraca Commands", "GET", "/api/catraca/commands", 200)
         if not success:
             return False
         
@@ -430,7 +438,7 @@ class GymBroAPITester:
         
         all_passed = True
         for cmd_data in command_tests:
-            success, response = self.run_test(f"Catraca Command - {cmd_data['action']}", "POST", "/api/catraca/command", 200, data=cmd_data)
+            success, response, _ = self.run_test(f"Catraca Command - {cmd_data['action']}", "POST", "/api/catraca/command", 200, data=cmd_data)
             if success:
                 cmd_id = response.get('cmd_id', '')
                 status = response.get('status', '')
@@ -439,7 +447,7 @@ class GymBroAPITester:
                 all_passed = False
         
         # List commands again to verify they were created
-        success, new_commands = self.run_test("List Commands After Creation", "GET", "/api/catraca/commands", 200)
+        success, new_commands, _ = self.run_test("List Commands After Creation", "GET", "/api/catraca/commands", 200)
         if success:
             new_count = len(new_commands)
             print(f"✅ Commands after creation: {new_count}")
@@ -448,7 +456,7 @@ class GymBroAPITester:
 
     def test_seed_data(self):
         """Test seed data endpoint"""
-        success, response = self.run_test("Seed Data", "POST", "/api/seed", 200)
+        success, response, _ = self.run_test("Seed Data", "POST", "/api/seed", 200)
         if success:
             message = response.get('message', '')
             print(f"✅ Seed response: {message}")

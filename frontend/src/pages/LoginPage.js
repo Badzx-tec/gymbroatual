@@ -12,6 +12,8 @@ export default function LoginPage() {
   const [name, setName] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [emailCode, setEmailCode] = useState('');
+  const [emailVerified, setEmailVerified] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -21,6 +23,9 @@ export default function LoginPage() {
       if (mode === 'login') {
         result = await api.login({ email, password });
       } else {
+        if (!emailVerified) {
+          throw new Error('Valide o e-mail antes de criar a conta');
+        }
         result = await api.register({ email, password, name });
       }
       localStorage.setItem('gymbro_token', result.token);
@@ -33,8 +38,28 @@ export default function LoginPage() {
     setLoading(false);
   };
 
+  const handleRequestCode = async () => {
+    try {
+      const res = await api.requestEmailCode(email);
+      toast.success('Código enviado para o e-mail.');
+      if (res.dev_code) toast.message(`Dev code: ${res.dev_code}`);
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const handleConfirmCode = async () => {
+    try {
+      await api.confirmEmailCode(email, emailCode);
+      setEmailVerified(true);
+      toast.success('E-mail validado com sucesso.');
+    } catch (err) {
+      toast.error(err.message);
+      setEmailVerified(false);
+    }
+  };
+
   const handleGoogle = () => {
-    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
     const redirectUrl = window.location.origin + '/admin';
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
@@ -62,9 +87,22 @@ export default function LoginPage() {
             )}
             <div>
               <label className="text-sm font-medium text-zinc-400 mb-1 block">E-mail</label>
-              <input data-testid="login-email-input" type="email" value={email} onChange={e => setEmail(e.target.value)}
+              <input data-testid="login-email-input" type="email" value={email} onChange={e => { setEmail(e.target.value); setEmailVerified(false); }}
                 className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 focus:outline-none focus:ring-1 focus:ring-[#ccff00] focus:border-[#ccff00]" required />
             </div>
+
+            {mode === 'register' && (
+              <div className="space-y-2 p-3 border border-zinc-800 rounded-sm bg-zinc-950">
+                <p className="text-xs text-zinc-400">Validação de e-mail obrigatória antes do cadastro.</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={handleRequestCode} className="flex-1 h-10 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-sm">Enviar código</button>
+                  <input placeholder="Código" value={emailCode} onChange={e => setEmailCode(e.target.value)} className="w-28 h-10 px-2 bg-zinc-900 border border-zinc-700 rounded-sm text-sm" />
+                  <button type="button" onClick={handleConfirmCode} className="h-10 px-3 text-xs bg-[#ccff00] text-black rounded-sm font-bold">Validar</button>
+                </div>
+                {emailVerified && <p className="text-xs text-green-400">E-mail validado ✅</p>}
+              </div>
+            )}
+
             <div>
               <label className="text-sm font-medium text-zinc-400 mb-1 block">Senha</label>
               <div className="relative">
@@ -74,6 +112,7 @@ export default function LoginPage() {
                   {showPw ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
+              {mode === 'register' && <p className="text-xs text-zinc-500 mt-1">Mínimo de 8 caracteres.</p>}
             </div>
             <button data-testid="login-submit-btn" type="submit" disabled={loading}
               className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-[#b3e600] transition-all disabled:opacity-50">
