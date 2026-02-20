@@ -79,7 +79,16 @@ export default function StudentsPage() {
           <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Alunos</h1>
           <p className="text-zinc-400 mt-1">{students.length} alunos cadastrados</p>
         </div>
-        <button data-testid="add-student-btn" onClick={openCreate}
+        <div className="flex gap-2">
+          <button data-testid="export-students-excel-btn" onClick={() => { api.exportStudentsExcel(); toast.success('Exportando Excel...'); }}
+            className="flex items-center gap-2 bg-zinc-800 text-white text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-sm hover:bg-zinc-700">
+            <FileSpreadsheet className="w-4 h-4 text-green-500" /> Excel
+          </button>
+          <button data-testid="export-students-pdf-btn" onClick={() => { api.exportStudentsPdf(); toast.success('Exportando PDF...'); }}
+            className="flex items-center gap-2 bg-zinc-800 text-white text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-sm hover:bg-zinc-700">
+            <FileText className="w-4 h-4 text-red-400" /> PDF
+          </button>
+          <button data-testid="add-student-btn" onClick={openCreate}
           className="flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-6 py-2.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-0.5">
           <Plus className="w-4 h-4" /> Novo Aluno
         </button>
