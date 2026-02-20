@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
 import { toast } from 'sonner';
-import { Plus, Search, Edit2, Trash2, X, User } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, X, User, FileSpreadsheet, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const emptyStudent = { nome: '', email: '', cpf: '', telefone: '', plano_id: '', tag_rfid: '', biometria_id: '', status: 'ativo', data_vencimento: '' };
