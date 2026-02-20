@@ -72,9 +72,13 @@ export const api = {
   exportAccessExcel: () => request('/api/reports/access-logs/excel', { isBlob: true }).then(b => downloadBlob(b, 'acessos_gymbro.xlsx')),
   exportFinancialExcel: () => request('/api/reports/financial/excel', { isBlob: true }).then(b => downloadBlob(b, 'financeiro_gymbro.xlsx')),
 
+
+  createAcademySubscriptionCheckout: (data) => request('/api/payments/academy/subscription/checkout', { method: 'POST', body: JSON.stringify(data) }),
+
   // Catraca
   catracaCommand: (data) => request('/api/catraca/command', { method: 'POST', body: JSON.stringify(data) }),
   catracaCommands: () => request('/api/catraca/commands'),
+  catracaIlnet2Execute: (data) => request('/api/catraca/ilnet2/execute', { method: 'POST', body: JSON.stringify(data) }),
 
   seed: () => request('/api/seed', { method: 'POST' }),
 };
