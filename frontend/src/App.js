@@ -1,4 +1,5 @@
 import React from 'react';
+import { apiUrl } from './config';
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import LandingPage from './pages/LandingPage';
@@ -11,6 +12,7 @@ import AccessLogsPage from './pages/AccessLogsPage';
 import AcademiesPage from './pages/AcademiesPage';
 import NotificationsPage from './pages/NotificationsPage';
 import CatracaPage from './pages/CatracaPage';
+import SubscriptionPage from './pages/SubscriptionPage';
 import AdminLayout from './components/AdminLayout';
 
 function AppRouter() {
@@ -31,6 +33,7 @@ function AppRouter() {
         <Route path="franquias" element={<AcademiesPage />} />
         <Route path="notificacoes" element={<NotificationsPage />} />
         <Route path="catraca" element={<CatracaPage />} />
+        <Route path="assinatura" element={<SubscriptionPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -46,7 +49,7 @@ function ProtectedRoute({ children }) {
     if (token) return;
     const checkCookie = async () => {
       try {
-        const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/auth/me`, { credentials: 'include' });
+        const res = await fetch(apiUrl('/api/auth/me'), { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
           localStorage.setItem('gymbro_user', JSON.stringify(data));

@@ -12,8 +12,13 @@ export default function LoginPage() {
   const [name, setName] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
+<<<<<<< HEAD
   const [emailCode, setEmailCode] = useState('');
   const [emailVerified, setEmailVerified] = useState(false);
+=======
+  const [challengeId, setChallengeId] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+>>>>>>> d3764ba4 (versão 2.0)
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -21,7 +26,16 @@ export default function LoginPage() {
     try {
       let result;
       if (mode === 'login') {
-        result = await api.login({ email, password });
+        // use two-step login: start -> verify
+        const start = await api.loginStart({ email, password });
+        if (start && start.challenge_id) {
+          // show code input flow
+          setMode('verify');
+          setLoading(false);
+          // store challenge id in state
+          setChallengeId(start.challenge_id);
+          return;
+        }
       } else {
         if (!emailVerified) {
           throw new Error('Valide o e-mail antes de criar a conta');
@@ -38,6 +52,7 @@ export default function LoginPage() {
     setLoading(false);
   };
 
+<<<<<<< HEAD
   const handleRequestCode = async () => {
     try {
       const res = await api.requestEmailCode(email);
@@ -57,6 +72,21 @@ export default function LoginPage() {
       toast.error(err.message);
       setEmailVerified(false);
     }
+=======
+  const handleVerify = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const res = await api.loginVerify({ challenge_id: challengeId, code: otpCode });
+      localStorage.setItem('gymbro_token', res.token);
+      localStorage.setItem('gymbro_user', JSON.stringify(res.user));
+      toast.success('Login realizado!');
+      navigate('/admin');
+    } catch (err) {
+      toast.error(err.message);
+    }
+    setLoading(false);
+>>>>>>> d3764ba4 (versão 2.0)
   };
 
   const handleGoogle = () => {
@@ -77,7 +107,17 @@ export default function LoginPage() {
             {mode === 'login' ? 'Acessar Painel' : 'Criar Conta'}
           </h2>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === 'verify' ? (
+            <form onSubmit={handleVerify} className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-zinc-400 mb-1 block">Código (e-mail)</label>
+                <input type="text" value={otpCode} onChange={e => setOtpCode(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" required />
+              </div>
+              <button type="submit" disabled={loading} className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-[#b3e600] transition-all disabled:opacity-50">{loading ? 'Verificando...' : 'Verificar'}</button>
+              <p className="text-center text-zinc-500 text-sm mt-4">Recebeu o código? Caso não, verifique a caixa de spam.</p>
+            </form>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'register' && (
               <div>
                 <label className="text-sm font-medium text-zinc-400 mb-1 block">Nome</label>
@@ -118,7 +158,8 @@ export default function LoginPage() {
               className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-[#b3e600] transition-all disabled:opacity-50">
               {loading ? 'Carregando...' : mode === 'login' ? 'Entrar' : 'Criar Conta'}
             </button>
-          </form>
+            </form>
+          )}
 
           <div className="flex items-center gap-3 my-6">
             <div className="flex-1 h-px bg-zinc-800" />

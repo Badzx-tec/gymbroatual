@@ -8,6 +8,8 @@ const emptyStudent = { nome: '', email: '', cpf: '', telefone: '', plano_id: '',
 
 export default function StudentsPage() {
   const [students, setStudents] = useState([]);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [passkeys, setPasskeys] = useState([]);
   const [plans, setPlans] = useState([]);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -40,6 +42,36 @@ export default function StudentsPage() {
     setForm({ nome: s.nome, email: s.email, cpf: s.cpf, telefone: s.telefone || '', plano_id: s.plano_id || '', tag_rfid: s.tag_rfid || '', biometria_id: s.biometria_id || '', status: s.status, data_vencimento: s.data_vencimento ? s.data_vencimento.split('T')[0] : '', peso_kg: s.peso_kg ?? '', idade: s.idade ?? '', altura_cm: s.altura_cm ?? '', treino: s.treino || '', dias_frequencia: s.dias_frequencia ?? 0 });
     setEditId(s.student_id);
     setModal('edit');
+  };
+
+  const viewStudent = async (s) => {
+    try {
+      const full = await api.getStudent(s.student_id);
+      setSelectedStudent(full);
+      // fetch passkeys
+      try { const pk = await api.listStudentPasskeys(s.student_id); setPasskeys(pk.webauthn_credentials || []); } catch { setPasskeys([]); }
+    } catch (err) { toast.error('Erro ao carregar aluno'); }
+  };
+
+  const closeDetail = () => { setSelectedStudent(null); setPasskeys([]); };
+
+  const saveStudentDetails = async (updates) => {
+    try {
+      await api.updateStudent(selectedStudent.student_id, updates);
+      toast.success('Dados do aluno atualizados');
+      const refreshed = await api.getStudent(selectedStudent.student_id);
+      setSelectedStudent(refreshed);
+      loadData();
+    } catch (err) { toast.error(err.message); }
+  };
+
+  const registerPasskey = async (cred) => {
+    try {
+      await api.registerStudentPasskey(selectedStudent.student_id, cred);
+      toast.success('Passkey registrada');
+      const pk = await api.listStudentPasskeys(selectedStudent.student_id);
+      setPasskeys(pk.webauthn_credentials || []);
+    } catch (err) { toast.error(err.message); }
   };
 
   const handleSave = async (e) => {
@@ -139,7 +171,7 @@ export default function StudentsPage() {
             {students.map((s, i) => (
               <motion.tr key={s.student_id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
                 className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
-                <td className="px-5 py-3">
+                <td className="px-5 py-3" onClick={() => viewStudent(s)} style={{cursor: 'pointer'}}>
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center">
                       <User className="w-4 h-4 text-zinc-400" />
@@ -179,6 +211,98 @@ export default function StudentsPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Detail sidebar */}
+      {selectedStudent && (
+        <div className="fixed right-6 top-20 w-[420px] z-50 bg-zinc-900 border border-zinc-800 rounded-md p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="font-heading text-xl font-semibold">{selectedStudent.nome}</h3>
+              <p className="text-zinc-400 text-sm">{selectedStudent.email} • {selectedStudent.cpf}</p>
+            </div>
+            <button onClick={closeDetail} className="text-zinc-400 hover:text-white">Fechar</button>
+          </div>
+          <div className="mt-4 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-zinc-400">Peso (kg)</label>
+                <input type="number" step="0.1" defaultValue={selectedStudent.peso || ''} onBlur={e => saveStudentDetails({ peso: parseFloat(e.target.value) || 0 })}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-zinc-400">Idade</label>
+                <input type="number" defaultValue={selectedStudent.idade || ''} onBlur={e => saveStudentDetails({ idade: parseInt(e.target.value) || 0 })}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-zinc-400">Altura (cm)</label>
+                <input type="number" step="0.1" defaultValue={selectedStudent.altura || ''} onBlur={e => saveStudentDetails({ altura: parseFloat(e.target.value) || 0 })}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-zinc-400">Frequência (dias)</label>
+                <input type="number" defaultValue={selectedStudent.dias_presenca || 0} onBlur={e => saveStudentDetails({ dias_presenca: parseInt(e.target.value) || 0 })}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3 text-sm" />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-zinc-400">Treino / Observações</label>
+              <textarea defaultValue={selectedStudent.treino || ''} onBlur={e => saveStudentDetails({ treino: e.target.value })}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-sm p-3 text-sm h-24" />
+            </div>
+
+            <div>
+              <h4 className="font-medium">Biometria (Passkeys)</h4>
+              <p className="text-zinc-400 text-sm">Credenciais registradas: {passkeys.length}</p>
+              <div className="mt-2 flex gap-2">
+                <button onClick={async () => {
+                  if (!window.PublicKeyCredential) { toast.error('WebAuthn nao suportado neste navegador'); return; }
+                  try {
+                    const { base64ToBuffer, bufferToBase64 } = await import('../webauthn');
+                    // request registration options from server
+                    const optsResp = await api.passkeyRegisterOptions(selectedStudent.student_id);
+                    const state_id = optsResp.state_id;
+                    const publicKey = optsResp.publicKey;
+                    // decode challenge and user.id from base64 -> ArrayBuffer
+                    if (publicKey.challenge) publicKey.challenge = base64ToBuffer(publicKey.challenge);
+                    if (publicKey.user && publicKey.user.id) publicKey.user.id = base64ToBuffer(publicKey.user.id);
+                    // decode any allowCredentials ids
+                    if (publicKey.excludeCredentials && Array.isArray(publicKey.excludeCredentials)) {
+                      publicKey.excludeCredentials = publicKey.excludeCredentials.map(c => ({ ...c, id: base64ToBuffer(c.id) }));
+                    }
+                    const cred = await navigator.credentials.create({ publicKey });
+                    if (!cred) throw new Error('Falha ao criar credencial');
+                    const rawId = cred.rawId;
+                    const attObj = cred.response.attestationObject;
+                    const clientJSON = cred.response.clientDataJSON;
+                    const payload = {
+                      state_id,
+                      id: cred.id,
+                      rawId: bufferToBase64(rawId),
+                      publicKey: bufferToBase64(attObj),
+                      clientDataJSON: bufferToBase64(clientJSON),
+                    };
+                    await api.passkeyRegisterVerify(selectedStudent.student_id, payload);
+                    const pk = await api.listStudentPasskeys(selectedStudent.student_id);
+                    setPasskeys(pk.webauthn_credentials || []);
+                    toast.success('Passkey registrada com sucesso');
+                  } catch (err) {
+                    console.error(err);
+                    toast.error(err.message || 'Erro no registro WebAuthn');
+                  }
+                }} className="bg-[#ccff00] text-black px-3 py-2 rounded-sm">Registrar Passkey</button>
+                <button onClick={async () => { const pk = await api.listStudentPasskeys(selectedStudent.student_id); setPasskeys(pk.webauthn_credentials || []); }} className="bg-zinc-800 text-white px-3 py-2 rounded-sm">Atualizar</button>
+              </div>
+              <ul className="mt-3 text-sm text-zinc-300 space-y-1">
+                {passkeys.map((p, i) => (
+                  <li key={i} className="border border-zinc-800 rounded-sm p-2">ID: {p.id} • Criado: {new Date(p.created_at).toLocaleString()}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal */}
       <AnimatePresence>

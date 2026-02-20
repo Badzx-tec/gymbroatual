@@ -1,11 +1,12 @@
-const API = process.env.REACT_APP_BACKEND_URL;
-
 async function request(path, options = {}) {
   const token = localStorage.getItem('gymbro_token');
   const headers = { ...options.headers };
   if (!options.isBlob) headers['Content-Type'] = 'application/json';
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(`${API}${path}`, { ...options, headers, credentials: 'include' });
+  // use apiUrl helper to build URL (supports empty API_BASE -> relative URLs)
+  const { apiUrl } = await import('./config');
+  const url = apiUrl(path);
+  const res = await fetch(url, { ...options, headers, credentials: 'include' });
   if (res.status === 401) {
     localStorage.removeItem('gymbro_token');
     localStorage.removeItem('gymbro_user');
@@ -29,8 +30,13 @@ function downloadBlob(blob, filename) {
 
 export const api = {
   login: (data) => request('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
+<<<<<<< HEAD
   requestEmailCode: (email) => request('/api/auth/email/request-code', { method: 'POST', body: JSON.stringify({ email }) }),
   confirmEmailCode: (email, code) => request('/api/auth/email/confirm-code', { method: 'POST', body: JSON.stringify({ email, code }) }),
+=======
+  loginStart: (data) => request('/api/auth/login/start', { method: 'POST', body: JSON.stringify(data) }),
+  loginVerify: (data) => request('/api/auth/login/verify', { method: 'POST', body: JSON.stringify(data) }),
+>>>>>>> d3764ba4 (versão 2.0)
   register: (data) => request('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   googleSession: (sid) => request('/api/auth/google/session', { method: 'POST', body: JSON.stringify({ session_id: sid }) }),
   me: () => request('/api/auth/me'),
@@ -45,6 +51,10 @@ export const api = {
   updateStudent: (id, data) => request(`/api/students/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   registerBiometria: (id, biometria_id) => request(`/api/students/${id}/biometria`, { method: 'POST', body: JSON.stringify({ biometria_id }) }),
   deleteStudent: (id) => request(`/api/students/${id}`, { method: 'DELETE' }),
+  registerStudentPasskey: (studentId, credential) => request(`/api/students/${studentId}/passkey/register`, { method: 'POST', body: JSON.stringify({ credential }) }),
+  listStudentPasskeys: (studentId) => request(`/api/students/${studentId}/passkeys`),
+  passkeyRegisterOptions: (studentId) => request(`/api/students/${studentId}/passkey/register/options`, { method: 'POST', body: JSON.stringify({}) }),
+  passkeyRegisterVerify: (studentId, payload) => request(`/api/students/${studentId}/passkey/register/verify`, { method: 'POST', body: JSON.stringify(payload) }),
 
   listPlans: () => request('/api/plans'),
   listPlansPublic: () => request('/api/plans/public'),
@@ -55,6 +65,17 @@ export const api = {
   listAccessLogs: (limit = 50) => request(`/api/access-logs?limit=${limit}`),
 
   listWebhookLogs: (limit = 50) => request(`/api/webhook-logs?limit=${limit}`),
+
+  // Billing
+  getAcademyBilling: (academyId) => request(`/api/academies/${academyId}/billing`),
+
+  // Student Progress (Evolução)
+  recordStudentProgress: (studentId, data) => request(`/api/students/${studentId}/progress`, { method: 'POST', body: JSON.stringify(data) }),
+  listStudentProgress: (studentId, limit = 50) => request(`/api/students/${studentId}/progress?limit=${limit}`),
+
+  // Attendance (Presença)
+  recordAttendance: (studentId, data) => request(`/api/students/${studentId}/attendance`, { method: 'POST', body: JSON.stringify(data) }),
+  listStudentAttendance: (studentId, limit = 100) => request(`/api/students/${studentId}/attendance?limit=${limit}`),
 
   // Academies
   listAcademies: () => request('/api/academies'),
@@ -88,7 +109,8 @@ export const api = {
 
 // WebSocket helper
 export function connectWebSocket(onMessage) {
-  const wsUrl = API.replace('https://', 'wss://').replace('http://', 'ws://') + '/api/ws';
+  const base = (process.env.REACT_APP_API_BASE || '') || window.location.origin;
+  const wsUrl = base.replace('https://', 'wss://').replace('http://', 'ws://') + '/api/ws';
   let ws = null;
   let reconnectTimeout = null;
 

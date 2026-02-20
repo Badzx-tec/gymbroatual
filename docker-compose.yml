@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # ==============================================================================
+  # MongoDB Database
+  # ==============================================================================
+  mongodb:
+    image: mongo:7.0
+    container_name: gymbro-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_DATABASE: gymbro
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - gymbro-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ==============================================================================
+  # MongoDB Express (Database UI - Optional)
+  # ==============================================================================
+  mongo-express:
+    image: mongo-express:latest
+    container_name: gymbro-mongo-express
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: admin123
+      ME_CONFIG_MONGODB_URL: mongodb://admin:admin123@mongodb:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin123
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - gymbro-network
+    restart: unless-stopped
+
+  # ==============================================================================
+  # Backend API (FastAPI)
+  # ==============================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gymbro-backend
+    ports:
+      - "8000:8000"
+    environment:
+      MONGO_URL: mongodb://admin:admin123@mongodb:27017/gymbro?authSource=admin
+      DB_NAME: gymbro
+      JWT_SECRET: AvestruzComeOvo456
+      MERCADOPAGO_ACCESS_TOKEN: TEST-2643211117890593-021920-ea99d97356c9c59960648e2ac5729cf4-794109066
+      MP_PUBLIC_KEY: TEST-58fe1a5c-03d6-4a8d-bc7e-d9b7ea63d98c
+      FRONTEND_URL: http://localhost:3000
+      BACKEND_PUBLIC_URL: http://localhost:8000
+      CORS_ORIGINS: http://localhost:3000,http://localhost:8000,http://127.0.0.1:3000,http://127.0.0.1:8000
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - gymbro-network
+    restart: unless-stopped
+    profiles:
+      - full
+    command: uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+
+  # ==============================================================================
+  # Frontend (React development server)
+  # ==============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gymbro-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_BASE: http://localhost:8000
+      WDS_SOCKET_HOST: localhost
+      WDS_SOCKET_PORT: 3000
+    depends_on:
+      - backend
+    networks:
+      - gymbro-network
+    restart: unless-stopped
+    profiles:
+      - full
+    command: npm start
+
+volumes:
+  mongodb_data:
+  mongodb_config:
+
+networks:
+  gymbro-network:
+    driver: bridge

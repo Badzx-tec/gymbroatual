@@ -1,5 +1,7 @@
 import os
 import io
+import smtplib
+from email.message import EmailMessage
 import uuid
 import json
 import asyncio
@@ -15,6 +17,10 @@ from pydantic import BaseModel
 from typing import Optional, List
 from jose import jwt
 from passlib.context import CryptContext
+from urllib.parse import urlparse
+from fido2.server import FIDO2Server
+from fido2.webauthn import PublicKeyCredentialRpEntity, AttestationObject, CollectedClientData, AuthenticatorData
+from fido2 import cbor
 
 load_dotenv()
 
@@ -24,6 +30,43 @@ JWT_SECRET = os.environ.get("JWT_SECRET")
 MP_ACCESS_TOKEN = os.environ.get("MERCADOPAGO_ACCESS_TOKEN")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 BACKEND_PUBLIC_URL = os.environ.get("BACKEND_PUBLIC_URL", "http://localhost:8000")
+# SMTP settings (optional). If not set, emails are logged to `email_logs` collection.
+SMTP_HOST = os.environ.get("SMTP_HOST")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "0") or 0)
+SMTP_USER = os.environ.get("SMTP_USER")
+SMTP_PASS = os.environ.get("SMTP_PASS")
+SMTP_FROM = os.environ.get("SMTP_FROM", "no-reply@gymbro.local")
+
+
+def send_email(to_email: str, subject: str, body: str):
+    """Send email via SMTP if configured, otherwise store in `email_logs` collection."""
+    try:
+        if SMTP_HOST and SMTP_PORT:
+            msg = EmailMessage()
+            msg['Subject'] = subject
+            msg['From'] = SMTP_FROM
+            msg['To'] = to_email
+            msg.set_content(body)
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as s:
+                if SMTP_USER and SMTP_PASS:
+                    s.starttls()
+                    s.login(SMTP_USER, SMTP_PASS)
+                s.send_message(msg)
+            return True
+    except Exception:
+        pass
+    # fallback: persist in DB for debugging / dev
+    try:
+        db.email_logs.insert_one({
+            "log_id": f"email_{uuid.uuid4().hex[:12]}",
+            "to": to_email,
+            "subject": subject,
+            "body": body,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception:
+        pass
+    return False
 LOGIN_MAX_ATTEMPTS = int(os.environ.get("LOGIN_MAX_ATTEMPTS", "5"))
 LOGIN_LOCK_MINUTES = int(os.environ.get("LOGIN_LOCK_MINUTES", "15"))
 
@@ -46,6 +89,15 @@ app.add_middleware(
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Setup FIDO2 / WebAuthn server
+try:
+    rp_url = urlparse(FRONTEND_URL or BACKEND_PUBLIC_URL)
+    rp_id = rp_url.hostname or "localhost"
+except Exception:
+    rp_id = "localhost"
+rp = PublicKeyCredentialRpEntity(id=rp_id, name="GymBro")
+fido_server = FIDO2Server(rp)
 
 # ============== WEBSOCKET MANAGER ==============
 
@@ -99,6 +151,12 @@ class StudentCreate(BaseModel):
     plano_id: Optional[str] = ""
     tag_rfid: Optional[str] = ""
     biometria_id: Optional[str] = ""
+    biometria_template: Optional[str] = ""
+    peso: Optional[float] = None
+    idade: Optional[int] = None
+    altura: Optional[float] = None
+    treino: Optional[str] = ""
+    dias_presenca: Optional[int] = 0
     status: str = "ativo"
     data_vencimento: Optional[str] = ""
     academy_id: Optional[str] = ""
@@ -116,6 +174,12 @@ class StudentUpdate(BaseModel):
     plano_id: Optional[str] = None
     tag_rfid: Optional[str] = None
     biometria_id: Optional[str] = None
+    biometria_template: Optional[str] = None
+    peso: Optional[float] = None
+    idade: Optional[int] = None
+    altura: Optional[float] = None
+    treino: Optional[str] = None
+    dias_presenca: Optional[int] = None
     status: Optional[str] = None
     data_vencimento: Optional[str] = None
     academy_id: Optional[str] = None
@@ -278,6 +342,39 @@ async def get_current_user(request: Request):
             if expires_at and expires_at > datetime.now(timezone.utc):
                 user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
                 if user:
+                    # verify academy billing for protected routes: owner/manager must have active trial or paid_until
+                    if user.get("role") != "super_admin" and user.get("academy_id"):
+                        try:
+                            acad = await db.academies.find_one({"academy_id": user.get("academy_id")}, {"_id": 0})
+                            if acad:
+                                paid_until = acad.get("paid_until")
+                                trial_until = acad.get("trial_until")
+                                ok = False
+                                now = datetime.now(timezone.utc)
+                                if trial_until:
+                                    try:
+                                        t = datetime.fromisoformat(trial_until)
+                                        if t.tzinfo is None:
+                                            t = t.replace(tzinfo=timezone.utc)
+                                        if t >= now:
+                                            ok = True
+                                    except Exception:
+                                        pass
+                                if paid_until and not ok:
+                                    try:
+                                        p = datetime.fromisoformat(paid_until)
+                                        if p.tzinfo is None:
+                                            p = p.replace(tzinfo=timezone.utc)
+                                        if p >= now:
+                                            ok = True
+                                    except Exception:
+                                        pass
+                                if not ok:
+                                    raise HTTPException(status_code=402, detail="Pagamento da academia necessario")
+                        except HTTPException:
+                            raise
+                        except Exception:
+                            raise HTTPException(status_code=402, detail="Pagamento da academia necessario")
                     return user
 
     auth_header = request.headers.get("Authorization", "")
@@ -355,20 +452,117 @@ async def register(data: UserRegister, response: Response):
         raise HTTPException(status_code=400, detail="Email ja cadastrado")
     user_id = f"user_{uuid.uuid4().hex[:12]}"
     hashed = pwd_context.hash(data.password)
+    # create user but require email verification before allowing login
     await db.users.insert_one({
         "user_id": user_id, "email": email, "name": data.name,
         "password": hashed, "role": "admin", "picture": "",
-        "academy_id": "", "created_at": datetime.now(timezone.utc),
+        "academy_id": "", "created_at": datetime.now(timezone.utc).isoformat(),
         "failed_login_attempts": 0, "lock_until": None,
+        "email_verified": False,
     })
-    token = create_token(user_id, email)
+
+    # create verification token
+    vtoken = binascii.hexlify(os.urandom(16)).decode()
+    expires = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    await db.email_verifications.insert_one({
+        "token": vtoken, "user_id": user_id, "email": email,
+        "expires_at": expires, "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    verify_link = f"{BACKEND_PUBLIC_URL.rstrip('/')}/api/auth/verify-email?token={vtoken}"
+    body = f"Olá {data.name},\n\nClique no link abaixo para verificar seu e-mail e ativar sua conta:\n\n{verify_link}\n\nO link expira em 24 horas.\n\nObrigado,\nGymBro"
+    send_email(email, "Verificação de e-mail - GymBro", body)
+
+    return {"message": "Registro realizado. Verifique seu e-mail para ativar a conta."}
+
+
+@app.post("/api/auth/login/start")
+async def login_start(data: UserLogin):
+    """Step 1 of login: validate email+password, check payment and send OTP to email."""
+    email = normalize_email(data.email)
+    user = await db.users.find_one({"email": email}, {"_id": 0})
+    if not user or not pwd_context.verify(data.password, user.get("password", "")):
+        raise HTTPException(status_code=401, detail="Credenciais invalidas")
+    if not user.get("email_verified"):
+        raise HTTPException(status_code=403, detail="Email nao verificado. Verifique seu e-mail antes de entrar.")
+
+    # check academy billing
+    if user.get("role") != "super_admin" and user.get("academy_id"):
+        acad = await db.academies.find_one({"academy_id": user.get("academy_id")}, {"_id": 0})
+        paid_until = acad.get("paid_until") if acad else None
+        trial_until = acad.get("trial_until") if acad else None
+        now = datetime.now(timezone.utc)
+        ok = False
+        if trial_until:
+            try:
+                t = datetime.fromisoformat(trial_until)
+                if t.tzinfo is None:
+                    t = t.replace(tzinfo=timezone.utc)
+                if t >= now:
+                    ok = True
+            except Exception:
+                pass
+        if paid_until and not ok:
+            try:
+                p = datetime.fromisoformat(paid_until)
+                if p.tzinfo is None:
+                    p = p.replace(tzinfo=timezone.utc)
+                if p >= now:
+                    ok = True
+            except Exception:
+                pass
+        if not ok:
+            raise HTTPException(status_code=402, detail="Pagamento da academia necessario")
+
+    # create challenge
+    challenge_id = f"chal_{uuid.uuid4().hex[:12]}"
+    code = f"{(binascii.hexlify(os.urandom(3)).hex())[:6]}"
+    expires = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    await db.login_challenges.insert_one({
+        "challenge_id": challenge_id, "user_id": user.get("user_id"), "email": email,
+        "code": code, "expires_at": expires, "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    body = f"Seu codigo de acesso: {code}\n\nEste codigo expira em 10 minutos."
+    send_email(email, "Codigo de acesso - GymBro", body)
+    return {"challenge_id": challenge_id, "message": "Codigo enviado por e-mail"}
+
+
+@app.post("/api/auth/login/verify")
+async def login_verify(payload: Request, response: Response):
+    body = await payload.json()
+    challenge_id = body.get("challenge_id")
+    code = body.get("code")
+    if not challenge_id or not code:
+        raise HTTPException(status_code=400, detail="challenge_id e code obrigatorios")
+    doc = await db.login_challenges.find_one({"challenge_id": challenge_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Challenge invalido")
+    try:
+        exp = datetime.fromisoformat(doc.get("expires_at"))
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp < datetime.now(timezone.utc):
+            await db.login_challenges.delete_one({"challenge_id": challenge_id})
+            raise HTTPException(status_code=410, detail="Challenge expirado")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+    if doc.get("code") != str(code):
+        raise HTTPException(status_code=401, detail="Codigo invalido")
+    user = await db.users.find_one({"user_id": doc.get("user_id")}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario nao encontrado")
+    # issue token + session
+    token = create_token(user["user_id"], user["email"])
     await db.user_sessions.insert_one({
-        "user_id": user_id, "session_token": token,
+        "user_id": user["user_id"], "session_token": token,
         "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
         "created_at": datetime.now(timezone.utc),
     })
+    await db.login_challenges.delete_one({"challenge_id": challenge_id})
     response.set_cookie(key="session_token", value=token, httponly=True, secure=True, samesite="none", max_age=7*24*60*60)
-    return {"token": token, "user": {"user_id": user_id, "email": email, "name": data.name, "role": "admin", "academy_id": ""}}
+    return {"token": token, "user": {"user_id": user["user_id"], "email": user["email"], "name": user["name"], "role": user.get("role", "admin"), "academy_id": user.get("academy_id", "")}}
 
 @app.post("/api/auth/login")
 async def login(data: UserLogin, response: Response):
@@ -411,6 +605,29 @@ async def login(data: UserLogin, response: Response):
         {"user_id": user["user_id"]},
         {"$set": {"failed_login_attempts": 0, "lock_until": None, "last_login_at": datetime.now(timezone.utc)}}
     )
+
+    # require email verification
+    if not user.get("email_verified"):
+        raise HTTPException(status_code=403, detail="Email nao verificado. Verifique seu e-mail antes de entrar.")
+
+    # require academy payment credit for non-super admins
+    if user.get("role") != "super_admin" and user.get("academy_id"):
+        acad = await db.academies.find_one({"academy_id": user.get("academy_id")}, {"_id": 0})
+        paid_until = None
+        if acad:
+            paid_until = acad.get("paid_until")
+        if not paid_until:
+            raise HTTPException(status_code=403, detail="Pagamento da academia nao liberado")
+        try:
+            paid_dt = datetime.fromisoformat(paid_until)
+            if paid_dt.tzinfo is None:
+                paid_dt = paid_dt.replace(tzinfo=timezone.utc)
+            if paid_dt < datetime.now(timezone.utc):
+                raise HTTPException(status_code=403, detail="Pagamento da academia expirado")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=403, detail="Pagamento da academia nao liberado")
     token = create_token(user["user_id"], user["email"])
     await db.user_sessions.insert_one({
         "user_id": user["user_id"], "session_token": token,
@@ -423,6 +640,30 @@ async def login(data: UserLogin, response: Response):
         "role": user.get("role", "admin"), "academy_id": user.get("academy_id", ""),
         "picture": user.get("picture", ""),
     }}
+
+
+@app.get("/api/auth/verify-email")
+async def verify_email(token: str = ""):
+    if not token:
+        raise HTTPException(status_code=400, detail="Token obrigatorio")
+    doc = await db.email_verifications.find_one({"token": token}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Token invalido ou expirado")
+    try:
+        exp = datetime.fromisoformat(doc.get("expires_at"))
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp < datetime.now(timezone.utc):
+            await db.email_verifications.delete_one({"token": token})
+            raise HTTPException(status_code=410, detail="Token expirado")
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+    await db.users.update_one({"user_id": doc.get("user_id")}, {"$set": {"email_verified": True}})
+    await db.email_verifications.delete_one({"token": token})
+    return {"message": "Email verificado com sucesso"}
 
 @app.post("/api/payments/academy/subscription/checkout")
 async def create_academy_subscription_checkout(data: AcademySubscriptionCheckout, user=Depends(get_current_user)):
@@ -845,6 +1086,7 @@ async def mercadopago_webhook(request: Request):
     if not payment_id:
         return {"status": "ignored", "reason": "Sem ID de pagamento"}
 
+
     if not MP_ACCESS_TOKEN or MP_ACCESS_TOKEN == "placeholder":
         await db.webhook_logs.insert_one({
             "log_id": f"wh_{uuid.uuid4().hex[:12]}", "action": action,
@@ -919,6 +1161,17 @@ async def mercadopago_webhook(request: Request):
                     }},
                     upsert=True,
                 )
+                # update academy paid_until and record payment
+                try:
+                    await db.academies.update_one({"academy_id": academy_id}, {"$set": {"paid_until": paid_until.isoformat()}})
+                    await db.payments.insert_one({
+                        "payment_id": str(payment_id), "academy_id": academy_id,
+                        "external_reference": external_ref, "amount": payment_data.get("transaction_amount", 0),
+                        "status": payment_status, "payer_email": payer_email,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    })
+                except Exception:
+                    pass
                 return {"status": "processed", "message": f"Mensalidade da academia paga ate {paid_until.strftime('%d/%m/%Y')}"}
 
     student = None
@@ -963,14 +1216,39 @@ async def list_academies(user=Depends(get_current_user)):
     return await db.academies.find({}, {"_id": 0}).sort("nome", 1).to_list(100)
 
 @app.post("/api/academies")
+@app.post("/api/academies")
 async def create_academy(data: AcademyCreate, user=Depends(get_current_user)):
+<<<<<<< HEAD
     count = await db.academies.count_documents({})
     if count >= 1:
         raise HTTPException(status_code=400, detail="Apenas uma filial/academia permitida nesta versao")
+=======
+    # enforce single academy per owner (não é multi-tenancy, é single-tenant por dono)
+    if user.get("role") != "super_admin":
+        # Check if user already linked to an academy
+        if user.get("academy_id"):
+            existing = await db.academies.find_one({"academy_id": user.get("academy_id")}, {"_id": 0})
+            if existing:
+                raise HTTPException(status_code=400, detail="Voce ja possui uma filial. Cada usuario pode ter apenas uma academia registrada no sistema.")
+        
+        # Double-check: also check academies.owner_user_id
+        existing = await db.academies.find_one({"owner_user_id": user.get("user_id")}, {"_id": 0})
+        if existing:
+            raise HTTPException(status_code=400, detail="Voce ja possui uma filial. Cada usuario pode ter apenas uma academia registrada no sistema.")
+
+>>>>>>> d3764ba4 (versão 2.0)
     academy_id = f"acad_{uuid.uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc)
+    trial_until = (now + timedelta(days=30)).isoformat()
     doc = {"academy_id": academy_id, **data.model_dump(),
-           "created_at": datetime.now(timezone.utc).isoformat()}
+           "created_at": now.isoformat(), "owner_user_id": user.get("user_id"),
+           "paid_until": None, "trial_until": trial_until, "billing_status": "trial"}
     await db.academies.insert_one(doc)
+    # link user to academy (owner)
+    try:
+        await db.users.update_one({"user_id": user.get("user_id")}, {"$set": {"academy_id": academy_id}})
+    except Exception:
+        pass
     return await db.academies.find_one({"academy_id": academy_id}, {"_id": 0})
 
 @app.put("/api/academies/{academy_id}")
@@ -990,6 +1268,199 @@ async def delete_academy(academy_id: str, user=Depends(get_current_user)):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Academia nao encontrada")
     return {"message": "Academia removida"}
+
+
+@app.post("/api/students/{student_id}/passkey/register")
+async def register_student_passkey(student_id: str, request: Request, user=Depends(get_current_user)):
+    """Store a student's WebAuthn/public-key credential (publicKey) as a passkey.
+    Body: { credential: { id, publicKey, transports?, type } }
+    """
+    body = await request.json()
+    cred = body.get("credential")
+    if not cred:
+        raise HTTPException(status_code=400, detail="credential obrigatorio")
+    stud = await db.students.find_one({"student_id": student_id}, {"_id": 0})
+    if not stud:
+        raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+    creds = stud.get("webauthn_credentials", []) or []
+    creds.append({"id": cred.get("id"), "public_key": cred.get("publicKey"), "created_at": datetime.now(timezone.utc).isoformat()})
+    await db.students.update_one({"student_id": student_id}, {"$set": {"webauthn_credentials": creds}})
+    return {"message": "Passkey registrada"}
+
+
+@app.post("/api/students/{student_id}/passkey/register/options")
+async def passkey_register_options(student_id: str, user=Depends(get_current_user)):
+    """Begin WebAuthn registration: returns PublicKeyCredentialCreationOptions and stores state."""
+    stud = await db.students.find_one({"student_id": student_id}, {"_id": 0})
+    if not stud:
+        raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+    user_obj = {
+        "id": stud["student_id"].encode('utf-8'),
+        "name": stud.get("email") or stud.get("nome"),
+        "displayName": stud.get("nome") or stud.get("email"),
+    }
+    credentials = []
+    # existing credentials to prevent duplicates
+    existing = stud.get("webauthn_credentials") or []
+    for c in existing:
+        try:
+            credentials.append({"type": "public-key", "id": c.get("id")})
+        except Exception:
+            pass
+    reg_data, state = fido_server.register_begin(user_obj, credentials=credentials)
+    # store state as base64 cbor
+    try:
+        state_bytes = cbor.dumps(state)
+        state_b64 = binascii.b2a_base64(state_bytes).decode().strip()
+        state_id = f"wr_{uuid.uuid4().hex[:12]}"
+        await db.webauthn_registrations.insert_one({"state_id": state_id, "student_id": student_id, "state": state_b64, "created_at": datetime.now(timezone.utc).isoformat()})
+    except Exception:
+        raise HTTPException(status_code=500, detail="Falha ao criar desafio WebAuthn")
+    # registration options (reg_data) is JSON-serializable but bytes need encoding
+    # fido2 returns bytes for challenge and user.id; convert to base64 URL-safe
+    def encode_buf(b):
+        return binascii.b2a_base64(b).decode().strip()
+    if isinstance(reg_data.get('challenge'), (bytes, bytearray)):
+        reg_data['challenge'] = encode_buf(reg_data['challenge'])
+    if reg_data.get('user') and isinstance(reg_data['user'].get('id'), (bytes, bytearray)):
+        reg_data['user']['id'] = encode_buf(reg_data['user']['id'])
+    return {"state_id": state_id, "publicKey": reg_data}
+
+
+@app.post("/api/students/{student_id}/passkey/register/verify")
+async def passkey_register_verify(student_id: str, request: Request, user=Depends(get_current_user)):
+    body = await request.json()
+    state_id = body.get('state_id')
+    rawId_b64 = body.get('rawId')
+    clientDataJSON_b64 = body.get('clientDataJSON')
+    attestation_b64 = body.get('publicKey') or body.get('attestationObject')
+    if not state_id or not rawId_b64 or not clientDataJSON_b64 or not attestation_b64:
+        raise HTTPException(status_code=400, detail='Parametros obrigatorios: state_id, rawId, clientDataJSON, publicKey')
+    reg = await db.webauthn_registrations.find_one({'state_id': state_id}, {'_id': 0})
+    if not reg:
+        raise HTTPException(status_code=404, detail='State nao encontrado')
+    try:
+        state_bytes = binascii.a2b_base64(reg['state'])
+        state = cbor.loads(state_bytes)
+    except Exception:
+        raise HTTPException(status_code=500, detail='State invalido')
+    try:
+        rawId = binascii.a2b_base64(rawId_b64)
+        clientDataJSON = binascii.a2b_base64(clientDataJSON_b64)
+        attestationObject = binascii.a2b_base64(attestation_b64)
+        client_data = CollectedClientData(clientDataJSON)
+        att_obj = AttestationObject(attestationObject)
+        auth_data = fido_server.register_complete(state, client_data, att_obj)
+        cred_data = auth_data.credential_data
+        cred_id = binascii.b2a_base64(cred_data.credential_id).decode().strip()
+        # store public key as COSE/DER blob if possible
+        try:
+            pubkey = cred_data.public_key
+            # encode COSE key to CBOR bytes
+            pub_bytes = pubkey.encode()
+            pub_b64 = binascii.b2a_base64(pub_bytes).decode().strip()
+        except Exception:
+            pub_b64 = ''
+        entry = {"id": cred_id, "public_key": pub_b64, "created_at": datetime.now(timezone.utc).isoformat(), "sign_count": getattr(cred_data, 'sign_count', 0)}
+        await db.students.update_one({'student_id': student_id}, {'$push': {'webauthn_credentials': entry}})
+        # remove state
+        await db.webauthn_registrations.delete_one({'state_id': state_id})
+        return {"message": "Passkey verificada e registrada", "credential_id": cred_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Falha ao validar attestation: {str(e)}")
+
+
+@app.get("/api/students/{student_id}/passkeys")
+async def list_student_passkeys(student_id: str, user=Depends(get_current_user)):
+    stud = await db.students.find_one({"student_id": student_id}, {"_id": 0, "webauthn_credentials": 1})
+    if not stud:
+        raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+    return {"webauthn_credentials": stud.get("webauthn_credentials", [])}
+
+
+@app.post("/api/students/{student_id}/passkey/auth/options")
+async def passkey_auth_options(student_id: str, user=Depends(get_current_user)):
+    """Begin WebAuthn authentication for a student: returns options and stores state."""
+    stud = await db.students.find_one({"student_id": student_id}, {"_id": 0, "webauthn_credentials": 1})
+    if not stud:
+        raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+    existing = stud.get("webauthn_credentials") or []
+    allowed = []
+    for c in existing:
+        try:
+            # decode stored base64 credential id to raw bytes
+            cid = binascii.a2b_base64(c.get("id")) if c.get("id") else None
+            if cid:
+                allowed.append({"type": "public-key", "id": cid})
+        except Exception:
+            continue
+
+    auth_data, state = fido_server.authenticate_begin(allowed)
+    try:
+        state_bytes = cbor.dumps(state)
+        state_b64 = binascii.b2a_base64(state_bytes).decode().strip()
+        state_id = f"wa_{uuid.uuid4().hex[:12]}"
+        await db.webauthn_registrations.insert_one({"state_id": state_id, "student_id": student_id, "state": state_b64, "created_at": datetime.now(timezone.utc).isoformat()})
+    except Exception:
+        raise HTTPException(status_code=500, detail="Falha ao criar desafio WebAuthn")
+
+    # encode challenge and any byte fields
+    def encode_buf(b):
+        return binascii.b2a_base64(b).decode().strip()
+    if isinstance(auth_data.get('challenge'), (bytes, bytearray)):
+        auth_data['challenge'] = encode_buf(auth_data['challenge'])
+    if auth_data.get('allowCredentials'):
+        for ac in auth_data['allowCredentials']:
+            if isinstance(ac.get('id'), (bytes, bytearray)):
+                ac['id'] = encode_buf(ac['id'])
+
+    return {"state_id": state_id, "publicKey": auth_data}
+
+
+@app.post("/api/students/{student_id}/passkey/auth/verify")
+async def passkey_auth_verify(student_id: str, request: Request):
+    """Verify an assertion from the client. Body must contain: state_id, rawId, clientDataJSON, authenticatorData, signature"""
+    body = await request.json()
+    state_id = body.get('state_id')
+    rawId_b64 = body.get('rawId')
+    clientDataJSON_b64 = body.get('clientDataJSON')
+    authenticatorData_b64 = body.get('authenticatorData')
+    signature_b64 = body.get('signature')
+    if not state_id or not rawId_b64 or not clientDataJSON_b64 or not authenticatorData_b64 or not signature_b64:
+        raise HTTPException(status_code=400, detail='Parametros obrigatorios: state_id, rawId, clientDataJSON, authenticatorData, signature')
+
+    reg = await db.webauthn_registrations.find_one({'state_id': state_id}, {'_id': 0})
+    if not reg:
+        raise HTTPException(status_code=404, detail='State nao encontrado')
+    try:
+        state_bytes = binascii.a2b_base64(reg['state'])
+        state = cbor.loads(state_bytes)
+    except Exception:
+        raise HTTPException(status_code=500, detail='State invalido')
+
+    try:
+        rawId = binascii.a2b_base64(rawId_b64)
+        clientDataJSON = binascii.a2b_base64(clientDataJSON_b64)
+        authenticatorData = binascii.a2b_base64(authenticatorData_b64)
+        signature = binascii.a2b_base64(signature_b64)
+
+        client_data = CollectedClientData(clientDataJSON)
+        auth_data = AuthenticatorData(authenticatorData)
+
+        res = fido_server.authenticate_complete(state, rawId, client_data, auth_data, signature)
+        # res may contain credential and sign_count
+        cred = getattr(res, 'credential', None)
+        sign_count = getattr(res, 'signature_count', None) or getattr(res, 'sign_count', None)
+
+        # increment stored sign_count for that credential
+        if cred:
+            cred_id_b64 = binascii.b2a_base64(cred.credential_id).decode().strip()
+            await db.students.update_one({'student_id': student_id, 'webauthn_credentials.id': cred_id_b64}, {'$set': {'webauthn_credentials.$.sign_count': sign_count or 0}})
+        # remove state
+        await db.webauthn_registrations.delete_one({'state_id': state_id})
+        return {'authenticated': True, 'student_id': student_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Falha ao validar assertion: {str(e)}')
 
 @app.get("/api/academies/{academy_id}/stats")
 async def academy_stats(academy_id: str, user=Depends(get_current_user)):
@@ -1414,6 +1885,129 @@ async def seed_data():
     await db.access_logs.insert_many(access_logs)
 
     return {"message": "Dados de teste criados com sucesso"}
+
+# ============== BILLING STATUS ==============
+
+@app.get("/api/academies/{academy_id}/billing")
+async def get_academy_billing(academy_id: str, user=Depends(get_current_user)):
+    """Get billing status and payment history for an academy."""
+    academy = await db.academies.find_one({"academy_id": academy_id}, {"_id": 0})
+    if not academy:
+        raise HTTPException(status_code=404, detail="Academia nao encontrada")
+    
+    # Get latest billing records (up to last 12 months)
+    billing_records = await db.academy_billing.find(
+        {"academy_id": academy_id},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(12).to_list(12)
+    
+    return {
+        "academy_id": academy_id,
+        "academy_name": academy.get("nome", ""),
+        "status": academy.get("billing_status", "trial"),
+        "trial_until": academy.get("trial_until"),
+        "paid_until": academy.get("paid_until"),
+        "billing_history": billing_records,
+    }
+
+# ============== STUDENT PROGRESS (EVOLUÇÃO) ==============
+
+@app.post("/api/students/{student_id}/progress")
+async def record_student_progress(student_id: str, request: Request, user=Depends(get_current_user)):
+    """Record student progress (weight, height, measurements, notes, photos)."""
+    body = await request.json()
+    student = await db.students.find_one({"student_id": student_id}, {"_id": 0})
+    if not student:
+        raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+    
+    progress_id = f"prog_{uuid.uuid4().hex[:12]}"
+    progress_doc = {
+        "progress_id": progress_id,
+        "student_id": student_id,
+        "academy_id": student.get("academy_id", ""),
+        "date": body.get("date") or datetime.now(timezone.utc).isoformat(),
+        "weight_kg": body.get("weight_kg"),
+        "height_cm": body.get("height_cm"),
+        "chest_cm": body.get("chest_cm"),
+        "waist_cm": body.get("waist_cm"),
+        "hip_cm": body.get("hip_cm"),
+        "notes": body.get("notes", ""),
+        "photos": body.get("photos", []),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.student_progress.insert_one(progress_doc)
+    
+    # Update student's latest measurements
+    await db.students.update_one(
+        {"student_id": student_id},
+        {"$set": {
+            "peso": body.get("weight_kg") or student.get("peso"),
+            "altura": body.get("height_cm") or student.get("altura"),
+        }}
+    )
+    
+    return await db.student_progress.find_one({"progress_id": progress_id}, {"_id": 0})
+
+@app.get("/api/students/{student_id}/progress")
+async def list_student_progress(student_id: str, user=Depends(get_current_user), limit: int = 50):
+    """Get student progress history (evolução)."""
+    student = await db.students.find_one({"student_id": student_id}, {"_id": 0})
+    if not student:
+        raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+    
+    progress_records = await db.student_progress.find(
+        {"student_id": student_id},
+        {"_id": 0}
+    ).sort("date", -1).limit(limit).to_list(limit)
+    
+    return {
+        "student_id": student_id,
+        "student_name": student.get("nome"),
+        "progress_records": progress_records,
+    }
+
+# ============== ATTENDANCE (PRESENÇA) ==============
+
+@app.post("/api/students/{student_id}/attendance")
+async def record_attendance(student_id: str, request: Request, user=Depends(get_current_user)):
+    """Record student attendance (presença)."""
+    body = await request.json()
+    student = await db.students.find_one({"student_id": student_id}, {"_id": 0})
+    if not student:
+        raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+    
+    attendance_id = f"att_{uuid.uuid4().hex[:12]}"
+    attendance_doc = {
+        "attendance_id": attendance_id,
+        "student_id": student_id,
+        "academy_id": student.get("academy_id", ""),
+        "date_time": body.get("date_time") or datetime.now(timezone.utc).isoformat(),
+        "method": body.get("method", "manual"),  # manual, qr, webauthn, rfid
+        "gate": body.get("gate", "default"),
+        "notes": body.get("notes", ""),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.attendance.insert_one(attendance_doc)
+    return await db.attendance.find_one({"attendance_id": attendance_id}, {"_id": 0})
+
+@app.get("/api/students/{student_id}/attendance")
+async def list_student_attendance(student_id: str, user=Depends(get_current_user), limit: int = 100):
+    """Get student attendance history (presença)."""
+    student = await db.students.find_one({"student_id": student_id}, {"_id": 0})
+    if not student:
+        raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+    
+    attendance_records = await db.attendance.find(
+        {"student_id": student_id},
+        {"_id": 0}
+    ).sort("date_time", -1).limit(limit).to_list(limit)
+    
+    return {
+        "student_id": student_id,
+        "student_name": student.get("nome"),
+        "attendance_records": attendance_records,
+        "total_presencas_este_mes": len([a for a in attendance_records if a.get("date_time", "").startswith(datetime.now(timezone.utc).strftime("%Y-%m"))]),
+    }
 
 @app.get("/api/health")
 async def health():
