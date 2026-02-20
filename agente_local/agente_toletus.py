@@ -36,7 +36,7 @@ except ImportError:
 
 # ============== CONFIGURACAO ==============
 
-GYMBRO_API_URL = os.environ.get("GYMBRO_API_URL", "https://dc844492-030e-4afd-8c2e-9ccf8817b6b9.preview.emergentagent.com")
+GYMBRO_API_URL = os.environ.get("GYMBRO_API_URL", "https://gym-management-23.preview.emergentagent.com")
 CATRACA_IP = os.environ.get("CATRACA_IP", "192.168.1.9")
 CATRACA_PORT = int(os.environ.get("CATRACA_PORT", "7878"))
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "7878"))
