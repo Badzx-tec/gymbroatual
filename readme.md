@@ -1,7 +1,3 @@
-# GYM One - Installer - V1.2.0
-
-<p align="center"><img src="https://gymoneglobal.com/assets/img/text-color-logo.png" alt="project-image"></p>
-
 The GYM One installer automatically configures and installs the necessary settings for Ubuntu or any web server where the installer code is available. The following steps will guide you through the installation process.
 
 ## Requirements
