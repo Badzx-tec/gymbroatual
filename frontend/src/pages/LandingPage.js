@@ -119,10 +119,10 @@ export default function LandingPage() {
               </motion.div>
             )) : (
               [
-                { nome: 'Mensal', valor: 89.90, dias: 30 },
-                { nome: 'Trimestral', valor: 239.90, dias: 90 },
-                { nome: 'Semestral', valor: 429.90, dias: 180 },
-                { nome: 'Anual', valor: 799.90, dias: 365 },
+                { nome: 'Mensal', valor: 139.90, dias: 30 },
+                { nome: 'Trimestral', valor: 369.90, dias: 90 },
+                { nome: 'Semestral', valor: 669.90, dias: 180 },
+                { nome: 'Anual', valor: 1249.90, dias: 365 },
               ].map((plan, i) => (
                 <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
                   className={`bg-zinc-900 border rounded-md p-6 md:p-8 ${i === 1 ? 'border-[#ccff00]' : 'border-zinc-800'}`}>
