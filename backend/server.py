@@ -84,6 +84,13 @@ class UserLogin(BaseModel):
     email: str
     password: str
 
+class EmailVerificationRequest(BaseModel):
+    email: str
+
+class EmailVerificationConfirm(BaseModel):
+    email: str
+    code: str
+
 class StudentCreate(BaseModel):
     nome: str
     email: str
@@ -95,6 +102,11 @@ class StudentCreate(BaseModel):
     status: str = "ativo"
     data_vencimento: Optional[str] = ""
     academy_id: Optional[str] = ""
+    peso_kg: Optional[float] = None
+    idade: Optional[int] = None
+    altura_cm: Optional[float] = None
+    treino: Optional[str] = ""
+    dias_frequencia: Optional[int] = 0
 
 class StudentUpdate(BaseModel):
     nome: Optional[str] = None
@@ -107,6 +119,11 @@ class StudentUpdate(BaseModel):
     status: Optional[str] = None
     data_vencimento: Optional[str] = None
     academy_id: Optional[str] = None
+    peso_kg: Optional[float] = None
+    idade: Optional[int] = None
+    altura_cm: Optional[float] = None
+    treino: Optional[str] = None
+    dias_frequencia: Optional[int] = None
 
 class PlanCreate(BaseModel):
     nome: str
@@ -165,6 +182,9 @@ class CatracaLanExecute(BaseModel):
     raw_hex: Optional[str] = ""
     timeout_seconds: Optional[float] = 3.0
 
+class BiometricRegister(BaseModel):
+    biometria_id: str
+
 # ============== AUTH HELPERS ==============
 
 def create_token(user_id: str, email: str):
@@ -177,6 +197,25 @@ def create_token(user_id: str, email: str):
 
 def normalize_email(email: str) -> str:
     return (email or "").strip().lower()
+
+async def academy_payment_is_active(academy_id: str) -> bool:
+    if not academy_id:
+        return True
+    now = datetime.now(timezone.utc)
+    docs = await db.academy_billing.find({"academy_id": academy_id, "payment_status": "approved"}, {"_id": 0}).sort("updated_at", -1).to_list(20)
+    for doc in docs:
+        paid_until = doc.get("paid_until")
+        if not paid_until:
+            continue
+        try:
+            dt = datetime.fromisoformat(paid_until)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            if dt >= now:
+                return True
+        except Exception:
+            continue
+    return False
 
 def ilnet2_payload_for_action(action: str, message: str = "", raw_hex: str = "") -> bytes:
     if raw_hex:
@@ -265,7 +304,43 @@ async def get_current_user(request: Request):
 
     raise HTTPException(status_code=401, detail="Nao autenticado")
 
+
 # ============== AUTH ENDPOINTS ==============
+
+@app.post("/api/auth/email/request-code")
+async def request_email_verification(data: EmailVerificationRequest):
+    email = normalize_email(data.email)
+    code = f"{uuid.uuid4().int % 1000000:06d}"
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+    await db.email_verifications.update_one(
+        {"email": email},
+        {"$set": {"email": email, "code": code, "verified": False, "expires_at": expires_at.isoformat(), "created_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    # Em produção: enviar por SMTP/provider. Aqui retornamos código para facilitar testes.
+    return {"message": "Codigo enviado para validacao", "email": email, "dev_code": code}
+
+@app.post("/api/auth/email/confirm-code")
+async def confirm_email_verification(data: EmailVerificationConfirm):
+    email = normalize_email(data.email)
+    rec = await db.email_verifications.find_one({"email": email}, {"_id": 0})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Codigo nao encontrado")
+    if rec.get("code") != data.code:
+        raise HTTPException(status_code=400, detail="Codigo invalido")
+    try:
+        exp = datetime.fromisoformat(rec.get("expires_at"))
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp < datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="Codigo expirado")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="Codigo invalido")
+
+    await db.email_verifications.update_one({"email": email}, {"$set": {"verified": True, "verified_at": datetime.now(timezone.utc).isoformat()}})
+    return {"message": "Email validado", "email": email}
 
 @app.post("/api/auth/register")
 async def register(data: UserRegister, response: Response):
@@ -273,6 +348,9 @@ async def register(data: UserRegister, response: Response):
     if len((data.password or "")) < 8:
         raise HTTPException(status_code=400, detail="Senha deve ter no minimo 8 caracteres")
     existing = await db.users.find_one({"email": email}, {"_id": 0})
+    verify = await db.email_verifications.find_one({"email": email}, {"_id": 0})
+    if not verify or not verify.get("verified"):
+        raise HTTPException(status_code=400, detail="Email nao validado")
     if existing:
         raise HTTPException(status_code=400, detail="Email ja cadastrado")
     user_id = f"user_{uuid.uuid4().hex[:12]}"
@@ -323,6 +401,11 @@ async def login(data: UserLogin, response: Response):
                 {"$set": {"failed_login_attempts": failed_attempts, "lock_until": lock_until}}
             )
         raise HTTPException(status_code=401, detail="Credenciais invalidas")
+
+    if user.get("academy_id") and user.get("role") != "super_admin":
+        has_credit = await academy_payment_is_active(user.get("academy_id", ""))
+        if not has_credit:
+            raise HTTPException(status_code=402, detail="Pagamento da academia pendente. Renove o credito mensal para liberar login")
 
     await db.users.update_one(
         {"user_id": user["user_id"]},
@@ -422,6 +505,9 @@ async def google_session(request: Request, response: Response):
     session_token = data.get("session_token", f"st_{uuid.uuid4().hex}")
 
     existing = await db.users.find_one({"email": email}, {"_id": 0})
+    verify = await db.email_verifications.find_one({"email": email}, {"_id": 0})
+    if not verify or not verify.get("verified"):
+        raise HTTPException(status_code=400, detail="Email nao validado")
     if existing:
         user_id = existing["user_id"]
         await db.users.update_one({"user_id": user_id}, {"$set": {"name": name, "picture": picture}})
@@ -438,15 +524,25 @@ async def google_session(request: Request, response: Response):
         "created_at": datetime.now(timezone.utc),
     })
 
+    current_user = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if current_user and current_user.get("academy_id") and current_user.get("role") != "super_admin":
+        has_credit = await academy_payment_is_active(current_user.get("academy_id", ""))
+        if not has_credit:
+            raise HTTPException(status_code=402, detail="Pagamento da academia pendente. Renove o credito mensal para liberar login")
+
     response.set_cookie(key="session_token", value=session_token, httponly=True,
                         secure=True, samesite="none", path="/", max_age=7*24*3600)
     return {
-        "user": {"user_id": user_id, "email": email, "name": name, "picture": picture, "role": "admin", "academy_id": ""},
+        "user": {"user_id": user_id, "email": email, "name": name, "picture": picture, "role": current_user.get("role", "admin") if current_user else "admin", "academy_id": current_user.get("academy_id", "") if current_user else ""},
         "session_token": session_token,
     }
 
 @app.get("/api/auth/me")
 async def auth_me(user=Depends(get_current_user)):
+    if user.get("academy_id") and user.get("role") != "super_admin":
+        has_credit = await academy_payment_is_active(user.get("academy_id", ""))
+        if not has_credit:
+            raise HTTPException(status_code=402, detail="Pagamento da academia pendente")
     return {
         "user_id": user["user_id"], "email": user["email"], "name": user["name"],
         "picture": user.get("picture", ""), "role": user.get("role", "admin"),
@@ -514,6 +610,17 @@ async def update_student(student_id: str, data: StudentUpdate, user=Depends(get_
     if not student:
         raise HTTPException(status_code=404, detail="Aluno nao encontrado")
     return student
+
+@app.post("/api/students/{student_id}/biometria")
+async def register_student_biometria(student_id: str, data: BiometricRegister, user=Depends(get_current_user)):
+    student = await db.students.find_one({"student_id": student_id}, {"_id": 0})
+    if not student:
+        raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+    existing = await db.students.find_one({"biometria_id": data.biometria_id, "student_id": {"$ne": student_id}}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="Biometria ja cadastrada para outro aluno")
+    await db.students.update_one({"student_id": student_id}, {"$set": {"biometria_id": data.biometria_id, "updated_at": datetime.now(timezone.utc).isoformat()}})
+    return await db.students.find_one({"student_id": student_id}, {"_id": 0})
 
 @app.delete("/api/students/{student_id}")
 async def delete_student(student_id: str, user=Depends(get_current_user)):
@@ -857,6 +964,9 @@ async def list_academies(user=Depends(get_current_user)):
 
 @app.post("/api/academies")
 async def create_academy(data: AcademyCreate, user=Depends(get_current_user)):
+    count = await db.academies.count_documents({})
+    if count >= 1:
+        raise HTTPException(status_code=400, detail="Apenas uma filial/academia permitida nesta versao")
     academy_id = f"acad_{uuid.uuid4().hex[:12]}"
     doc = {"academy_id": academy_id, **data.model_dump(),
            "created_at": datetime.now(timezone.utc).isoformat()}
@@ -1254,15 +1364,6 @@ async def seed_data():
         "catraca_port": 7878, "ativo": True,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
-    await db.academies.insert_one({
-        "academy_id": "acad_filial01", "nome": "GymBro Filial Moema",
-        "endereco": "Rua dos Tres Irmaos, 500 - Moema, SP",
-        "telefone": "(11) 98888-8888", "cnpj": "12.345.678/0002-00",
-        "email": "moema@gymbro.com.br", "catraca_ip": "192.168.1.10",
-        "catraca_port": 7878, "ativo": True,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    })
-
     plans = [
         {"plan_id": "plan_mensal", "nome": "Mensal", "valor": 139.90, "duracao_dias": 30, "descricao": "Acesso completo por 30 dias", "ativo": True, "created_at": datetime.now(timezone.utc).isoformat()},
         {"plan_id": "plan_trimestral", "nome": "Trimestral", "valor": 369.90, "duracao_dias": 90, "descricao": "Acesso completo por 90 dias - Economize 15%", "ativo": True, "created_at": datetime.now(timezone.utc).isoformat()},
@@ -1281,9 +1382,9 @@ async def seed_data():
         {"student_id": "std_003", "nome": "Bruno Oliveira", "email": "bruno@email.com", "cpf": "345.678.901-22", "telefone": "(11) 99999-0003", "plano_id": "plan_semestral", "tag_rfid": "0000000003", "biometria_id": "", "status": "ativo", "data_vencimento": future, "academy_id": "acad_matriz", "created_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat()},
         {"student_id": "std_004", "nome": "Fernanda Lima", "email": "fernanda@email.com", "cpf": "456.789.012-33", "telefone": "(11) 99999-0004", "plano_id": "plan_mensal", "tag_rfid": "0000000004", "biometria_id": "", "status": "inativo", "data_vencimento": past, "academy_id": "acad_matriz", "created_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat()},
         {"student_id": "std_005", "nome": "Ricardo Santos", "email": "ricardo@email.com", "cpf": "567.890.123-44", "telefone": "(11) 99999-0005", "plano_id": "plan_anual", "tag_rfid": "0000000005", "biometria_id": "1", "status": "ativo", "data_vencimento": future, "academy_id": "acad_matriz", "created_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat()},
-        {"student_id": "std_006", "nome": "Juliana Costa", "email": "juliana@email.com", "cpf": "678.901.234-55", "telefone": "(11) 99999-0006", "plano_id": "plan_trimestral", "tag_rfid": "0000000006", "biometria_id": "", "status": "ativo", "data_vencimento": future_5d, "academy_id": "acad_filial01", "created_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat()},
-        {"student_id": "std_007", "nome": "Pedro Almeida", "email": "pedro@email.com", "cpf": "789.012.345-66", "telefone": "(11) 99999-0007", "plano_id": "plan_semestral", "tag_rfid": "0000000007", "biometria_id": "2", "status": "ativo", "data_vencimento": future, "academy_id": "acad_filial01", "created_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat()},
-        {"student_id": "std_008", "nome": "Mariana Rocha", "email": "mariana@email.com", "cpf": "890.123.456-77", "telefone": "(11) 99999-0008", "plano_id": "plan_anual", "tag_rfid": "0000000008", "biometria_id": "", "status": "ativo", "data_vencimento": future, "academy_id": "acad_filial01", "created_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat()},
+        {"student_id": "std_006", "nome": "Juliana Costa", "email": "juliana@email.com", "cpf": "678.901.234-55", "telefone": "(11) 99999-0006", "plano_id": "plan_trimestral", "tag_rfid": "0000000006", "biometria_id": "", "status": "ativo", "data_vencimento": future_5d, "academy_id": "acad_matriz", "created_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat()},
+        {"student_id": "std_007", "nome": "Pedro Almeida", "email": "pedro@email.com", "cpf": "789.012.345-66", "telefone": "(11) 99999-0007", "plano_id": "plan_semestral", "tag_rfid": "0000000007", "biometria_id": "2", "status": "ativo", "data_vencimento": future, "academy_id": "acad_matriz", "created_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat()},
+        {"student_id": "std_008", "nome": "Mariana Rocha", "email": "mariana@email.com", "cpf": "890.123.456-77", "telefone": "(11) 99999-0008", "plano_id": "plan_anual", "tag_rfid": "0000000008", "biometria_id": "", "status": "ativo", "data_vencimento": future, "academy_id": "acad_matriz", "created_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat()},
     ]
     await db.students.insert_many(students)
 
@@ -1307,7 +1408,7 @@ async def seed_data():
             "tipo": "rfid" if i % 3 != 2 else "biometria",
             "student_id": f"std_00{idx+1}", "student_name": names[idx],
             "autorizado": i != 3, "motivo": "Acesso liberado" if i != 3 else "Assinatura inativa",
-            "academy_id": "acad_matriz" if idx < 5 else "acad_filial01",
+            "academy_id": "acad_matriz",
             "timestamp": ts,
         })
     await db.access_logs.insert_many(access_logs)
