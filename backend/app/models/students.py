@@ -1,0 +1,75 @@
+from datetime import date, datetime
+from typing import Literal
+
+from pydantic import BaseModel, EmailStr, Field
+
+
+class StudentIn(BaseModel):
+    nome: str
+    email: EmailStr | None = None
+    telefone: str | None = None
+    sexo: str | None = None
+    data_nascimento: date | None = None
+    altura_cm: float | None = None
+    peso_atual_kg: float | None = None
+    objetivo: str | None = None
+    restricoes: str | None = None
+    matricula: str | None = None
+    status: Literal["ativo", "inativo"] = "ativo"
+
+
+class StudentOut(StudentIn):
+    student_id: str
+    owner_id: str
+    gym_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class MeasurementIn(BaseModel):
+    data: date
+    peso_kg: float | None = None
+    body_fat_percent: float | None = Field(default=None, alias="bf_percent")
+    peito_cm: float | None = None
+    cintura_cm: float | None = None
+    quadril_cm: float | None = None
+    braco_cm: float | None = None
+    coxa_cm: float | None = None
+
+
+class WorkoutExercise(BaseModel):
+    nome: str
+    series: str
+    reps: str
+    carga: str | None = None
+    descanso: str | None = None
+
+
+class WorkoutPlanIn(BaseModel):
+    codigo: str = Field(description="Treino A/B/C")
+    exercicios: list[WorkoutExercise]
+    observacoes: str | None = None
+
+
+class AttendanceIn(BaseModel):
+    date_time: datetime
+    source: Literal["catraca", "app", "manual"] = "app"
+
+
+class TolletusEnrollStartIn(BaseModel):
+    student_id: str
+    device_id: str
+
+
+class TolletusEnrollConfirmIn(BaseModel):
+    student_id: str
+    device_id: str
+    template: str
+    external_id: str | None = None
+
+
+class TolletusStatusOut(BaseModel):
+    student_id: str
+    has_biometric: bool
+    enrolled_at: datetime | None = None
+    provider: str | None = None

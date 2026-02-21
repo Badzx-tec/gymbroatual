@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 GymBro - Agente Local para Catraca Toletus LiteNet2
-=====================================================
+-----------------------------------------------------
 Este script roda na rede local da academia (no computador da recepcao)
 e faz a ponte entre a catraca Toletus e o servidor GymBro na nuvem.
 

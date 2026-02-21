@@ -4,8 +4,6 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Dumbbell, Shield, Zap, Users, ChevronRight, Check, Mail, Phone, MapPin } from 'lucide-react';
 
-const API = process.env.REACT_APP_BACKEND_URL || '';
-
 export default function LandingPage() {
   const [plans, setPlans] = useState([]);
 
