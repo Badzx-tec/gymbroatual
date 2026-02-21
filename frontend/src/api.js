@@ -1,22 +1,47 @@
+import { apiUrl, API_BASE } from './config';
+
+async function parseError(res) {
+  const fallback = { detail: 'Erro na requisicao' };
+  const body = await res.json().catch(() => fallback);
+  const headerCode = res.headers.get('X-Error-Code');
+  const checkoutUrl = res.headers.get('X-Checkout-Url');
+  return {
+    status: res.status,
+    code: body.code || headerCode || null,
+    detail: body.detail || fallback.detail,
+    checkout_url: body.checkout_url || checkoutUrl || null,
+  };
+}
+
 async function request(path, options = {}) {
   const token = localStorage.getItem('gymbro_token');
-  const headers = { ...options.headers };
-  if (!options.isBlob) headers['Content-Type'] = 'application/json';
+  const headers = { ...(options.headers || {}) };
+  if (!options.isBlob && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  // use apiUrl helper to build URL (supports empty API_BASE -> relative URLs)
-  const { apiUrl } = await import('./config');
-  const url = apiUrl(path);
-  const res = await fetch(url, { ...options, headers, credentials: 'include' });
+
+  const res = await fetch(apiUrl(path), {
+    ...options,
+    headers,
+    credentials: 'include',
+  });
+
   if (res.status === 401) {
     localStorage.removeItem('gymbro_token');
     localStorage.removeItem('gymbro_user');
     if (!path.includes('/auth/')) window.location.href = '/login';
-    throw new Error('Nao autenticado');
   }
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Erro desconhecido' }));
-    throw new Error(err.detail || 'Erro na requisicao');
+    const err = await parseError(res);
+    const e = new Error(err.detail);
+    e.status = err.status;
+    e.code = err.code;
+    e.checkout_url = err.checkout_url;
+    throw e;
   }
+
   if (options.isBlob) return res.blob();
   return res.json();
 }
@@ -24,37 +49,38 @@ async function request(path, options = {}) {
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
+  a.href = url;
+  a.download = filename;
+  a.click();
   URL.revokeObjectURL(url);
 }
 
 export const api = {
-  login: (data) => request('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
-<<<<<<< HEAD
-  requestEmailCode: (email) => request('/api/auth/email/request-code', { method: 'POST', body: JSON.stringify({ email }) }),
-  confirmEmailCode: (email, code) => request('/api/auth/email/confirm-code', { method: 'POST', body: JSON.stringify({ email, code }) }),
-=======
-  loginStart: (data) => request('/api/auth/login/start', { method: 'POST', body: JSON.stringify(data) }),
-  loginVerify: (data) => request('/api/auth/login/verify', { method: 'POST', body: JSON.stringify(data) }),
->>>>>>> d3764ba4 (versão 2.0)
   register: (data) => request('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
-  googleSession: (sid) => request('/api/auth/google/session', { method: 'POST', body: JSON.stringify({ session_id: sid }) }),
+  verifyStart: (email) => request('/api/auth/verify/start', { method: 'POST', body: JSON.stringify({ email }) }),
+  verifyConfirm: (email, code) => request('/api/auth/verify/confirm', { method: 'POST', body: JSON.stringify({ email, code }) }),
+  login: (data) => request('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request('/api/auth/me'),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
 
   dashboard: () => request('/api/dashboard'),
   dashboardCharts: () => request('/api/dashboard/charts'),
 
-  listStudents: (search = '', status = '', academy_id = '') => request(`/api/students?search=${encodeURIComponent(search)}&status=${status}&academy_id=${academy_id}`),
+  listStudents: (search = '', status = '') => request(`/api/students?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}`),
   createStudent: (data) => request('/api/students', { method: 'POST', body: JSON.stringify(data) }),
   getStudent: (id) => request(`/api/students/${id}`),
   updateStudent: (id, data) => request(`/api/students/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  registerBiometria: (id, biometria_id) => request(`/api/students/${id}/biometria`, { method: 'POST', body: JSON.stringify({ biometria_id }) }),
   deleteStudent: (id) => request(`/api/students/${id}`, { method: 'DELETE' }),
-  registerStudentPasskey: (studentId, credential) => request(`/api/students/${studentId}/passkey/register`, { method: 'POST', body: JSON.stringify({ credential }) }),
-  listStudentPasskeys: (studentId) => request(`/api/students/${studentId}/passkeys`),
-  passkeyRegisterOptions: (studentId) => request(`/api/students/${studentId}/passkey/register/options`, { method: 'POST', body: JSON.stringify({}) }),
-  passkeyRegisterVerify: (studentId, payload) => request(`/api/students/${studentId}/passkey/register/verify`, { method: 'POST', body: JSON.stringify(payload) }),
+  registerBiometria: (id, biometria_id) => request(`/api/students/${id}/biometria`, { method: 'POST', body: JSON.stringify({ biometria_id }) }),
+
+  addMeasurement: (studentId, data) => request(`/api/students/${studentId}/measurements`, { method: 'POST', body: JSON.stringify(data) }),
+  listMeasurements: (studentId) => request(`/api/students/${studentId}/measurements`),
+  addWorkout: (studentId, data) => request(`/api/students/${studentId}/workouts`, { method: 'POST', body: JSON.stringify(data) }),
+  listWorkouts: (studentId) => request(`/api/students/${studentId}/workouts`),
+  recordAttendance: (studentId, data) => request(`/api/students/${studentId}/attendance`, { method: 'POST', body: JSON.stringify(data) }),
+  listStudentAttendance: (studentId, limit = 100) => request(`/api/students/${studentId}/attendance?limit=${limit}`),
+  recordStudentProgress: (studentId, data) => request(`/api/students/${studentId}/progress`, { method: 'POST', body: JSON.stringify(data) }),
+  listStudentProgress: (studentId, limit = 50) => request(`/api/students/${studentId}/progress?limit=${limit}`),
 
   listPlans: () => request('/api/plans'),
   listPlansPublic: () => request('/api/plans/public'),
@@ -63,72 +89,66 @@ export const api = {
   deletePlan: (id) => request(`/api/plans/${id}`, { method: 'DELETE' }),
 
   listAccessLogs: (limit = 50) => request(`/api/access-logs?limit=${limit}`),
-
   listWebhookLogs: (limit = 50) => request(`/api/webhook-logs?limit=${limit}`),
 
-  // Billing
-  getAcademyBilling: (academyId) => request(`/api/academies/${academyId}/billing`),
-
-  // Student Progress (Evolução)
-  recordStudentProgress: (studentId, data) => request(`/api/students/${studentId}/progress`, { method: 'POST', body: JSON.stringify(data) }),
-  listStudentProgress: (studentId, limit = 50) => request(`/api/students/${studentId}/progress?limit=${limit}`),
-
-  // Attendance (Presença)
-  recordAttendance: (studentId, data) => request(`/api/students/${studentId}/attendance`, { method: 'POST', body: JSON.stringify(data) }),
-  listStudentAttendance: (studentId, limit = 100) => request(`/api/students/${studentId}/attendance?limit=${limit}`),
-
-  // Academies
   listAcademies: () => request('/api/academies'),
   createAcademy: (data) => request('/api/academies', { method: 'POST', body: JSON.stringify(data) }),
   updateAcademy: (id, data) => request(`/api/academies/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteAcademy: (id) => request(`/api/academies/${id}`, { method: 'DELETE' }),
   academyStats: (id) => request(`/api/academies/${id}/stats`),
+  getAcademyBilling: (academyId) => request(`/api/academies/${academyId}/billing`),
 
-  // Notifications
   listNotifications: (limit = 50) => request(`/api/notifications?limit=${limit}`),
   checkExpiring: () => request('/api/notifications/check-expiring', { method: 'POST' }),
   markRead: (id) => request(`/api/notifications/${id}/read`, { method: 'PUT' }),
   deleteNotification: (id) => request(`/api/notifications/${id}`, { method: 'DELETE' }),
 
-  // Reports
-  exportStudentsExcel: () => request('/api/reports/students/excel', { isBlob: true }).then(b => downloadBlob(b, 'alunos_gymbro.xlsx')),
-  exportStudentsPdf: () => request('/api/reports/students/pdf', { isBlob: true }).then(b => downloadBlob(b, 'alunos_gymbro.pdf')),
-  exportAccessExcel: () => request('/api/reports/access-logs/excel', { isBlob: true }).then(b => downloadBlob(b, 'acessos_gymbro.xlsx')),
-  exportFinancialExcel: () => request('/api/reports/financial/excel', { isBlob: true }).then(b => downloadBlob(b, 'financeiro_gymbro.xlsx')),
+  subscriptionStatus: () => request('/api/billing/subscription/status'),
+  subscriptionCheckout: () => request('/api/billing/subscription/checkout', { method: 'POST' }),
+  createAcademySubscriptionCheckout: () => request('/api/payments/academy/subscription/checkout', { method: 'POST', body: JSON.stringify({}) }),
 
+  tolletusEnrollStart: (data) => request('/api/tolletus/enroll/start', { method: 'POST', body: JSON.stringify(data) }),
+  tolletusEnrollConfirm: (data) => request('/api/tolletus/enroll/confirm', { method: 'POST', body: JSON.stringify(data) }),
+  tolletusStudentStatus: (studentId) => request(`/api/tolletus/students/${studentId}/status`),
 
-  createAcademySubscriptionCheckout: (data) => request('/api/payments/academy/subscription/checkout', { method: 'POST', body: JSON.stringify(data) }),
-
-  // Catraca
   catracaCommand: (data) => request('/api/catraca/command', { method: 'POST', body: JSON.stringify(data) }),
   catracaCommands: () => request('/api/catraca/commands'),
-  catracaIlnet2Execute: (data) => request('/api/catraca/ilnet2/execute', { method: 'POST', body: JSON.stringify(data) }),
+
+  exportStudentsExcel: () => request('/api/reports/students/excel', { isBlob: true }).then((b) => downloadBlob(b, 'alunos_gymbro.xlsx')),
+  exportStudentsPdf: () => request('/api/reports/students/pdf', { isBlob: true }).then((b) => downloadBlob(b, 'alunos_gymbro.pdf')),
+  exportAccessExcel: () => request('/api/reports/access-logs/excel', { isBlob: true }).then((b) => downloadBlob(b, 'acessos_gymbro.xlsx')),
+  exportFinancialExcel: () => request('/api/reports/financial/excel', { isBlob: true }).then((b) => downloadBlob(b, 'financeiro_gymbro.xlsx')),
 
   seed: () => request('/api/seed', { method: 'POST' }),
 };
 
-// WebSocket helper
 export function connectWebSocket(onMessage) {
-  const base = (process.env.REACT_APP_API_BASE || '') || window.location.origin;
-  const wsUrl = base.replace('https://', 'wss://').replace('http://', 'ws://') + '/api/ws';
-  let ws = null;
-  let reconnectTimeout = null;
+  const origin = API_BASE || window.location.origin;
+  const wsBase = origin.replace('https://', 'wss://').replace('http://', 'ws://').replace(/\/+$/, '');
+  const wsUrl = `${wsBase}/api/ws`;
 
-  function connect() {
+  let ws;
+  let reconnect;
+
+  const connect = () => {
     ws = new WebSocket(wsUrl);
-    ws.onopen = () => console.log('WS connected');
-    ws.onmessage = (e) => {
-      try { onMessage(JSON.parse(e.data)); } catch {}
+    ws.onmessage = (event) => {
+      try {
+        onMessage(JSON.parse(event.data));
+      } catch {
+        // ignore malformed payloads
+      }
     };
     ws.onclose = () => {
-      reconnectTimeout = setTimeout(connect, 3000);
+      reconnect = setTimeout(connect, 3000);
     };
     ws.onerror = () => ws.close();
-  }
+  };
+
   connect();
 
   return () => {
-    clearTimeout(reconnectTimeout);
+    clearTimeout(reconnect);
     if (ws) ws.close();
   };
 }

@@ -1,97 +1,78 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Dumbbell, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
+
 import { api } from '../api';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState('login');
+  const [name, setName] = useState('');
+  const [gymName, setGymName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
+  const [code, setCode] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
-<<<<<<< HEAD
-  const [emailCode, setEmailCode] = useState('');
-  const [emailVerified, setEmailVerified] = useState(false);
-=======
-  const [challengeId, setChallengeId] = useState('');
-  const [otpCode, setOtpCode] = useState('');
->>>>>>> d3764ba4 (versão 2.0)
+  const [paymentRequired, setPaymentRequired] = useState(null);
 
-  const handleSubmit = async (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      let result;
-      if (mode === 'login') {
-        // use two-step login: start -> verify
-        const start = await api.loginStart({ email, password });
-        if (start && start.challenge_id) {
-          // show code input flow
-          setMode('verify');
-          setLoading(false);
-          // store challenge id in state
-          setChallengeId(start.challenge_id);
-          return;
-        }
-      } else {
-        if (!emailVerified) {
-          throw new Error('Valide o e-mail antes de criar a conta');
-        }
-        result = await api.register({ email, password, name });
-      }
-      localStorage.setItem('gymbro_token', result.token);
-      localStorage.setItem('gymbro_user', JSON.stringify(result.user));
-      toast.success(mode === 'login' ? 'Login realizado!' : 'Conta criada!');
-      navigate('/admin');
+      await api.register({ name, gym_name: gymName, email, password });
+      await api.verifyStart(email);
+      toast.success('Conta criada. Codigo enviado por e-mail.');
+      setMode('verify');
     } catch (err) {
       toast.error(err.message);
-    }
-    setLoading(false);
-  };
-
-<<<<<<< HEAD
-  const handleRequestCode = async () => {
-    try {
-      const res = await api.requestEmailCode(email);
-      toast.success('Código enviado para o e-mail.');
-      if (res.dev_code) toast.message(`Dev code: ${res.dev_code}`);
-    } catch (err) {
-      toast.error(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleConfirmCode = async () => {
-    try {
-      await api.confirmEmailCode(email, emailCode);
-      setEmailVerified(true);
-      toast.success('E-mail validado com sucesso.');
-    } catch (err) {
-      toast.error(err.message);
-      setEmailVerified(false);
-    }
-=======
   const handleVerify = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await api.loginVerify({ challenge_id: challengeId, code: otpCode });
-      localStorage.setItem('gymbro_token', res.token);
-      localStorage.setItem('gymbro_user', JSON.stringify(res.user));
-      toast.success('Login realizado!');
-      navigate('/admin');
+      await api.verifyConfirm(email, code);
+      toast.success('E-mail verificado. Fa�a login para continuar.');
+      setMode('login');
     } catch (err) {
       toast.error(err.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
->>>>>>> d3764ba4 (versão 2.0)
   };
 
-  const handleGoogle = () => {
-    const redirectUrl = window.location.origin + '/admin';
-    window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setPaymentRequired(null);
+    try {
+      const result = await api.login({ email, password });
+      localStorage.setItem('gymbro_token', result.token);
+      localStorage.setItem('gymbro_user', JSON.stringify(result.user));
+      toast.success('Login realizado');
+      navigate('/admin');
+    } catch (err) {
+      if (err.code === 'NEED_EMAIL_VERIFICATION') {
+        await api.verifyStart(email);
+        toast.error('Verifique seu e-mail para liberar o login.');
+        setMode('verify');
+      } else if (err.code === 'PAYMENT_REQUIRED') {
+        setPaymentRequired({
+          checkoutUrl: err.checkout_url || '',
+          message: err.message || 'Assinatura inativa.',
+        });
+        toast.error('Assinatura necessaria para acessar o painel.');
+      } else {
+        toast.error(err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -103,82 +84,80 @@ export default function LoginPage() {
         </Link>
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-md p-8">
-          <h2 data-testid="login-title" className="font-heading text-2xl font-bold uppercase mb-6 text-center">
-            {mode === 'login' ? 'Acessar Painel' : 'Criar Conta'}
+          <h2 className="font-heading text-2xl font-bold uppercase mb-6 text-center">
+            {mode === 'login' ? 'Acessar Painel' : mode === 'register' ? 'Criar Conta' : 'Verificar E-mail'}
           </h2>
 
-          {mode === 'verify' ? (
-            <form onSubmit={handleVerify} className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-zinc-400 mb-1 block">Código (e-mail)</label>
-                <input type="text" value={otpCode} onChange={e => setOtpCode(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" required />
-              </div>
-              <button type="submit" disabled={loading} className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-[#b3e600] transition-all disabled:opacity-50">{loading ? 'Verificando...' : 'Verificar'}</button>
-              <p className="text-center text-zinc-500 text-sm mt-4">Recebeu o código? Caso não, verifique a caixa de spam.</p>
-            </form>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-            {mode === 'register' && (
-              <div>
-                <label className="text-sm font-medium text-zinc-400 mb-1 block">Nome</label>
-                <input data-testid="register-name-input" type="text" value={name} onChange={e => setName(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 focus:outline-none focus:ring-1 focus:ring-[#ccff00] focus:border-[#ccff00]" required />
-              </div>
-            )}
-            <div>
-              <label className="text-sm font-medium text-zinc-400 mb-1 block">E-mail</label>
-              <input data-testid="login-email-input" type="email" value={email} onChange={e => { setEmail(e.target.value); setEmailVerified(false); }}
-                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 focus:outline-none focus:ring-1 focus:ring-[#ccff00] focus:border-[#ccff00]" required />
+          {paymentRequired && (
+            <div className="mb-5 p-4 rounded-sm border border-yellow-500/30 bg-yellow-500/10">
+              <p className="text-yellow-300 font-semibold text-sm mb-2">Assinatura necessaria</p>
+              <p className="text-zinc-300 text-sm mb-3">{paymentRequired.message}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (paymentRequired.checkoutUrl) {
+                    window.location.href = paymentRequired.checkoutUrl;
+                  } else {
+                    navigate('/');
+                  }
+                }}
+                className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-xs h-10 rounded-sm hover:bg-[#b3e600]"
+              >
+                Assinar agora
+              </button>
             </div>
+          )}
 
-            {mode === 'register' && (
-              <div className="space-y-2 p-3 border border-zinc-800 rounded-sm bg-zinc-950">
-                <p className="text-xs text-zinc-400">Validação de e-mail obrigatória antes do cadastro.</p>
-                <div className="flex gap-2">
-                  <button type="button" onClick={handleRequestCode} className="flex-1 h-10 text-xs bg-zinc-800 hover:bg-zinc-700 rounded-sm">Enviar código</button>
-                  <input placeholder="Código" value={emailCode} onChange={e => setEmailCode(e.target.value)} className="w-28 h-10 px-2 bg-zinc-900 border border-zinc-700 rounded-sm text-sm" />
-                  <button type="button" onClick={handleConfirmCode} className="h-10 px-3 text-xs bg-[#ccff00] text-black rounded-sm font-bold">Validar</button>
-                </div>
-                {emailVerified && <p className="text-xs text-green-400">E-mail validado ✅</p>}
-              </div>
-            )}
-
-            <div>
+          {mode === 'login' && (
+            <form onSubmit={handleLogin} className="space-y-4">
+              <label className="text-sm font-medium text-zinc-400 mb-1 block">E-mail</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
               <label className="text-sm font-medium text-zinc-400 mb-1 block">Senha</label>
               <div className="relative">
-                <input data-testid="login-password-input" type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 pr-12 focus:outline-none focus:ring-1 focus:ring-[#ccff00] focus:border-[#ccff00]" required />
+                <input type={showPw ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 pr-12" />
                 <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300">
                   {showPw ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
-              {mode === 'register' && <p className="text-xs text-zinc-500 mt-1">Mínimo de 8 caracteres.</p>}
-            </div>
-            <button data-testid="login-submit-btn" type="submit" disabled={loading}
-              className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-[#b3e600] transition-all disabled:opacity-50">
-              {loading ? 'Carregando...' : mode === 'login' ? 'Entrar' : 'Criar Conta'}
-            </button>
+              <button type="submit" disabled={loading} className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-[#b3e600] disabled:opacity-50">
+                {loading ? 'Entrando...' : 'Entrar'}
+              </button>
             </form>
           )}
 
-          <div className="flex items-center gap-3 my-6">
-            <div className="flex-1 h-px bg-zinc-800" />
-            <span className="text-zinc-500 text-xs uppercase tracking-wider">ou</span>
-            <div className="flex-1 h-px bg-zinc-800" />
-          </div>
+          {mode === 'register' && (
+            <form onSubmit={handleRegister} className="space-y-4">
+              <label className="text-sm font-medium text-zinc-400 mb-1 block">Nome</label>
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
+              <label className="text-sm font-medium text-zinc-400 mb-1 block">Academia</label>
+              <input type="text" value={gymName} onChange={(e) => setGymName(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
+              <label className="text-sm font-medium text-zinc-400 mb-1 block">E-mail</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
+              <label className="text-sm font-medium text-zinc-400 mb-1 block">Senha</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
+              <button type="submit" disabled={loading} className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-[#b3e600] disabled:opacity-50">
+                {loading ? 'Criando...' : 'Criar Conta'}
+              </button>
+            </form>
+          )}
 
-          <button data-testid="google-login-btn" onClick={handleGoogle}
-            className="w-full flex items-center justify-center gap-3 bg-zinc-800 text-white font-semibold uppercase tracking-wide text-sm h-12 rounded-sm hover:bg-zinc-700 transition-colors">
-            <svg className="w-5 h-5" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-            Entrar com Google
-          </button>
+          {mode === 'verify' && (
+            <form onSubmit={handleVerify} className="space-y-4">
+              <p className="text-sm text-zinc-400">Informe o codigo de 6 digitos enviado para {email}.</p>
+              <input type="text" value={code} onChange={(e) => setCode(e.target.value)} minLength={6} maxLength={6} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 tracking-[0.4em] text-center" />
+              <button type="submit" disabled={loading} className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-[#b3e600] disabled:opacity-50">
+                {loading ? 'Validando...' : 'Validar Codigo'}
+              </button>
+              <button type="button" onClick={() => api.verifyStart(email).then(() => toast.success('Codigo reenviado')).catch((err) => toast.error(err.message))} className="w-full bg-zinc-800 text-white font-semibold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-zinc-700">
+                Reenviar Codigo
+              </button>
+            </form>
+          )}
 
           <p className="text-center text-zinc-500 text-sm mt-6">
-            {mode === 'login' ? (
-              <>Nao tem conta? <button data-testid="switch-to-register" onClick={() => setMode('register')} className="text-[#ccff00] hover:underline">Criar conta</button></>
-            ) : (
-              <>Ja tem conta? <button data-testid="switch-to-login" onClick={() => setMode('login')} className="text-[#ccff00] hover:underline">Fazer login</button></>
-            )}
+            {mode === 'login' && <>Nao tem conta? <button onClick={() => setMode('register')} className="text-[#ccff00] hover:underline">Criar conta</button></>}
+            {mode === 'register' && <>Ja tem conta? <button onClick={() => setMode('login')} className="text-[#ccff00] hover:underline">Fazer login</button></>}
+            {mode === 'verify' && <>Voltar para <button onClick={() => setMode('login')} className="text-[#ccff00] hover:underline">login</button></>}
           </p>
         </div>
       </div>
