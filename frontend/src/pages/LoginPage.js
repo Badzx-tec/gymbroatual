@@ -23,7 +23,7 @@ export default function LoginPage() {
   const handleRegister = async (e) => {
     e.preventDefault();
     if (password !== confirmPassword) {
-      toast.error('As senhas nao conferem.');
+      toast.error('As senhas não conferem.');
       return;
     }
     if (password.length < 8) {
@@ -35,7 +35,7 @@ export default function LoginPage() {
     try {
       await api.register({ name, gym_name: gymName, email, password });
       await api.verifyStart(email);
-      toast.success('Conta criada. Codigo enviado por e-mail.');
+      toast.success('Conta criada. Código enviado por e-mail.');
       setMode('verify');
     } catch (err) {
       toast.error(err.message);
@@ -78,7 +78,7 @@ export default function LoginPage() {
           checkoutUrl: err.checkout_url || '',
           message: err.message || 'Assinatura inativa.',
         });
-        toast.error('Assinatura necessaria para acessar o painel.');
+        toast.error('Assinatura necessária para acessar o painel.');
       } else {
         toast.error(err.message);
       }
@@ -102,7 +102,7 @@ export default function LoginPage() {
 
           {paymentRequired && (
             <div className="mb-5 p-4 rounded-sm border border-yellow-500/30 bg-yellow-500/10">
-              <p className="text-yellow-300 font-semibold text-sm mb-2">Assinatura necessaria</p>
+              <p className="text-yellow-300 font-semibold text-sm mb-2">Assinatura necessária</p>
               <p className="text-zinc-300 text-sm mb-3">{paymentRequired.message}</p>
               <button
                 type="button"
@@ -170,20 +170,20 @@ export default function LoginPage() {
 
           {mode === 'verify' && (
             <form onSubmit={handleVerify} className="space-y-4">
-              <p className="text-sm text-zinc-400">Informe o codigo de 6 digitos enviado para {email}.</p>
+              <p className="text-sm text-zinc-400">Informe o código de 6 dígitos enviado para {email}.</p>
               <input type="text" value={code} onChange={(e) => setCode(e.target.value)} minLength={6} maxLength={6} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 tracking-[0.4em] text-center" />
               <button type="submit" disabled={loading} className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-[#b3e600] disabled:opacity-50">
-                {loading ? 'Validando...' : 'Validar Codigo'}
+                {loading ? 'Validando...' : 'Validar Código'}
               </button>
-              <button type="button" onClick={() => api.verifyStart(email).then(() => toast.success('Codigo reenviado')).catch((err) => toast.error(err.message))} className="w-full bg-zinc-800 text-white font-semibold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-zinc-700">
-                Reenviar Codigo
+              <button type="button" onClick={() => api.verifyStart(email).then(() => toast.success('Código reenviado')).catch((err) => toast.error(err.message))} className="w-full bg-zinc-800 text-white font-semibold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-zinc-700">
+                Reenviar Código
               </button>
             </form>
           )}
 
           <p className="text-center text-zinc-500 text-sm mt-6">
-            {mode === 'login' && <>Nao tem conta? <button onClick={() => setMode('register')} className="text-[#ccff00] hover:underline">Criar conta</button></>}
-            {mode === 'register' && <>Ja tem conta? <button onClick={() => setMode('login')} className="text-[#ccff00] hover:underline">Fazer login</button></>}
+            {mode === 'login' && <>Não tem conta? <button onClick={() => setMode('register')} className="text-[#ccff00] hover:underline">Criar conta</button></>}
+            {mode === 'register' && <>Já tem conta? <button onClick={() => setMode('login')} className="text-[#ccff00] hover:underline">Fazer login</button></>}
             {mode === 'verify' && <>Voltar para <button onClick={() => setMode('login')} className="text-[#ccff00] hover:underline">login</button></>}
           </p>
         </div>

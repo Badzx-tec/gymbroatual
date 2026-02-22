@@ -68,7 +68,7 @@ export default function BillingCenterPage() {
         window.location.href = checkout.checkout_url;
         return;
       }
-      toast.error('Checkout indisponivel no momento.');
+      toast.error('Checkout indisponível no momento.');
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -90,7 +90,7 @@ export default function BillingCenterPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Centro de Cobranca</h1>
+        <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Centro de Cobrança</h1>
         <p className="text-zinc-400 mt-1">Contratos, faturas, tentativas e eventos da assinatura SaaS.</p>
       </div>
 
@@ -100,7 +100,7 @@ export default function BillingCenterPage() {
           <p className={`inline-flex mt-2 px-2 py-1 rounded-sm border text-xs font-semibold uppercase ${statusPill(data.subscription?.status)}`}>
             {data.subscription?.status || 'desconhecido'}
           </p>
-          <p className="text-xs text-zinc-500 mt-2">Acesso liberado: {data.subscription?.can_login ? 'sim' : 'nao'}</p>
+          <p className="text-xs text-zinc-500 mt-2">Acesso liberado: {data.subscription?.can_login ? 'sim' : 'não'}</p>
         </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
           <p className="text-xs uppercase tracking-wider text-zinc-500">Receita reconhecida</p>
@@ -110,7 +110,7 @@ export default function BillingCenterPage() {
         <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
           <p className="text-xs uppercase tracking-wider text-zinc-500">Tentativas falhas</p>
           <p className="mt-2 text-xl font-bold">{summary.failedAttempts}</p>
-          <p className="text-xs text-zinc-500 mt-2">Ultimos registros financeiros</p>
+          <p className="text-xs text-zinc-500 mt-2">Últimos registros financeiros</p>
         </div>
       </div>
 
@@ -132,15 +132,15 @@ export default function BillingCenterPage() {
             </p>
           </div>
           <div>
-            <p className="text-zinc-500">Inicio</p>
+            <p className="text-zinc-500">Início</p>
             <p>{formatDate(data.membership?.started_at)}</p>
           </div>
           <div>
-            <p className="text-zinc-500">Trial ate</p>
+            <p className="text-zinc-500">Trial até</p>
             <p>{formatDate(data.membership?.trial_ends_at)}</p>
           </div>
           <div>
-            <p className="text-zinc-500">Periodo atual fim</p>
+            <p className="text-zinc-500">Período atual (fim)</p>
             <p>{formatDate(data.membership?.current_period_end)}</p>
           </div>
         </div>
@@ -159,7 +159,7 @@ export default function BillingCenterPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
-              <th className="text-left px-4 py-3">Periodo</th>
+              <th className="text-left px-4 py-3">Período</th>
               <th className="text-left px-4 py-3">Valor</th>
               <th className="text-left px-4 py-3">Vencimento</th>
               <th className="text-left px-4 py-3">Pagamento</th>
