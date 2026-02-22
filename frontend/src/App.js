@@ -16,6 +16,7 @@ import SubscriptionPage from './pages/SubscriptionPage';
 import BillingCenterPage from './pages/BillingCenterPage';
 import StaffPage from './pages/StaffPage';
 import AdminLayout from './components/AdminLayout';
+import StudentContractsPage from './pages/StudentContractsPage';
 
 function AppRouter() {
   const location = useLocation();
@@ -30,6 +31,7 @@ function AppRouter() {
       <Route path="/admin" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
         <Route path="alunos" element={<StudentsPage />} />
+        <Route path="contratos" element={<RoleRoute roles={['OWNER', 'MANAGER', 'RECEPTION']}><StudentContractsPage /></RoleRoute>} />
         <Route path="planos" element={<PlansPage />} />
         <Route path="acessos" element={<AccessLogsPage />} />
         <Route path="franquias" element={<AcademiesPage />} />

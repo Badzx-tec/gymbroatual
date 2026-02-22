@@ -133,6 +133,27 @@ Rotas:
 Login é unificado (`/api/auth/login`) para owner e employee.
 JWT inclui `role`, `gym_id`, `owner_id` e `actor_type`.
 
+## Contratos de alunos (billing interno)
+
+Modulo para operacao financeira da academia com contratos por aluno, cobrancas e renovacao.
+
+Rotas principais:
+- `GET /api/student-billing/overview`
+- `GET /api/student-billing/contracts`
+- `POST /api/student-billing/contracts`
+- `POST /api/student-billing/contracts/{contract_id}/charges`
+- `GET /api/student-billing/contracts/{contract_id}/charges`
+- `POST /api/student-billing/charges/{charge_id}/mark-paid`
+- `POST /api/student-billing/contracts/{contract_id}/cancel`
+- `GET /api/student-billing/events`
+
+Implementado:
+- cria contrato com plano/valor/duracao e cobranca inicial opcional
+- marca pagamento e estende periodo automaticamente
+- sincroniza validade no aluno (`plan_expires_at`, `subscription_end`, `data_vencimento`)
+- status automatico de contrato (`active`, `past_due`, `expired`, `canceled`)
+- pagina admin para gestao: `/admin/contratos` (OWNER, MANAGER, RECEPTION)
+
 ## Toletus LiteNet2
 
 ### Protocolo (porta 7878)

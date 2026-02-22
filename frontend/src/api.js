@@ -87,6 +87,21 @@ export const api = {
   createPlan: (data) => request('/api/plans', { method: 'POST', body: JSON.stringify(data) }),
   updatePlan: (id, data) => request(`/api/plans/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deletePlan: (id) => request(`/api/plans/${id}`, { method: 'DELETE' }),
+  studentBillingOverview: () => request('/api/student-billing/overview'),
+  listStudentContracts: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.status) query.set('status', params.status);
+    if (params.student_id) query.set('student_id', params.student_id);
+    if (params.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request(`/api/student-billing/contracts${suffix}`);
+  },
+  createStudentContract: (data) => request('/api/student-billing/contracts', { method: 'POST', body: JSON.stringify(data) }),
+  cancelStudentContract: (contractId) => request(`/api/student-billing/contracts/${contractId}/cancel`, { method: 'POST' }),
+  listContractCharges: (contractId, limit = 200) => request(`/api/student-billing/contracts/${contractId}/charges?limit=${limit}`),
+  createContractCharge: (contractId, data) => request(`/api/student-billing/contracts/${contractId}/charges`, { method: 'POST', body: JSON.stringify(data) }),
+  markStudentChargePaid: (chargeId, data) => request(`/api/student-billing/charges/${chargeId}/mark-paid`, { method: 'POST', body: JSON.stringify(data) }),
+  listStudentBillingEvents: (limit = 100) => request(`/api/student-billing/events?limit=${limit}`),
 
   listAccessLogs: (limit = 50) => request(`/api/access-logs?limit=${limit}`),
   listWebhookLogs: (limit = 50) => request(`/api/webhook-logs?limit=${limit}`),

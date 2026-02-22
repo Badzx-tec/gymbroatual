@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Tag, ScanLine, Menu, X, LogOut, Dumbbell, Building2, Bell, Wifi, CreditCard, UserCog, FileText } from 'lucide-react';
+import { LayoutDashboard, Users, Tag, ScanLine, Menu, X, LogOut, Dumbbell, Building2, Bell, Wifi, CreditCard, UserCog, FileText, ReceiptText } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../api';
 
 const navItems = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
   { to: '/admin/alunos', icon: Users, label: 'Alunos' },
+  { to: '/admin/contratos', icon: ReceiptText, label: 'Contratos' },
   { to: '/admin/planos', icon: Tag, label: 'Planos' },
   { to: '/admin/acessos', icon: ScanLine, label: 'Acessos' },
   { to: '/admin/franquias', icon: Building2, label: 'Franquias' },
@@ -25,10 +26,12 @@ export default function AdminLayout() {
   const role = (user.role || 'OWNER').toUpperCase();
   const canSeeBilling = ['OWNER', 'MANAGER'].includes(role);
   const canSeeStaff = ['OWNER', 'MANAGER'].includes(role);
+  const canSeeContracts = ['OWNER', 'MANAGER', 'RECEPTION'].includes(role);
   const visibleNavItems = navItems.filter((item) => {
     if (item.to === '/admin/assinatura') return canSeeBilling;
     if (item.to === '/admin/cobranca') return canSeeBilling;
     if (item.to === '/admin/funcionarios') return canSeeStaff;
+    if (item.to === '/admin/contratos') return canSeeContracts;
     return true;
   });
 
