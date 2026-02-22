@@ -6,8 +6,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
 from app.core.config import get_settings
 from app.core.deps import require_roles
+from app.core.http import get_client_ip
+from app.core.rate_limit import enforce_rate_limit
 from app.db.mongo import get_db
 from app.models.billing import CheckoutOut, SubscriptionStatusOut
+from app.services.billing_reconcile import reconcile_subscriptions
+from app.services.observability import log_event
 from app.services.subscription import (
     compute_grace_until,
     compute_next_period_end,
@@ -134,6 +138,14 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
 async def webhook_mercadopago(request: Request, x_signature: str | None = Header(default=None)):
     settings = get_settings()
     db = get_db()
+    source_ip = get_client_ip(request)
+    await enforce_rate_limit(
+        scope="billing.webhook",
+        key=source_ip,
+        limit=settings.webhook_rate_limit,
+        window_seconds=settings.webhook_window_seconds,
+        error_detail="Webhook temporariamente limitado por excesso de trafego",
+    )
 
     raw = await request.body()
     payload = await request.json()
@@ -147,6 +159,29 @@ async def webhook_mercadopago(request: Request, x_signature: str | None = Header
                     signature_value = part.strip().split("=", 1)[1]
                     break
         if signature_value and digest != signature_value and digest not in signature_value:
+            now = datetime.now(UTC)
+            await db.billing_events.insert_one(
+                {
+                    "event_id": f"rejected_signature:{int(now.timestamp() * 1000000)}:{digest[:8]}",
+                    "action": "webhook_rejected",
+                    "owner_id": payload.get("external_reference")
+                    or payload.get("metadata", {}).get("owner_id"),
+                    "status": "rejected",
+                    "payload": {
+                        "reason": "invalid_signature",
+                        "ip": source_ip,
+                        "type": payload.get("type"),
+                        "action": payload.get("action"),
+                    },
+                    "received_at": now,
+                }
+            )
+            log_event(
+                "billing_webhook_rejected",
+                reason="invalid_signature",
+                ip=source_ip,
+                action=payload.get("action"),
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Assinatura de webhook invalida",
@@ -199,6 +234,15 @@ async def webhook_mercadopago(request: Request, x_signature: str | None = Header
             "received_at": now,
         }
     )
+    if status_value in {"past_due", "canceled", "expired"}:
+        log_event(
+            "billing_webhook_failure",
+            owner_id=owner_id,
+            status=status_value,
+            action=action,
+            event_id=event_id,
+            ip=source_ip,
+        )
 
     return {"status": "ok"}
 
@@ -212,3 +256,9 @@ async def webhook_logs(limit: int = 100, actor: dict = Depends(require_roles("OW
         .limit(limit)
         .to_list(limit)
     )
+
+
+@router.post("/reconcile/run")
+async def run_reconcile(actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
+    summary = await reconcile_subscriptions(owner_id=actor["owner_id"], limit=1)
+    return {"owner_id": actor["owner_id"], "summary": summary}

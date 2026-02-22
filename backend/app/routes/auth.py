@@ -1,9 +1,12 @@
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from app.core.config import get_settings
 from app.core.deps import get_current_actor
+from app.core.http import get_client_ip
+from app.core.rate_limit import enforce_rate_limit
 from app.core.security import (
     create_access_token,
     hash_password,
@@ -31,6 +34,19 @@ def _owner_out(owner: dict) -> OwnerOut:
         email=owner["email"],
         email_verified=owner.get("email_verified", False),
         gym_id=owner["gym_id"],
+    )
+
+
+async def _enforce_auth_rate_limit(
+    request: Request, email: str, *, scope: str, limit: int, window_seconds: int
+) -> None:
+    client_ip = get_client_ip(request)
+    await enforce_rate_limit(
+        scope=scope,
+        key=f"{client_ip}:{email}",
+        limit=limit,
+        window_seconds=window_seconds,
+        error_detail="Muitas tentativas. Aguarde um instante e tente novamente.",
     )
 
 
@@ -79,9 +95,17 @@ async def register(payload: RegisterIn):
 
 
 @router.post("/verify/start")
-async def verify_start(payload: VerifyStartIn):
+async def verify_start(payload: VerifyStartIn, request: Request):
     db = get_db()
+    settings = get_settings()
     email = payload.email.lower().strip()
+    await _enforce_auth_rate_limit(
+        request,
+        email,
+        scope="auth.verify_start",
+        limit=settings.auth_verify_rate_limit,
+        window_seconds=settings.auth_verify_window_seconds,
+    )
     owner = await db.owners.find_one({"email": email}, {"_id": 0})
     if not owner:
         raise HTTPException(status_code=404, detail="Conta nao encontrada")
@@ -242,12 +266,22 @@ async def _login_employee(email: str, password: str) -> dict | None:
 
 
 @router.post("/login")
-async def login(payload: LoginIn):
-    result = await _login_owner(payload.email.lower().strip(), payload.password)
+async def login(payload: LoginIn, request: Request):
+    settings = get_settings()
+    email = payload.email.lower().strip()
+    await _enforce_auth_rate_limit(
+        request,
+        email,
+        scope="auth.login",
+        limit=settings.auth_login_rate_limit,
+        window_seconds=settings.auth_login_window_seconds,
+    )
+
+    result = await _login_owner(email, payload.password)
     if result:
         return result
 
-    result = await _login_employee(payload.email.lower().strip(), payload.password)
+    result = await _login_employee(email, payload.password)
     if result:
         return result
 
