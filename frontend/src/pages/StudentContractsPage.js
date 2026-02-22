@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarClock, CircleDollarSign, ClipboardList, Plus, ReceiptText, ShieldAlert, X } from 'lucide-react';
+import { CalendarClock, CircleDollarSign, ClipboardList, FileText, Plus, ShieldAlert, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { api } from '../api';
@@ -340,7 +340,7 @@ export default function StudentContractsPage() {
 
         <div className="xl:w-1/3 space-y-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-            <h2 className="font-semibold uppercase tracking-wide text-sm flex items-center gap-2"><ReceiptText className="w-4 h-4" /> Timeline</h2>
+            <h2 className="font-semibold uppercase tracking-wide text-sm flex items-center gap-2"><FileText className="w-4 h-4" /> Timeline</h2>
             <ul className="mt-3 space-y-2 text-xs">
               {events.map((item) => (
                 <li key={item.event_id} className="border border-zinc-800 rounded-sm px-3 py-2">

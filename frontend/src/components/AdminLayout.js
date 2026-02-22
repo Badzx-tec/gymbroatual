@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Tag, ScanLine, Menu, X, LogOut, Dumbbell, Building2, Bell, Wifi, CreditCard, UserCog, FileText, ReceiptText } from 'lucide-react';
+import { LayoutDashboard, Users, Tag, ScanLine, Menu, X, LogOut, Dumbbell, Building2, Bell, Wifi, CreditCard, UserCog, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../api';
 
 const navItems = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
   { to: '/admin/alunos', icon: Users, label: 'Alunos' },
-  { to: '/admin/contratos', icon: ReceiptText, label: 'Contratos' },
+  { to: '/admin/contratos', icon: FileText, label: 'Contratos' },
   { to: '/admin/planos', icon: Tag, label: 'Planos' },
   { to: '/admin/acessos', icon: ScanLine, label: 'Acessos' },
   { to: '/admin/franquias', icon: Building2, label: 'Franquias' },
