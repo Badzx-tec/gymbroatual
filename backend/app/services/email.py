@@ -10,6 +10,16 @@ async def send_email_code(email: str, code: str) -> bool:
     settings = get_settings()
     subject = "Seu codigo de verificacao GymBro"
     body_text = f"Seu codigo de verificacao e: {code}. Ele expira em 15 minutos."
+    body_html = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #111;">
+        <h2>Verificacao de e-mail</h2>
+        <p>Seu codigo de verificacao no GymBro:</p>
+        <p style="font-size: 24px; font-weight: bold; letter-spacing: 4px;">{code}</p>
+        <p>Esse codigo expira em 15 minutos.</p>
+      </body>
+    </html>
+    """.strip()
 
     if settings.smtp_host and settings.smtp_user and settings.smtp_password:
         msg = EmailMessage()
@@ -17,6 +27,7 @@ async def send_email_code(email: str, code: str) -> bool:
         msg["From"] = settings.smtp_from
         msg["To"] = email
         msg.set_content(body_text)
+        msg.add_alternative(body_html, subtype="html")
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as smtp:
             if settings.smtp_starttls:
                 smtp.starttls()
@@ -30,6 +41,7 @@ async def send_email_code(email: str, code: str) -> bool:
             "email": email,
             "subject": subject,
             "body": body_text,
+            "body_html": body_html,
             "sent_at": datetime.now(UTC),
             "mode": "log-only",
         }

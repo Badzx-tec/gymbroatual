@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,7 +9,14 @@ from app.routes import api_router
 
 settings = get_settings()
 
-app = FastAPI(title=settings.app_name, version="3.0.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await init_indexes()
+    yield
+
+
+app = FastAPI(title=settings.app_name, version="3.0.0", lifespan=lifespan)
 
 if settings.cors_origins.strip() == "*":
     allow_origins = ["*"]
@@ -21,11 +30,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-async def startup_event() -> None:
-    await init_indexes()
 
 
 @app.get("/health")

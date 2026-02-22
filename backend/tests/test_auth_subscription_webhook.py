@@ -1,4 +1,8 @@
-from app.core.security import create_access_token, safe_jwt_decode, verification_code_hash
+from app.core.security import (
+    create_access_token,
+    safe_jwt_decode,
+    verification_code_hash,
+)
 from app.routes.billing import status_from_action
 from app.services.subscription import initial_subscription, subscription_allows_login
 

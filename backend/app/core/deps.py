@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 from fastapi import Depends, Header, HTTPException, status
 
 from app.core.security import safe_jwt_decode
@@ -5,7 +7,7 @@ from app.db.mongo import get_db
 from app.services.subscription import subscription_allows_login
 
 
-async def get_current_owner(authorization: str | None = Header(default=None)) -> dict:
+async def get_current_actor(authorization: str | None = Header(default=None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Nao autenticado")
 
@@ -14,21 +16,48 @@ async def get_current_owner(authorization: str | None = Header(default=None)) ->
     if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalido")
 
-    owner_id = payload.get("sub")
     db = get_db()
-    owner = await db.owners.find_one({"owner_id": owner_id}, {"_id": 0})
+    actor_type = payload.get("actor_type", "owner")
+
+    if actor_type == "employee":
+        actor = await db.employees.find_one(
+            {"employee_id": payload.get("sub"), "is_active": True}, {"_id": 0}
+        )
+        if not actor:
+            raise HTTPException(status_code=401, detail="Funcionario nao encontrado")
+        actor["actor_type"] = "employee"
+        actor["owner_id"] = actor.get("owner_id") or payload.get("owner_id")
+        actor["gym_id"] = actor.get("gym_id") or payload.get("gym_id")
+        actor["role"] = actor.get("role") or payload.get("role", "RECEPTION")
+        return actor
+
+    owner = await db.owners.find_one({"owner_id": payload.get("sub")}, {"_id": 0})
     if not owner:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario nao encontrado")
+        raise HTTPException(status_code=401, detail="Usuario nao encontrado")
+    owner["actor_type"] = "owner"
+    owner["role"] = "OWNER"
     return owner
 
 
-async def require_active_subscription(owner: dict = Depends(get_current_owner)) -> dict:
+async def require_active_subscription(actor: dict = Depends(get_current_actor)) -> dict:
     db = get_db()
-    subscription = await db.subscriptions.find_one({"owner_id": owner["owner_id"]}, {"_id": 0})
+    subscription = await db.subscriptions.find_one({"owner_id": actor["owner_id"]}, {"_id": 0})
     if not subscription_allows_login(subscription):
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail="Assinatura inativa",
             headers={"X-Error-Code": "PAYMENT_REQUIRED"},
         )
-    return owner
+    return actor
+
+
+def require_roles(*allowed_roles: str) -> Callable:
+    async def dependency(actor: dict = Depends(require_active_subscription)) -> dict:
+        role = actor.get("role", "OWNER").upper()
+        if role not in {r.upper() for r in allowed_roles}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Permissao insuficiente"
+            )
+        return actor
+
+    return dependency

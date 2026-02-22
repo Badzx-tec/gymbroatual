@@ -1,4 +1,12 @@
-from .auth import ErrorOut, LoginIn, LoginOut, OwnerOut, RegisterIn, VerifyConfirmIn, VerifyStartIn
+from .auth import (
+    ErrorOut,
+    LoginIn,
+    LoginOut,
+    OwnerOut,
+    RegisterIn,
+    VerifyConfirmIn,
+    VerifyStartIn,
+)
 from .billing import CheckoutOut, MercadoPagoWebhookIn, SubscriptionStatusOut
 from .students import (
     AttendanceIn,

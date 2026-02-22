@@ -6,7 +6,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     app_name: str = "GymBro API"
     environment: Literal["dev", "staging", "prod"] = "dev"
@@ -38,6 +40,13 @@ class Settings(BaseSettings):
     payment_grace_days: int = 3
 
     fernet_key: str = ""
+
+    toletus_mode: Literal["mock", "real"] = "mock"
+    toletus_api_base_url: str | None = None
+    toletus_api_key: str | None = None
+
+    gateway_max_skew_seconds: int = 120
+    gateway_nonce_ttl_seconds: int = 300
 
     cors_origins: str = "*"
 
