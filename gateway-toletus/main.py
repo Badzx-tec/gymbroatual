@@ -13,8 +13,8 @@ from protocol import encode_notify_user, encode_release_entry, parse_event
 TOLETUS_HOST = os.getenv("TOLETUS_HOST", "127.0.0.1")
 TOLETUS_PORT = int(os.getenv("TOLETUS_PORT", "7878"))
 SAAS_URL = os.getenv("SAAS_URL", "http://localhost:8000")
-DEVICE_ID = os.getenv("DEVICE_ID", "dev_local_1")
-DEVICE_TOKEN = os.getenv("DEVICE_TOKEN", "")
+DEVICE_ID = os.getenv("DEVICE_ID") or os.getenv("GATEWAY_DEVICE_ID", "dev_local_1")
+DEVICE_TOKEN = os.getenv("DEVICE_TOKEN") or os.getenv("GATEWAY_DEVICE_TOKEN", "")
 SIMULATOR = os.getenv("TOLETUS_SIMULATOR", "true").lower() == "true"
 
 
@@ -34,7 +34,6 @@ def build_auth_payload(method: str, credential: str) -> dict:
         "timestamp": timestamp,
         "nonce": nonce,
         "signature": signature,
-        "device_token": DEVICE_TOKEN,
     }
 
 
@@ -43,7 +42,9 @@ async def request_decision(event: dict) -> dict:
 
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(
-            f"{SAAS_URL.rstrip('/')}/api/turnstiles/decision", json=payload
+            f"{SAAS_URL.rstrip('/')}/api/turnstiles/decision",
+            json=payload,
+            headers={"X-Device-Token": DEVICE_TOKEN},
         )
         response.raise_for_status()
         decision = response.json()
@@ -55,6 +56,7 @@ async def request_decision(event: dict) -> dict:
                 "decision": decision.get("allow"),
                 "message": decision.get("message"),
             },
+            headers={"X-Device-Token": DEVICE_TOKEN},
         )
         return decision
 

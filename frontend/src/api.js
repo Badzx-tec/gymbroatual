@@ -120,8 +120,12 @@ export const api = {
   resetEmployeePassword: (employeeId, data = {}) => request(`/api/staff/employees/${employeeId}/reset-password`, { method: 'POST', body: JSON.stringify(data) }),
 
   createTurnstileDevice: (data) => request('/api/turnstiles/devices', { method: 'POST', body: JSON.stringify(data) }),
+  rotateTurnstileDeviceToken: (deviceId) => request(`/api/turnstiles/devices/${deviceId}/rotate-token`, { method: 'POST' }),
   listTurnstileDevices: () => request('/api/turnstiles/devices'),
   listTurnstileAccessLogs: (limit = 100) => request(`/api/turnstiles/access-logs?limit=${limit}`),
+
+  opsMetrics: () => request('/api/ops/metrics'),
+  opsAlerts: () => request('/api/ops/alerts'),
 
   catracaCommand: (data) => request('/api/catraca/command', { method: 'POST', body: JSON.stringify(data) }),
   catracaCommands: () => request('/api/catraca/commands'),
