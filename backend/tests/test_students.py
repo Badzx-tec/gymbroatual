@@ -14,5 +14,7 @@ def test_measurement_model():
 
 
 def test_workout_model():
-    workout = WorkoutPlanIn(codigo="A", exercicios=[WorkoutExercise(nome="Supino", series="4", reps="10")])
+    workout = WorkoutPlanIn(
+        codigo="A", exercicios=[WorkoutExercise(nome="Supino", series="4", reps="10")]
+    )
     assert workout.exercicios[0].nome == "Supino"

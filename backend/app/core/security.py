@@ -1,6 +1,6 @@
+import hmac
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
-import hmac
 from typing import Any
 
 from jose import JWTError, jwt

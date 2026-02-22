@@ -39,6 +39,13 @@ class Settings(BaseSettings):
 
     fernet_key: str = ""
 
+    toletus_mode: Literal["mock", "real"] = "mock"
+    toletus_api_base_url: str | None = None
+    toletus_api_key: str | None = None
+
+    gateway_max_skew_seconds: int = 120
+    gateway_nonce_ttl_seconds: int = 300
+
     cors_origins: str = "*"
 
     @field_validator("jwt_secret")

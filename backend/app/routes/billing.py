@@ -1,11 +1,11 @@
-from datetime import UTC, datetime
 import hashlib
+from datetime import UTC, datetime
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
 from app.core.config import get_settings
-from app.core.deps import get_current_owner
+from app.core.deps import require_roles
 from app.db.mongo import get_db
 from app.models.billing import CheckoutOut, SubscriptionStatusOut
 from app.services.subscription import (
@@ -19,11 +19,32 @@ router = APIRouter()
 
 
 def status_from_action(action: str) -> str:
+    action = (action or "").lower()
     if "cancel" in action:
         return "canceled"
-    if "fail" in action or "reject" in action:
+    if "fail" in action or "reject" in action or "past_due" in action:
         return "past_due"
+    if "expire" in action:
+        return "expired"
     return "active"
+
+
+def status_from_payload(payload: dict) -> str:
+    details = payload.get("data") or {}
+    external_status = (
+        str(details.get("status") or payload.get("status") or payload.get("type") or "")
+        .lower()
+        .strip()
+    )
+    if external_status in {"authorized", "approved", "active", "paid"}:
+        return "active"
+    if external_status in {"cancelled", "canceled", "paused"}:
+        return "canceled"
+    if external_status in {"rejected", "failed", "failure", "past_due"}:
+        return "past_due"
+    if external_status in {"expired"}:
+        return "expired"
+    return status_from_action(str(payload.get("action", "")))
 
 
 async def _subscription_status(owner_id: str) -> SubscriptionStatusOut:
@@ -44,13 +65,13 @@ async def _subscription_status(owner_id: str) -> SubscriptionStatusOut:
 
 
 @router.get("/subscription/status", response_model=SubscriptionStatusOut)
-async def subscription_status(owner: dict = Depends(get_current_owner)):
-    return await _subscription_status(owner["owner_id"])
+async def subscription_status(actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
+    return await _subscription_status(actor["owner_id"])
 
 
 @router.post("/subscription/checkout", response_model=CheckoutOut)
-async def subscription_checkout(owner: dict = Depends(get_current_owner)):
-    return await create_checkout_for_owner(owner)
+async def subscription_checkout(actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
+    return await create_checkout_for_owner(actor)
 
 
 async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
@@ -73,6 +94,9 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
             "payer_email": owner["email"],
             "back_url": settings.frontend_base_url,
             "status": "pending",
+            "notification_url": f"{settings.app_base_url.rstrip('/')}/api/billing/webhook/mercadopago",
+            "external_reference": owner_id,
+            "metadata": {"owner_id": owner_id},
         }
         async with httpx.AsyncClient(timeout=15) as client:
             response = await client.post(
@@ -82,11 +106,15 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
             )
             if response.is_success:
                 data = response.json()
-                checkout_url = data.get("init_point") or checkout_url
-                preapproval_id = data.get("id")
+                checkout_url = (
+                    data.get("init_point") or data.get("sandbox_init_point") or checkout_url
+                )
+                preapproval_id = data.get("id") or preapproval_id
             else:
-                # keep mock URL as safe fallback to avoid dead-end in UI
-                pass
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Falha ao criar checkout no Mercado Pago (status {response.status_code})",
+                )
 
     await db.subscriptions.update_one(
         {"owner_id": owner_id},
@@ -103,10 +131,7 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
 
 
 @router.post("/webhook/mercadopago")
-async def webhook_mercadopago(
-    request: Request,
-    x_signature: str | None = Header(default=None),
-):
+async def webhook_mercadopago(request: Request, x_signature: str | None = Header(default=None)):
     settings = get_settings()
     db = get_db()
 
@@ -115,24 +140,31 @@ async def webhook_mercadopago(
 
     if settings.mp_webhook_secret:
         digest = hashlib.sha256(raw + settings.mp_webhook_secret.encode("utf-8")).hexdigest()
-        if x_signature and digest not in x_signature:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Assinatura de webhook invalida")
+        signature_value = x_signature or ""
+        if signature_value.startswith("ts="):
+            for part in signature_value.split(","):
+                if part.strip().startswith("v1="):
+                    signature_value = part.strip().split("=", 1)[1]
+                    break
+        if signature_value and digest != signature_value and digest not in signature_value:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Assinatura de webhook invalida",
+            )
 
     event_id = str(payload.get("id") or payload.get("data", {}).get("id") or "")
     if not event_id:
         event_id = hashlib.sha256(raw).hexdigest()[:24]
 
-    existing = await db.billing_events.find_one({"event_id": event_id})
-    if existing:
+    if await db.billing_events.find_one({"event_id": event_id}):
         return {"status": "ignored", "reason": "duplicate"}
 
     now = datetime.now(UTC)
     action = payload.get("action", "")
-    status_value = status_from_action(action)
+    status_value = status_from_payload(payload)
 
     owner_id = payload.get("external_reference") or payload.get("metadata", {}).get("owner_id")
     if not owner_id:
-        # fallback: update by known preapproval id
         pre_id = payload.get("data", {}).get("id") or payload.get("id")
         sub = await db.subscriptions.find_one({"mp_preapproval_id": pre_id}, {"_id": 0})
         owner_id = sub.get("owner_id") if sub else None
@@ -161,9 +193,22 @@ async def webhook_mercadopago(
         {
             "event_id": event_id,
             "action": action,
+            "owner_id": owner_id,
+            "status": status_value,
             "payload": payload,
             "received_at": now,
         }
     )
 
     return {"status": "ok"}
+
+
+@router.get("/webhook/logs")
+async def webhook_logs(limit: int = 100, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
+    db = get_db()
+    return (
+        await db.billing_events.find({"owner_id": actor["owner_id"]}, {"_id": 0})
+        .sort("received_at", -1)
+        .limit(limit)
+        .to_list(limit)
+    )

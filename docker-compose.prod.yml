@@ -4,12 +4,13 @@ services:
   mongo:
     image: mongo:7
     restart: unless-stopped
-    command: ["--bind_ip_all"]
+    command: ["--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
     volumes:
       - mongo_data:/data/db
+    mem_limit: 400m
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 20s
@@ -29,6 +30,7 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+    mem_limit: 300m
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
       interval: 30s
@@ -39,6 +41,7 @@ services:
     build:
       context: ./frontend
     restart: unless-stopped
+    mem_limit: 150m
 
   nginx:
     image: nginx:1.27-alpine
@@ -53,6 +56,26 @@ services:
       - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./deploy/certs:/etc/letsencrypt:ro
       - ./deploy/www:/var/www/certbot:ro
+    mem_limit: 100m
+
+  gateway-toletus:
+    build:
+      context: ./gateway-toletus
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SAAS_URL: http://backend:8000
+      DEVICE_ID: ${GATEWAY_DEVICE_ID}
+      DEVICE_TOKEN: ${GATEWAY_DEVICE_TOKEN}
+      TOLETUS_SIMULATOR: ${TOLETUS_SIMULATOR}
+      TOLETUS_HOST: ${TOLETUS_HOST}
+      TOLETUS_PORT: ${TOLETUS_PORT}
+    depends_on:
+      - backend
+    profiles:
+      - gateway
+    mem_limit: 100m
 
 volumes:
   mongo_data:
