@@ -20,9 +20,7 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _signature_payload(
-    method: str, credential: str, timestamp: str, nonce: str
-) -> bytes:
+def _signature_payload(method: str, credential: str, timestamp: str, nonce: str) -> bytes:
     return f"{method}:{credential}:{timestamp}:{nonce}".encode("utf-8")
 
 
@@ -95,14 +93,7 @@ async def _authenticate_gateway_request(payload: dict) -> tuple[dict, dict]:
     signature = str(payload.get("signature", ""))
     token = str(payload.get("device_token", ""))
 
-    if (
-        not device_id
-        or not method
-        or not timestamp
-        or not nonce
-        or not signature
-        or not token
-    ):
+    if not device_id or not method or not timestamp or not nonce or not signature or not token:
         raise HTTPException(status_code=401, detail="Payload do gateway incompleto")
     if method not in ALLOWED_METHODS:
         raise HTTPException(status_code=401, detail="Metodo invalido")
@@ -120,9 +111,7 @@ async def _authenticate_gateway_request(payload: dict) -> tuple[dict, dict]:
     now = datetime.now(UTC)
     skew = abs((now - parsed_timestamp).total_seconds())
     if skew > settings.gateway_max_skew_seconds:
-        raise HTTPException(
-            status_code=401, detail="Timestamp fora da janela permitida"
-        )
+        raise HTTPException(status_code=401, detail="Timestamp fora da janela permitida")
 
     expected = hmac.new(
         token.encode("utf-8"),
@@ -147,9 +136,7 @@ async def _authenticate_gateway_request(payload: dict) -> tuple[dict, dict]:
 
 
 @router.post("/devices")
-async def create_device(
-    payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))
-):
+async def create_device(payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     db = get_db()
     now = datetime.now(UTC)
     raw_token = secrets.token_urlsafe(32)
@@ -180,9 +167,7 @@ async def create_device(
 
 
 @router.get("/devices")
-async def list_devices(
-    actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION"))
-):
+async def list_devices(actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION"))):
     db = get_db()
     return (
         await db.turnstile_devices.find(
@@ -200,9 +185,7 @@ async def turnstile_decision(payload: dict):
     device, normalized = await _authenticate_gateway_request(payload)
     now = datetime.now(UTC)
 
-    subscription = await db.subscriptions.find_one(
-        {"owner_id": device["owner_id"]}, {"_id": 0}
-    )
+    subscription = await db.subscriptions.find_one({"owner_id": device["owner_id"]}, {"_id": 0})
     if not subscription_allows_login(subscription):
         await db.access_logs.insert_one(
             {

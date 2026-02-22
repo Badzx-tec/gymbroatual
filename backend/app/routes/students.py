@@ -32,9 +32,7 @@ async def list_students(
 
 
 @router.post("")
-async def create_student(
-    payload: StudentIn, owner: dict = Depends(require_active_subscription)
-):
+async def create_student(payload: StudentIn, owner: dict = Depends(require_active_subscription)):
     db = get_db()
     now = datetime.now(UTC)
     student_id = f"std_{secrets.token_hex(6)}"
@@ -51,9 +49,7 @@ async def create_student(
 
 
 @router.get("/{student_id}")
-async def get_student(
-    student_id: str, owner: dict = Depends(require_active_subscription)
-):
+async def get_student(student_id: str, owner: dict = Depends(require_active_subscription)):
     db = get_db()
     student = await db.students.find_one(
         {"student_id": student_id, "owner_id": owner["owner_id"]},
@@ -107,13 +103,9 @@ async def update_student(
 
 
 @router.delete("/{student_id}")
-async def delete_student(
-    student_id: str, owner: dict = Depends(require_active_subscription)
-):
+async def delete_student(student_id: str, owner: dict = Depends(require_active_subscription)):
     db = get_db()
-    result = await db.students.delete_one(
-        {"student_id": student_id, "owner_id": owner["owner_id"]}
-    )
+    result = await db.students.delete_one({"student_id": student_id, "owner_id": owner["owner_id"]})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Aluno nao encontrado")
     return {"message": "Aluno removido"}
@@ -139,9 +131,7 @@ async def add_measurement(
 
 
 @router.get("/{student_id}/measurements")
-async def list_measurements(
-    student_id: str, owner: dict = Depends(require_active_subscription)
-):
+async def list_measurements(student_id: str, owner: dict = Depends(require_active_subscription)):
     db = get_db()
     return (
         await db.measurements.find(
@@ -173,9 +163,7 @@ async def add_workout(
 
 
 @router.get("/{student_id}/workouts")
-async def list_workouts(
-    student_id: str, owner: dict = Depends(require_active_subscription)
-):
+async def list_workouts(student_id: str, owner: dict = Depends(require_active_subscription)):
     db = get_db()
     return (
         await db.workouts.find(
@@ -208,10 +196,7 @@ async def add_attendance(
             "log_id": f"log_{secrets.token_hex(6)}",
             "student_id": student_id,
             "student_name": (
-                await db.students.find_one(
-                    {"student_id": student_id}, {"nome": 1, "_id": 0}
-                )
-                or {}
+                await db.students.find_one({"student_id": student_id}, {"nome": 1, "_id": 0}) or {}
             ).get("nome", "Aluno"),
             "tag_id": student_id,
             "tipo": payload.source,

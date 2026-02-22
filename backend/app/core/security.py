@@ -25,9 +25,7 @@ def create_access_token(subject: str, extra: dict[str, Any] | None = None) -> st
     payload: dict[str, Any] = {
         "sub": subject,
         "iat": int(now.timestamp()),
-        "exp": int(
-            (now + timedelta(minutes=settings.access_token_minutes)).timestamp()
-        ),
+        "exp": int((now + timedelta(minutes=settings.access_token_minutes)).timestamp()),
     }
     if extra:
         payload.update(extra)

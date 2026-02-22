@@ -13,9 +13,7 @@ ALLOWED_ROLES = {"OWNER", "MANAGER", "RECEPTION", "TRAINER"}
 
 
 @router.post("/invites")
-async def create_invite(
-    payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))
-):
+async def create_invite(payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     role = (payload.get("role") or "").upper()
     email = (payload.get("email") or "").strip().lower()
     if role not in ALLOWED_ROLES - {"OWNER"}:
@@ -54,9 +52,7 @@ async def list_invites(actor: dict = Depends(require_roles("OWNER", "MANAGER")))
 
 
 @router.delete("/invites/{invite_id}")
-async def cancel_invite(
-    invite_id: str, actor: dict = Depends(require_roles("OWNER", "MANAGER"))
-):
+async def cancel_invite(invite_id: str, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     db = get_db()
     await db.employee_invites.update_one(
         {"invite_id": invite_id, "owner_id": actor["owner_id"]},
@@ -74,9 +70,7 @@ async def list_employees(actor: dict = Depends(require_roles("OWNER", "MANAGER")
 
 
 @router.post("/employees")
-async def create_employee(
-    payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))
-):
+async def create_employee(payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     db = get_db()
     email = (payload.get("email") or "").strip().lower()
     role = (payload.get("role") or "").upper()
@@ -85,9 +79,7 @@ async def create_employee(
     if not email or not payload.get("name"):
         raise HTTPException(status_code=400, detail="Nome e email obrigatorios")
 
-    if await db.employees.find_one(
-        {"email": email, "owner_id": actor["owner_id"]}, {"_id": 0}
-    ):
+    if await db.employees.find_one({"email": email, "owner_id": actor["owner_id"]}, {"_id": 0}):
         raise HTTPException(status_code=400, detail="Email ja cadastrado")
 
     raw_password = payload.get("password") or secrets.token_urlsafe(8)

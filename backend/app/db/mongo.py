@@ -31,12 +31,8 @@ async def init_indexes() -> None:
     await db.employee_invites.create_index("token", unique=True)
     await db.employee_invites.create_index("expires_at")
     await db.billing_events.create_index("event_id", unique=True)
-    await db.turnstile_devices.create_index(
-        [("owner_id", 1), ("device_id", 1)], unique=True
-    )
+    await db.turnstile_devices.create_index([("owner_id", 1), ("device_id", 1)], unique=True)
     await db.access_logs.create_index([("owner_id", 1), ("created_at", -1)])
     await db.turnstile_events.create_index([("owner_id", 1), ("created_at", -1)])
-    await db.turnstile_nonces.create_index(
-        [("device_id", 1), ("nonce", 1)], unique=True
-    )
+    await db.turnstile_nonces.create_index([("device_id", 1), ("nonce", 1)], unique=True)
     await db.turnstile_nonces.create_index("expires_at", expireAfterSeconds=0)

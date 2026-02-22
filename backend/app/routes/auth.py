@@ -89,9 +89,7 @@ async def verify_start(payload: VerifyStartIn):
     now = datetime.now(UTC)
     last_sent_at = owner.get("verification_last_sent_at")
     if last_sent_at and (now - last_sent_at).total_seconds() < 30:
-        raise HTTPException(
-            status_code=429, detail="Aguarde alguns segundos para reenviar"
-        )
+        raise HTTPException(status_code=429, detail="Aguarde alguns segundos para reenviar")
 
     code = f"{secrets.randbelow(999999):06d}"
     code_hash = verification_code_hash(email, code)
@@ -134,13 +132,9 @@ async def verify_confirm(payload: VerifyConfirmIn):
         raise HTTPException(status_code=400, detail="Codigo expirado")
 
     if int(owner.get("verification_attempts", 0)) >= 5:
-        raise HTTPException(
-            status_code=429, detail="Muitas tentativas. Reenvie o codigo"
-        )
+        raise HTTPException(status_code=429, detail="Muitas tentativas. Reenvie o codigo")
 
-    if verification_code_hash(email, payload.code) != owner.get(
-        "verification_code_hash"
-    ):
+    if verification_code_hash(email, payload.code) != owner.get("verification_code_hash"):
         await db.owners.update_one(
             {"owner_id": owner["owner_id"]}, {"$inc": {"verification_attempts": 1}}
         )
@@ -174,9 +168,7 @@ async def _login_owner(email: str, password: str) -> dict | None:
             headers={"X-Error-Code": "NEED_EMAIL_VERIFICATION"},
         )
 
-    subscription = await db.subscriptions.find_one(
-        {"owner_id": owner["owner_id"]}, {"_id": 0}
-    )
+    subscription = await db.subscriptions.find_one({"owner_id": owner["owner_id"]}, {"_id": 0})
     if not subscription_allows_login(subscription):
         checkout_url = None
         try:
@@ -218,9 +210,7 @@ async def _login_employee(email: str, password: str) -> dict | None:
     if not verify_password(password, employee["password_hash"]):
         return None
 
-    subscription = await db.subscriptions.find_one(
-        {"owner_id": employee["owner_id"]}, {"_id": 0}
-    )
+    subscription = await db.subscriptions.find_one({"owner_id": employee["owner_id"]}, {"_id": 0})
     if not subscription_allows_login(subscription):
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -261,9 +251,7 @@ async def login(payload: LoginIn):
     if result:
         return result
 
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais invalidas"
-    )
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais invalidas")
 
 
 @router.get("/me")

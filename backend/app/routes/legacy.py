@@ -34,9 +34,7 @@ async def dashboard_charts() -> dict:
 
 
 @router.get("/access-logs")
-async def access_logs(
-    limit: int = 100, actor: dict = Depends(require_active_subscription)
-):
+async def access_logs(limit: int = 100, actor: dict = Depends(require_active_subscription)):
     return await gym_routes.access_logs(limit=limit, owner=actor)
 
 
@@ -51,9 +49,7 @@ async def plans_public():
 
 
 @router.post("/plans")
-async def create_plan(
-    payload: dict, actor: dict = Depends(require_active_subscription)
-):
+async def create_plan(payload: dict, actor: dict = Depends(require_active_subscription)):
     return await gym_routes.create_plan(payload, actor)
 
 
@@ -75,9 +71,7 @@ async def list_academies(actor: dict = Depends(require_active_subscription)):
 
 
 @router.post("/academies")
-async def create_academy(
-    payload: dict, actor: dict = Depends(require_active_subscription)
-):
+async def create_academy(payload: dict, actor: dict = Depends(require_active_subscription)):
     db = get_db()
     now = datetime.now(UTC)
     gym_id = payload.get("academy_id") or f"gym_{secrets.token_hex(6)}"
@@ -130,9 +124,7 @@ async def update_academy(
         {"gym_id": academy_id, "owner_id": actor["owner_id"]}, {"_id": 0}
     )
     if not updated:
-        return JSONResponse(
-            status_code=404, content={"detail": "Academia nao encontrada"}
-        )
+        return JSONResponse(status_code=404, content={"detail": "Academia nao encontrada"})
     return {
         "academy_id": academy_id,
         "nome": updated.get("name", ""),
@@ -146,18 +138,14 @@ async def update_academy(
 
 
 @router.delete("/academies/{academy_id}")
-async def delete_academy(
-    academy_id: str, actor: dict = Depends(require_active_subscription)
-):
+async def delete_academy(academy_id: str, actor: dict = Depends(require_active_subscription)):
     db = get_db()
     await db.gyms.delete_one({"gym_id": academy_id, "owner_id": actor["owner_id"]})
     return {"message": "Academia removida"}
 
 
 @router.get("/academies/{academy_id}/stats")
-async def academy_stats(
-    academy_id: str, actor: dict = Depends(require_active_subscription)
-):
+async def academy_stats(academy_id: str, actor: dict = Depends(require_active_subscription)):
     db = get_db()
     q = {"owner_id": actor["owner_id"], "gym_id": academy_id}
     total = await db.students.count_documents(q)
@@ -181,16 +169,12 @@ async def academy_billing(
 
 
 @router.post("/payments/academy/subscription/checkout")
-async def academy_checkout(
-    _: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))
-):
+async def academy_checkout(_: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     return await billing_routes.subscription_checkout(actor)
 
 
 @router.get("/notifications")
-async def notifications(
-    limit: int = 50, actor: dict = Depends(require_active_subscription)
-):
+async def notifications(limit: int = 50, actor: dict = Depends(require_active_subscription)):
     db = get_db()
     return (
         await db.notifications.find({"owner_id": actor["owner_id"]}, {"_id": 0})
@@ -228,9 +212,7 @@ async def notifications_check(actor: dict = Depends(require_active_subscription)
 
 
 @router.put("/notifications/{notif_id}/read")
-async def notification_read(
-    notif_id: str, actor: dict = Depends(require_active_subscription)
-):
+async def notification_read(notif_id: str, actor: dict = Depends(require_active_subscription)):
     db = get_db()
     await db.notifications.update_one(
         {"notif_id": notif_id, "owner_id": actor["owner_id"]}, {"$set": {"lida": True}}
@@ -239,20 +221,14 @@ async def notification_read(
 
 
 @router.delete("/notifications/{notif_id}")
-async def notification_delete(
-    notif_id: str, actor: dict = Depends(require_active_subscription)
-):
+async def notification_delete(notif_id: str, actor: dict = Depends(require_active_subscription)):
     db = get_db()
-    await db.notifications.delete_one(
-        {"notif_id": notif_id, "owner_id": actor["owner_id"]}
-    )
+    await db.notifications.delete_one({"notif_id": notif_id, "owner_id": actor["owner_id"]})
     return {"message": "ok"}
 
 
 @router.post("/catraca/command")
-async def catraca_command(
-    payload: dict, actor: dict = Depends(require_active_subscription)
-):
+async def catraca_command(payload: dict, actor: dict = Depends(require_active_subscription)):
     db = get_db()
     doc = {
         "cmd_id": f"cmd_{secrets.token_hex(6)}",
@@ -278,9 +254,7 @@ async def catraca_commands(actor: dict = Depends(require_active_subscription)):
 
 
 @router.get("/webhook-logs")
-async def webhook_logs(
-    limit: int = 50, actor: dict = Depends(require_active_subscription)
-):
+async def webhook_logs(limit: int = 50, actor: dict = Depends(require_active_subscription)):
     db = get_db()
     return (
         await db.billing_events.find({}, {"_id": 0})
@@ -374,9 +348,7 @@ async def register_passkey(
 
 
 @router.post("/students/{student_id}/passkey/register/options")
-async def passkey_opts(
-    student_id: str, actor: dict = Depends(require_active_subscription)
-):
+async def passkey_opts(student_id: str, actor: dict = Depends(require_active_subscription)):
     return {
         "state_id": f"st_{student_id}",
         "publicKey": {"challenge": "", "user": {"id": ""}, "excludeCredentials": []},
@@ -391,9 +363,7 @@ async def passkey_verify(
 
 
 @router.get("/students/{student_id}/passkeys")
-async def list_passkeys(
-    student_id: str, actor: dict = Depends(require_active_subscription)
-):
+async def list_passkeys(student_id: str, actor: dict = Depends(require_active_subscription)):
     return {"student_id": student_id, "webauthn_credentials": []}
 
 

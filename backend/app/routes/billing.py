@@ -70,9 +70,7 @@ async def subscription_status(actor: dict = Depends(require_roles("OWNER", "MANA
 
 
 @router.post("/subscription/checkout", response_model=CheckoutOut)
-async def subscription_checkout(
-    actor: dict = Depends(require_roles("OWNER", "MANAGER"))
-):
+async def subscription_checkout(actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     return await create_checkout_for_owner(actor)
 
 
@@ -81,9 +79,7 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
     db = get_db()
     owner_id = owner["owner_id"]
 
-    checkout_url = (
-        f"{settings.frontend_base_url}/admin/assinatura?mock=1&owner_id={owner_id}"
-    )
+    checkout_url = f"{settings.frontend_base_url}/admin/assinatura?mock=1&owner_id={owner_id}"
     preapproval_id = f"mock_pre_{owner_id}"
 
     if settings.mp_access_token:
@@ -111,9 +107,7 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
             if response.is_success:
                 data = response.json()
                 checkout_url = (
-                    data.get("init_point")
-                    or data.get("sandbox_init_point")
-                    or checkout_url
+                    data.get("init_point") or data.get("sandbox_init_point") or checkout_url
                 )
                 preapproval_id = data.get("id") or preapproval_id
             else:
@@ -137,9 +131,7 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
 
 
 @router.post("/webhook/mercadopago")
-async def webhook_mercadopago(
-    request: Request, x_signature: str | None = Header(default=None)
-):
+async def webhook_mercadopago(request: Request, x_signature: str | None = Header(default=None)):
     settings = get_settings()
     db = get_db()
 
@@ -147,20 +139,14 @@ async def webhook_mercadopago(
     payload = await request.json()
 
     if settings.mp_webhook_secret:
-        digest = hashlib.sha256(
-            raw + settings.mp_webhook_secret.encode("utf-8")
-        ).hexdigest()
+        digest = hashlib.sha256(raw + settings.mp_webhook_secret.encode("utf-8")).hexdigest()
         signature_value = x_signature or ""
         if signature_value.startswith("ts="):
             for part in signature_value.split(","):
                 if part.strip().startswith("v1="):
                     signature_value = part.strip().split("=", 1)[1]
                     break
-        if (
-            signature_value
-            and digest != signature_value
-            and digest not in signature_value
-        ):
+        if signature_value and digest != signature_value and digest not in signature_value:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Assinatura de webhook invalida",
@@ -177,9 +163,7 @@ async def webhook_mercadopago(
     action = payload.get("action", "")
     status_value = status_from_payload(payload)
 
-    owner_id = payload.get("external_reference") or payload.get("metadata", {}).get(
-        "owner_id"
-    )
+    owner_id = payload.get("external_reference") or payload.get("metadata", {}).get("owner_id")
     if not owner_id:
         pre_id = payload.get("data", {}).get("id") or payload.get("id")
         sub = await db.subscriptions.find_one({"mp_preapproval_id": pre_id}, {"_id": 0})
@@ -220,9 +204,7 @@ async def webhook_mercadopago(
 
 
 @router.get("/webhook/logs")
-async def webhook_logs(
-    limit: int = 100, actor: dict = Depends(require_roles("OWNER", "MANAGER"))
-):
+async def webhook_logs(limit: int = 100, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     db = get_db()
     return (
         await db.billing_events.find({"owner_id": actor["owner_id"]}, {"_id": 0})

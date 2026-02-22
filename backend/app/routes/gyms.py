@@ -26,9 +26,7 @@ async def dashboard(owner: dict = Depends(require_active_subscription)):
         {
             **base,
             "timestamp": {
-                "$gte": datetime.now(UTC).replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
+                "$gte": datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
             },
         }
     )
@@ -46,9 +44,7 @@ async def dashboard(owner: dict = Depends(require_active_subscription)):
 
 
 @router.get("/access-logs")
-async def access_logs(
-    limit: int = 100, owner: dict = Depends(require_active_subscription)
-):
+async def access_logs(limit: int = 100, owner: dict = Depends(require_active_subscription)):
     db = get_db()
     return (
         await db.access_logs.find({"owner_id": owner["owner_id"]}, {"_id": 0})
@@ -82,9 +78,7 @@ async def list_plans_public():
 
 
 @router.post("/plans")
-async def create_plan(
-    payload: dict, owner: dict = Depends(require_active_subscription)
-):
+async def create_plan(payload: dict, owner: dict = Depends(require_active_subscription)):
     db = get_db()
     doc = {
         "plan_id": payload.get("plan_id") or f"pln_{datetime.now(UTC).timestamp():.0f}",
@@ -105,17 +99,13 @@ async def update_plan(
     )
     if not result.matched_count:
         raise HTTPException(status_code=404, detail="Plano nao encontrado")
-    return await db.plans.find_one(
-        {"plan_id": plan_id, "owner_id": owner["owner_id"]}, {"_id": 0}
-    )
+    return await db.plans.find_one({"plan_id": plan_id, "owner_id": owner["owner_id"]}, {"_id": 0})
 
 
 @router.delete("/plans/{plan_id}")
 async def delete_plan(plan_id: str, owner: dict = Depends(require_active_subscription)):
     db = get_db()
-    result = await db.plans.delete_one(
-        {"plan_id": plan_id, "owner_id": owner["owner_id"]}
-    )
+    result = await db.plans.delete_one({"plan_id": plan_id, "owner_id": owner["owner_id"]})
     if not result.deleted_count:
         raise HTTPException(status_code=404, detail="Plano nao encontrado")
     return {"message": "Plano removido"}

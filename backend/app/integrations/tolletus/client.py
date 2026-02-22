@@ -9,9 +9,7 @@ from app.core.config import get_settings
 class TolletusClient(Protocol):
     async def enroll_start(self, student_id: str, device_id: str) -> dict: ...
 
-    async def enroll_confirm(
-        self, student_id: str, device_id: str, template: str
-    ) -> dict: ...
+    async def enroll_confirm(self, student_id: str, device_id: str, template: str) -> dict: ...
 
 
 @dataclass
@@ -26,9 +24,7 @@ class MockTolletusClient:
             "instructions": "Posicione o dedo no leitor e confirme no app",
         }
 
-    async def enroll_confirm(
-        self, student_id: str, device_id: str, template: str
-    ) -> dict:
+    async def enroll_confirm(self, student_id: str, device_id: str, template: str) -> dict:
         return {
             "provider": "tolletus",
             "mode": "mock",
@@ -54,9 +50,7 @@ class HttpTolletusClient:
             response.raise_for_status()
             return response.json()
 
-    async def enroll_confirm(
-        self, student_id: str, device_id: str, template: str
-    ) -> dict:
+    async def enroll_confirm(self, student_id: str, device_id: str, template: str) -> dict:
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(
                 f"{self.base_url}/enroll/confirm",
