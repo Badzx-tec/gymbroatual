@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Tag, ScanLine, Menu, X, LogOut, Dumbbell, Building2, Bell, Wifi, CreditCard } from 'lucide-react';
+import { LayoutDashboard, Users, Tag, ScanLine, Menu, X, LogOut, Dumbbell, Building2, Bell, Wifi, CreditCard, UserCog } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../api';
 
@@ -13,6 +13,7 @@ const navItems = [
   { to: '/admin/assinatura', icon: CreditCard, label: 'Assinatura' },
   { to: '/admin/notificacoes', icon: Bell, label: 'Notificacoes' },
   { to: '/admin/catraca', icon: Wifi, label: 'Catraca' },
+  { to: '/admin/funcionarios', icon: UserCog, label: 'Funcionarios' },
 ];
 
 export default function AdminLayout() {
@@ -20,6 +21,14 @@ export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const user = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
+  const role = (user.role || 'OWNER').toUpperCase();
+  const canSeeBilling = ['OWNER', 'MANAGER'].includes(role);
+  const canSeeStaff = ['OWNER', 'MANAGER'].includes(role);
+  const visibleNavItems = navItems.filter((item) => {
+    if (item.to === '/admin/assinatura') return canSeeBilling;
+    if (item.to === '/admin/funcionarios') return canSeeStaff;
+    return true;
+  });
 
   useEffect(() => {
     api.listNotifications(50).then(notifs => {
@@ -42,7 +51,7 @@ export default function AdminLayout() {
         <span className="font-heading text-xl font-bold tracking-tight uppercase">GymBro</span>
       </div>
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        {navItems.map(item => (
+        {visibleNavItems.map(item => (
           <NavLink key={item.to} to={item.to} end={item.end} onClick={onNavClick}
             data-testid={`nav-${item.label.toLowerCase()}`}
             className={({ isActive }) => `flex items-center gap-3 px-4 py-2.5 rounded-sm text-sm font-medium transition-colors relative ${isActive ? 'bg-[#ccff00]/10 text-[#ccff00]' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}>

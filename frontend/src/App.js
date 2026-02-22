@@ -13,6 +13,7 @@ import AcademiesPage from './pages/AcademiesPage';
 import NotificationsPage from './pages/NotificationsPage';
 import CatracaPage from './pages/CatracaPage';
 import SubscriptionPage from './pages/SubscriptionPage';
+import StaffPage from './pages/StaffPage';
 import AdminLayout from './components/AdminLayout';
 
 function AppRouter() {
@@ -33,6 +34,7 @@ function AppRouter() {
         <Route path="franquias" element={<AcademiesPage />} />
         <Route path="notificacoes" element={<NotificationsPage />} />
         <Route path="catraca" element={<CatracaPage />} />
+        <Route path="funcionarios" element={<StaffPage />} />
         <Route path="assinatura" element={<SubscriptionPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

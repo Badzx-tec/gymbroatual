@@ -111,6 +111,18 @@ export const api = {
   tolletusEnrollConfirm: (data) => request('/api/tolletus/enroll/confirm', { method: 'POST', body: JSON.stringify(data) }),
   tolletusStudentStatus: (studentId) => request(`/api/tolletus/students/${studentId}/status`),
 
+  listStaffInvites: () => request('/api/staff/invites'),
+  createStaffInvite: (data) => request('/api/staff/invites', { method: 'POST', body: JSON.stringify(data) }),
+  cancelStaffInvite: (inviteId) => request(`/api/staff/invites/${inviteId}`, { method: 'DELETE' }),
+  listEmployees: () => request('/api/staff/employees'),
+  createEmployee: (data) => request('/api/staff/employees', { method: 'POST', body: JSON.stringify(data) }),
+  deactivateEmployee: (employeeId) => request(`/api/staff/employees/${employeeId}/deactivate`, { method: 'POST' }),
+  resetEmployeePassword: (employeeId, data = {}) => request(`/api/staff/employees/${employeeId}/reset-password`, { method: 'POST', body: JSON.stringify(data) }),
+
+  createTurnstileDevice: (data) => request('/api/turnstiles/devices', { method: 'POST', body: JSON.stringify(data) }),
+  listTurnstileDevices: () => request('/api/turnstiles/devices'),
+  listTurnstileAccessLogs: (limit = 100) => request(`/api/turnstiles/access-logs?limit=${limit}`),
+
   catracaCommand: (data) => request('/api/catraca/command', { method: 'POST', body: JSON.stringify(data) }),
   catracaCommands: () => request('/api/catraca/commands'),
 
