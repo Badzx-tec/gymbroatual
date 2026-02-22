@@ -105,6 +105,10 @@ export const api = {
 
   subscriptionStatus: () => request('/api/billing/subscription/status'),
   subscriptionCheckout: () => request('/api/billing/subscription/checkout', { method: 'POST' }),
+  billingMembership: () => request('/api/billing/membership'),
+  billingInvoices: (limit = 50) => request(`/api/billing/invoices?limit=${limit}`),
+  billingPaymentAttempts: (limit = 100) => request(`/api/billing/payment-attempts?limit=${limit}`),
+  billingEvents: (limit = 100) => request(`/api/billing/events?limit=${limit}`),
   createAcademySubscriptionCheckout: () => request('/api/payments/academy/subscription/checkout', { method: 'POST', body: JSON.stringify({}) }),
 
   tolletusEnrollStart: (data) => request('/api/tolletus/enroll/start', { method: 'POST', body: JSON.stringify(data) }),
