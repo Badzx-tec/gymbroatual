@@ -21,7 +21,7 @@ from app.models.auth import (
     VerifyConfirmIn,
     VerifyStartIn,
 )
-from app.services.email import send_email_code
+from app.services.email import EmailDeliveryError, send_email_code
 from app.services.subscription import initial_subscription, subscription_allows_login
 
 router = APIRouter()
@@ -160,9 +160,16 @@ async def verify_start(payload: VerifyStartIn, request: Request):
         },
     )
 
-    sent = await send_email_code(email, code)
+    try:
+        sent = await send_email_code(email, code)
+    except EmailDeliveryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servico de e-mail indisponivel no momento. Tente novamente em instantes.",
+        ) from exc
+
     response = {"message": "Codigo enviado", "expires_at": expires_at}
-    if not sent:
+    if not sent and settings.environment != "prod":
         response["dev_code"] = code
     return response
 
