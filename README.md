@@ -89,6 +89,10 @@ npm start
 Endpoints principais:
 - `POST /api/billing/subscription/checkout`
 - `GET /api/billing/subscription/status`
+- `GET /api/billing/membership`
+- `GET /api/billing/invoices`
+- `GET /api/billing/payment-attempts`
+- `GET /api/billing/events`
 - `POST /api/billing/webhook/mercadopago`
 - `GET /api/billing/webhook/logs`
 - `POST /api/billing/reconcile/run`
@@ -102,6 +106,8 @@ Implementado:
 - atualização robusta de `active/past_due/canceled`
 - reconciliação ativa com Mercado Pago (loop de background + endpoint manual)
 - rate limit no webhook + logs de rejeição por assinatura inválida
+- domínio financeiro de assinatura com membership, invoices, payment attempts e subscription events
+- painel financeiro no frontend: `/admin/cobranca` (OWNER/MANAGER)
 
 ## Funcionários por academia (RBAC)
 
