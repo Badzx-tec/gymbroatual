@@ -12,13 +12,25 @@ export default function LoginPage() {
   const [gymName, setGymName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [code, setCode] = useState('');
-  const [showPw, setShowPw] = useState(false);
+  const [showLoginPw, setShowLoginPw] = useState(false);
+  const [showRegisterPw, setShowRegisterPw] = useState(false);
+  const [showRegisterConfirmPw, setShowRegisterConfirmPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [paymentRequired, setPaymentRequired] = useState(null);
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      toast.error('As senhas nao conferem.');
+      return;
+    }
+    if (password.length < 8) {
+      toast.error('A senha deve ter pelo menos 8 caracteres.');
+      return;
+    }
+
     setLoading(true);
     try {
       await api.register({ name, gym_name: gymName, email, password });
@@ -37,7 +49,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await api.verifyConfirm(email, code);
-      toast.success('E-mail verificado. Faça login para continuar.');
+      toast.success('E-mail verificado. FaÃ§a login para continuar.');
       setMode('login');
     } catch (err) {
       toast.error(err.message);
@@ -114,9 +126,9 @@ export default function LoginPage() {
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
               <label className="text-sm font-medium text-zinc-400 mb-1 block">Senha</label>
               <div className="relative">
-                <input type={showPw ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 pr-12" />
-                <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300">
-                  {showPw ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                <input type={showLoginPw ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 pr-12" />
+                <button type="button" onClick={() => setShowLoginPw(!showLoginPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300">
+                  {showLoginPw ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
               <button type="submit" disabled={loading} className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-[#b3e600] disabled:opacity-50">
@@ -133,8 +145,23 @@ export default function LoginPage() {
               <input type="text" value={gymName} onChange={(e) => setGymName(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
               <label className="text-sm font-medium text-zinc-400 mb-1 block">E-mail</label>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
+
               <label className="text-sm font-medium text-zinc-400 mb-1 block">Senha</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
+              <div className="relative">
+                <input type={showRegisterPw ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 pr-12" />
+                <button type="button" onClick={() => setShowRegisterPw(!showRegisterPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300">
+                  {showRegisterPw ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+
+              <label className="text-sm font-medium text-zinc-400 mb-1 block">Confirmar senha</label>
+              <div className="relative">
+                <input type={showRegisterConfirmPw ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 pr-12" />
+                <button type="button" onClick={() => setShowRegisterConfirmPw(!showRegisterConfirmPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300">
+                  {showRegisterConfirmPw ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+
               <button type="submit" disabled={loading} className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-[#b3e600] disabled:opacity-50">
                 {loading ? 'Criando...' : 'Criar Conta'}
               </button>

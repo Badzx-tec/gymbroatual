@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, CreditCard, FileText, History } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -98,9 +98,9 @@ export default function BillingCenterPage() {
         <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
           <p className="text-xs uppercase tracking-wider text-zinc-500">Status atual</p>
           <p className={`inline-flex mt-2 px-2 py-1 rounded-sm border text-xs font-semibold uppercase ${statusPill(data.subscription?.status)}`}>
-            {data.subscription?.status || 'unknown'}
+            {data.subscription?.status || 'desconhecido'}
           </p>
-          <p className="text-xs text-zinc-500 mt-2">Can login: {data.subscription?.can_login ? 'sim' : 'nao'}</p>
+          <p className="text-xs text-zinc-500 mt-2">Acesso liberado: {data.subscription?.can_login ? 'sim' : 'nao'}</p>
         </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
           <p className="text-xs uppercase tracking-wider text-zinc-500">Receita reconhecida</p>
@@ -110,7 +110,7 @@ export default function BillingCenterPage() {
         <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
           <p className="text-xs uppercase tracking-wider text-zinc-500">Tentativas falhas</p>
           <p className="mt-2 text-xl font-bold">{summary.failedAttempts}</p>
-          <p className="text-xs text-zinc-500 mt-2">ultimos registros financeiros</p>
+          <p className="text-xs text-zinc-500 mt-2">Ultimos registros financeiros</p>
         </div>
       </div>
 
