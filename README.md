@@ -129,6 +129,8 @@ Rotas:
 - `POST /api/staff/employees`
 - `POST /api/staff/employees/{employee_id}/deactivate`
 - `POST /api/staff/employees/{employee_id}/reset-password`
+- `POST /api/staff/employees/{employee_id}/credentials`
+- `POST /api/staff/employees/{employee_id}/sync-shadow-student`
 
 Login é unificado (`/api/auth/login`) para owner e employee.
 JWT inclui `role`, `gym_id`, `owner_id` e `actor_type`.
@@ -184,6 +186,15 @@ Eventos parseados:
 - `GET /api/turnstiles/access-logs`
 - aliases legados: `/api/turnstile/decision` e `/api/turnstile/events`
 
+A decisão da catraca aceita credenciais de:
+- alunos (`students.tag_rfid`, `students.biometria_id`, `students.keypad_code`, `students.matricula`)
+- funcionários (`employees.tag_rfid`, `employees.biometria_id`, `employees.keypad_code`, `employees.matricula`)
+
+Modo compatibilidade (legado):
+- sincronizar funcionário como "aluno técnico" com
+  - `POST /api/staff/employees/{employee_id}/sync-shadow-student`
+- útil para cenários onde integrações antigas leem apenas `students`.
+
 Autenticação do gateway:
 - `device_token` por dispositivo enviado no header `X-Device-Token`
 - assinatura HMAC SHA256 com `timestamp` + `nonce` + payload
@@ -228,6 +239,22 @@ Header obrigatório:
 2. Configure `.env` do gateway com `GATEWAY_DEVICE_ID`, `GATEWAY_DEVICE_TOKEN`, `TOLETUS_SIMULATOR=true`.
 3. Suba: `docker compose --profile gateway up -d gateway-toletus`.
 4. Acompanhe logs: `docker compose logs -f gateway-toletus backend`.
+
+### Cadastro de biometria (alunos e funcionários)
+Aluno:
+- `POST /api/tolletus/enroll/start`
+- `POST /api/tolletus/enroll/confirm`
+- `GET /api/tolletus/students/{student_id}/status`
+
+Funcionário:
+- `POST /api/tolletus/employees/enroll/start`
+- `POST /api/tolletus/employees/enroll/confirm`
+- `GET /api/tolletus/employees/{employee_id}/status`
+
+Importante:
+- salvar apenas template/identificador da biometria (nunca imagem)
+- para liberação na catraca, vincule o identificador em `biometria_id`
+  (aluno ou funcionário)
 
 ## Observabilidade
 

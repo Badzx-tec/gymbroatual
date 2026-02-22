@@ -129,6 +129,9 @@ export const api = {
   tolletusEnrollStart: (data) => request('/api/tolletus/enroll/start', { method: 'POST', body: JSON.stringify(data) }),
   tolletusEnrollConfirm: (data) => request('/api/tolletus/enroll/confirm', { method: 'POST', body: JSON.stringify(data) }),
   tolletusStudentStatus: (studentId) => request(`/api/tolletus/students/${studentId}/status`),
+  tolletusEmployeeEnrollStart: (data) => request('/api/tolletus/employees/enroll/start', { method: 'POST', body: JSON.stringify(data) }),
+  tolletusEmployeeEnrollConfirm: (data) => request('/api/tolletus/employees/enroll/confirm', { method: 'POST', body: JSON.stringify(data) }),
+  tolletusEmployeeStatus: (employeeId) => request(`/api/tolletus/employees/${employeeId}/status`),
 
   listStaffInvites: () => request('/api/staff/invites'),
   createStaffInvite: (data) => request('/api/staff/invites', { method: 'POST', body: JSON.stringify(data) }),
@@ -137,6 +140,8 @@ export const api = {
   createEmployee: (data) => request('/api/staff/employees', { method: 'POST', body: JSON.stringify(data) }),
   deactivateEmployee: (employeeId) => request(`/api/staff/employees/${employeeId}/deactivate`, { method: 'POST' }),
   resetEmployeePassword: (employeeId, data = {}) => request(`/api/staff/employees/${employeeId}/reset-password`, { method: 'POST', body: JSON.stringify(data) }),
+  updateEmployeeCredentials: (employeeId, data) => request(`/api/staff/employees/${employeeId}/credentials`, { method: 'POST', body: JSON.stringify(data) }),
+  syncEmployeeShadowStudent: (employeeId) => request(`/api/staff/employees/${employeeId}/sync-shadow-student`, { method: 'POST' }),
 
   createTurnstileDevice: (data) => request('/api/turnstiles/devices', { method: 'POST', body: JSON.stringify(data) }),
   rotateTurnstileDeviceToken: (deviceId) => request(`/api/turnstiles/devices/${deviceId}/rotate-token`, { method: 'POST' }),

@@ -187,6 +187,50 @@ def _evaluate_student_access(student: dict | None, now: datetime) -> tuple[bool,
     return True, "ok", {"rule": "all_checks_passed"}
 
 
+def _evaluate_employee_access(employee: dict | None, now: datetime) -> tuple[bool, str, dict]:
+    if not employee:
+        return False, "employee_not_found", {"rule": "employee_exists"}
+
+    if not bool(employee.get("is_active", True)):
+        return False, "employee_inactive", {"is_active": employee.get("is_active")}
+
+    if bool(employee.get("access_blocked", False)):
+        return False, "employee_manual_block", {"rule": "access_blocked"}
+
+    blocked_until = _coerce_datetime_utc(employee.get("blocked_until"))
+    if blocked_until and blocked_until > now:
+        return (
+            False,
+            "employee_blocked_until",
+            {"blocked_until": blocked_until.isoformat()},
+        )
+
+    allowed_weekdays = _normalize_weekdays(
+        employee.get("allowed_weekdays") or employee.get("dias_permitidos")
+    )
+    if allowed_weekdays and now.weekday() not in allowed_weekdays:
+        return (
+            False,
+            "employee_outside_allowed_weekday",
+            {"allowed_weekdays": sorted(allowed_weekdays), "current_weekday": now.weekday()},
+        )
+
+    start = _parse_hhmm(employee.get("allowed_time_start") or employee.get("horario_inicio"))
+    end = _parse_hhmm(employee.get("allowed_time_end") or employee.get("horario_fim"))
+    if start and end and not _is_inside_time_window(now.time(), start, end):
+        return (
+            False,
+            "employee_outside_allowed_time",
+            {
+                "allowed_time_start": start.strftime("%H:%M"),
+                "allowed_time_end": end.strftime("%H:%M"),
+                "current_time": now.strftime("%H:%M"),
+            },
+        )
+
+    return True, "ok", {"rule": "employee_checks_passed"}
+
+
 async def _log_security_event(
     *,
     device_id: str,
@@ -505,20 +549,41 @@ async def turnstile_decision(
             "ttl": 3,
         }
 
+    credential_query = {
+        "owner_id": device["owner_id"],
+        "$or": [
+            {"tag_rfid": normalized["credential"]},
+            {"biometria_id": normalized["credential"]},
+            {"keypad_code": normalized["credential"]},
+            {"matricula": normalized["credential"]},
+        ],
+    }
+
     student = await db.students.find_one(
-        {
-            "owner_id": device["owner_id"],
-            "$or": [
-                {"tag_rfid": normalized["credential"]},
-                {"biometria_id": normalized["credential"]},
-                {"keypad_code": normalized["credential"]},
-                {"matricula": normalized["credential"]},
-            ],
-        },
+        credential_query,
         {"_id": 0},
     )
 
-    allow, reason, details = _evaluate_student_access(student, now)
+    employee = None
+    allow = False
+    reason = "credential_not_found"
+    details: dict = {"rule": "credential_match"}
+    subject_type = None
+    subject_id = None
+
+    if student:
+        allow, reason, details = _evaluate_student_access(student, now)
+        subject_type = "student"
+        subject_id = student.get("student_id")
+    else:
+        employee = await db.employees.find_one(
+            credential_query,
+            {"_id": 0, "password_hash": 0},
+        )
+        if employee:
+            allow, reason, details = _evaluate_employee_access(employee, now)
+            subject_type = "employee"
+            subject_id = employee.get("employee_id")
 
     await db.access_logs.insert_one(
         {
@@ -528,7 +593,10 @@ async def turnstile_decision(
             "device_id": normalized["device_id"],
             "method": normalized["method"],
             "credential": normalized["credential"],
+            "subject_type": subject_type,
+            "subject_id": subject_id,
             "student_id": student.get("student_id") if student else None,
+            "employee_id": employee.get("employee_id") if employee else None,
             "decision": "allow" if allow else "deny",
             "reason": reason,
             "reason_detail": details,
@@ -542,6 +610,8 @@ async def turnstile_decision(
         reason=reason,
         owner_id=device["owner_id"],
         device_id=device["device_id"],
+        subject_type=subject_type,
+        subject_id=subject_id,
     )
 
     return {
