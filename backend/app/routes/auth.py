@@ -27,6 +27,16 @@ from app.services.subscription import initial_subscription, subscription_allows_
 router = APIRouter()
 
 
+def _as_utc_datetime(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+    return None
+
+
 def _owner_out(owner: dict) -> OwnerOut:
     return OwnerOut(
         owner_id=owner["owner_id"],
@@ -129,7 +139,7 @@ async def verify_start(payload: VerifyStartIn, request: Request):
         raise HTTPException(status_code=404, detail="Conta nao encontrada")
 
     now = datetime.now(UTC)
-    last_sent_at = owner.get("verification_last_sent_at")
+    last_sent_at = _as_utc_datetime(owner.get("verification_last_sent_at"))
     if last_sent_at and (now - last_sent_at).total_seconds() < 30:
         raise HTTPException(status_code=429, detail="Aguarde alguns segundos para reenviar")
 
@@ -169,7 +179,7 @@ async def verify_confirm(payload: VerifyConfirmIn):
         return {"message": "Email ja verificado"}
 
     now = datetime.now(UTC)
-    expires_at = owner.get("verification_expires_at")
+    expires_at = _as_utc_datetime(owner.get("verification_expires_at"))
     if not expires_at or expires_at < now:
         raise HTTPException(status_code=400, detail="Codigo expirado")
 
