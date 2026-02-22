@@ -45,6 +45,10 @@ Principais:
 - `GATEWAY_DEVICE_ID`, `GATEWAY_DEVICE_TOKEN`, `TOLETUS_*`
 - `SAAS_URL` (gateway local -> URL pública do backend)
 - `GATEWAY_MAX_SKEW_SECONDS`, `GATEWAY_NONCE_TTL_SECONDS`
+- `GATEWAY_INVALID_ATTEMPT_THRESHOLD`, `GATEWAY_BLOCK_SECONDS`
+- `AUTH_LOGIN_RATE_LIMIT`, `AUTH_VERIFY_RATE_LIMIT`, `WEBHOOK_RATE_LIMIT`
+- `BILLING_RECONCILE_ENABLED`, `BILLING_RECONCILE_INTERVAL_SECONDS`
+- `ALERT_WEBHOOK_FAILURES_THRESHOLD`, `ALERT_ACCESS_DENIES_THRESHOLD`
 
 ## Rodando localmente com Docker
 
@@ -87,6 +91,7 @@ Endpoints principais:
 - `GET /api/billing/subscription/status`
 - `POST /api/billing/webhook/mercadopago`
 - `GET /api/billing/webhook/logs`
+- `POST /api/billing/reconcile/run`
 
 Implementado:
 - `notification_url`
@@ -95,6 +100,8 @@ Implementado:
 - fallback para `sandbox_init_point`
 - idempotência por `event_id`
 - atualização robusta de `active/past_due/canceled`
+- reconciliação ativa com Mercado Pago (loop de background + endpoint manual)
+- rate limit no webhook + logs de rejeição por assinatura inválida
 
 ## Funcionários por academia (RBAC)
 
@@ -144,17 +151,19 @@ Eventos parseados:
 
 ### API SaaS para Gateway
 - `POST /api/turnstiles/devices`
+- `POST /api/turnstiles/devices/{device_id}/rotate-token`
 - `POST /api/turnstiles/decision`
 - `POST /api/turnstiles/events`
 - `GET /api/turnstiles/access-logs`
 - aliases legados: `/api/turnstile/decision` e `/api/turnstile/events`
 
 Autenticação do gateway:
-- `device_token` por dispositivo
+- `device_token` por dispositivo enviado no header `X-Device-Token`
 - assinatura HMAC SHA256 com `timestamp` + `nonce` + payload
 - proteção anti-replay:
   - janela de tempo configurável (`GATEWAY_MAX_SKEW_SECONDS`)
   - nonce único com TTL (`GATEWAY_NONCE_TTL_SECONDS`)
+- auto-bloqueio de dispositivo após tentativas inválidas repetidas
 
 ### Exemplo de payload (Gateway -> SaaS)
 `POST /api/turnstiles/decision`
@@ -166,10 +175,11 @@ Autenticação do gateway:
   "credential": "00012345",
   "timestamp": "2026-02-22T14:10:00Z",
   "nonce": "a1b2c3d4e5f60708",
-  "signature": "<hmac_sha256>",
-  "device_token": "<token_em_texto_claro_no_gateway>"
+  "signature": "<hmac_sha256>"
 }
 ```
+Header obrigatório:
+`X-Device-Token: <token_em_texto_claro_no_gateway>`
 
 `POST /api/turnstiles/events`
 
@@ -181,7 +191,6 @@ Autenticação do gateway:
   "timestamp": "2026-02-22T14:10:01Z",
   "nonce": "c9d8e7f6a5b4c3d2",
   "signature": "<hmac_sha256>",
-  "device_token": "<token_em_texto_claro_no_gateway>",
   "decision": true,
   "message": "Acesso liberado"
 }
@@ -192,6 +201,18 @@ Autenticação do gateway:
 2. Configure `.env` do gateway com `GATEWAY_DEVICE_ID`, `GATEWAY_DEVICE_TOKEN`, `TOLETUS_SIMULATOR=true`.
 3. Suba: `docker compose --profile gateway up -d gateway-toletus`.
 4. Acompanhe logs: `docker compose logs -f gateway-toletus backend`.
+
+## Observabilidade
+
+Implementado no backend:
+- `X-Request-ID` em todas as respostas
+- logs estruturados JSON por request
+- métricas de runtime (throughput, latência média, taxa de erro)
+- alertas operacionais com thresholds configuráveis
+
+Endpoints:
+- `GET /api/ops/metrics`
+- `GET /api/ops/alerts`
 
 ## Deploy Produção (Droplet barato 1vCPU/1GB)
 
@@ -245,6 +266,7 @@ cd frontend
 npm ci
 npm run lint
 npm run build
+npm exec --yes playwright@1.52.0 test -c playwright.config.mjs
 ```
 
 Testes mínimos incluídos:
@@ -252,6 +274,7 @@ Testes mínimos incluídos:
 - integração auth + billing (PAYMENT_REQUIRED + checkout)
 - RBAC básico
 - protocolo LiteNet2 encoder/decoder
+- E2E frontend do fluxo crítico de auth+billing gate (`frontend/e2e/auth-billing.spec.mjs`)
 
 ## Runbook de Produção (checklist)
 
@@ -262,8 +285,15 @@ Testes mínimos incluídos:
 5. Configurar gateway local com `DEVICE_ID`/`DEVICE_TOKEN`
    - opcional API Toletus real: `TOLETUS_MODE=real`, `TOLETUS_API_BASE_URL`, `TOLETUS_API_KEY`
 6. Configurar webhook Mercado Pago
-7. Ativar backup periódico Mongo (`mongodump`)
-8. Monitorar logs (`docker compose logs -f backend nginx gateway-toletus`)
+7. Ativar backup periódico Mongo:
+   - `bash scripts/backup_mongo.sh`
+8. Testar restauração mensalmente:
+   - `bash scripts/verify_backup_restore.sh backups/<arquivo>.archive.gz`
+9. Monitorar logs (`docker compose logs -f backend nginx gateway-toletus`)
+
+Exemplo de agendamento no host (cron):
+- diário 02:30 UTC (backup): `30 2 * * * cd /opt/gymbro && /usr/bin/env bash scripts/backup_mongo.sh >> /var/log/gymbro-backup.log 2>&1`
+- mensal dia 1, 03:00 UTC (restore test): `0 3 1 * * cd /opt/gymbro && /usr/bin/env bash scripts/verify_backup_restore.sh $(ls -1t backups/*.archive.gz | head -n 1) >> /var/log/gymbro-restore-check.log 2>&1`
 
 ## Segurança
 
