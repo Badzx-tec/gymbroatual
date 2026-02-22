@@ -91,6 +91,24 @@ async def register(payload: RegisterIn):
     )
 
     await db.subscriptions.insert_one(initial_subscription(owner_id))
+    settings = get_settings()
+    await db.memberships.insert_one(
+        {
+            "membership_id": f"mem_{secrets.token_hex(6)}",
+            "owner_id": owner_id,
+            "plan_code": "owner_monthly",
+            "amount": settings.subscription_monthly_amount,
+            "currency": "BRL",
+            "provider": "mercadopago",
+            "status": "trialing",
+            "started_at": now,
+            "trial_ends_at": now + timedelta(days=settings.trial_days),
+            "current_period_start": None,
+            "current_period_end": None,
+            "canceled_at": None,
+            "updated_at": now,
+        }
+    )
     return {"message": "Cadastro criado. Verifique seu email para continuar."}
 
 

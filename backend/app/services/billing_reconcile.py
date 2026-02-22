@@ -117,6 +117,23 @@ async def reconcile_subscriptions(owner_id: str | None = None, limit: int | None
                         "received_at": now,
                     }
                 )
+                await db.subscription_events.insert_one(
+                    {
+                        "event_id": (
+                            f"subevt_reconcile:{owner}:{int(now.timestamp() * 1000000)}"
+                            f":{secrets.token_hex(2)}"
+                        ),
+                        "owner_id": owner,
+                        "source": "reconcile",
+                        "event_type": "poll_status",
+                        "status": mapped,
+                        "metadata": {
+                            "preapproval_id": preapproval_id,
+                            "mp_status": mp_data.get("status"),
+                        },
+                        "created_at": now,
+                    }
+                )
             except Exception as exc:  # pragma: no cover - network dependent
                 failed += 1
                 log_event(
