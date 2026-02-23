@@ -21,6 +21,7 @@ from app.models.auth import (
     VerifyConfirmIn,
     VerifyStartIn,
 )
+from app.services.billing_reconcile import reconcile_subscriptions
 from app.services.email import EmailDeliveryError, send_email_code
 from app.services.subscription import initial_subscription, subscription_allows_login
 
@@ -228,6 +229,22 @@ async def _login_owner(email: str, password: str) -> dict | None:
         )
 
     subscription = await db.subscriptions.find_one({"owner_id": owner["owner_id"]}, {"_id": 0})
+    settings = get_settings()
+    if (
+        settings.mp_access_token
+        and subscription
+        and subscription.get("provider") == "mercadopago"
+        and subscription.get("mp_preapproval_id")
+    ):
+        try:
+            await reconcile_subscriptions(owner_id=owner["owner_id"], limit=1)
+            subscription = await db.subscriptions.find_one(
+                {"owner_id": owner["owner_id"]}, {"_id": 0}
+            )
+        except Exception:
+            # Best-effort sync before enforcing payment gate.
+            pass
+
     if not subscription_allows_login(subscription):
         checkout_url = None
         try:
