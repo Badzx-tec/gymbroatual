@@ -1,5 +1,5 @@
 import hmac
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Any
 
@@ -7,6 +7,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.core.config import get_settings
+from app.core.time import UTC
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

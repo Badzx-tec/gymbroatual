@@ -18,6 +18,23 @@ def get_db() -> AsyncIOMotorDatabase:
     return get_client()[settings.db_name]
 
 
+async def _ensure_employee_email_unique_index(db: AsyncIOMotorDatabase) -> None:
+    index_name = "owner_id_1_email_1"
+    indexes = await db.employees.index_information()
+    current = indexes.get(index_name)
+
+    # Recria o índice legado para suportar múltiplos funcionários sem email
+    # e manter unicidade quando email estiver presente.
+    if current and current.get("unique") and "partialFilterExpression" not in current:
+        await db.employees.drop_index(index_name)
+
+    await db.employees.create_index(
+        [("owner_id", 1), ("email", 1)],
+        unique=True,
+        partialFilterExpression={"email": {"$type": "string"}},
+    )
+
+
 async def init_indexes() -> None:
     db = get_db()
     await db.owners.create_index("email", unique=True)
@@ -37,7 +54,7 @@ async def init_indexes() -> None:
     await db.students.create_index([("owner_id", 1), ("matricula", 1)])
     await db.students.create_index([("owner_id", 1), ("tag_rfid", 1)])
     await db.students.create_index([("owner_id", 1), ("biometria_id", 1)])
-    await db.employees.create_index([("owner_id", 1), ("email", 1)], unique=True)
+    await _ensure_employee_email_unique_index(db)
     await db.employees.create_index([("owner_id", 1), ("matricula", 1)])
     await db.employees.create_index([("owner_id", 1), ("tag_rfid", 1)])
     await db.employees.create_index([("owner_id", 1), ("biometria_id", 1)])

@@ -1,10 +1,20 @@
 import secrets
-from datetime import UTC, datetime
+from datetime import datetime
 
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from app.core.deps import get_current_actor, require_active_subscription, require_roles
+from app.core.time import UTC
 from app.db.mongo import get_db
 
 from . import billing as billing_routes
@@ -73,6 +83,10 @@ async def list_academies(actor: dict = Depends(require_active_subscription)):
 @router.post("/academies")
 async def create_academy(payload: dict, actor: dict = Depends(require_active_subscription)):
     db = get_db()
+    existing = await db.gyms.find_one({"owner_id": actor["owner_id"]}, {"_id": 0, "gym_id": 1})
+    if existing:
+        raise HTTPException(status_code=400, detail="Somente uma franquia por usuario")
+
     existing = await db.gyms.find_one({"owner_id": actor["owner_id"]}, {"_id": 0, "gym_id": 1})
     if existing:
         raise HTTPException(status_code=400, detail="Somente uma franquia por usuario")

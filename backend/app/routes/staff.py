@@ -1,10 +1,11 @@
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.deps import require_roles
 from app.core.security import hash_password
+from app.core.time import UTC
 from app.db.mongo import get_db
 
 router = APIRouter()

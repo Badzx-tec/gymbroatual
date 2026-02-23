@@ -1,7 +1,7 @@
 import hashlib
 import hmac
 import secrets
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pymongo.errors import DuplicateKeyError
@@ -9,6 +9,7 @@ from pymongo.errors import DuplicateKeyError
 from app.core.config import get_settings
 from app.core.deps import require_roles
 from app.core.http import get_client_ip
+from app.core.time import UTC
 from app.db.mongo import get_db
 from app.services.observability import log_event
 from app.services.subscription import subscription_allows_login

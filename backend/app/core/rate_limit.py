@@ -1,8 +1,9 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
 from pymongo import ReturnDocument
 
+from app.core.time import UTC
 from app.db.mongo import get_db
 
 
