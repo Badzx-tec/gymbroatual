@@ -1,12 +1,13 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class StudentIn(BaseModel):
     nome: str
     email: EmailStr | None = None
+    cpf: str | None = None
     telefone: str | None = None
     sexo: str | None = None
     data_nascimento: date | None = None
@@ -16,6 +17,26 @@ class StudentIn(BaseModel):
     restricoes: str | None = None
     matricula: str | None = None
     status: Literal["ativo", "inativo"] = "ativo"
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def empty_email_to_none(cls, value):
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
+
+    @field_validator("cpf", mode="before")
+    @classmethod
+    def normalize_cpf(cls, value):
+        if value is None:
+            return None
+        digits = "".join(ch for ch in str(value) if ch.isdigit())
+        if not digits:
+            return None
+        if len(digits) != 11:
+            raise ValueError("CPF deve ter 11 digitos")
+        return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
 
 
 class StudentOut(StudentIn):

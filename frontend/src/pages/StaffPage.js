@@ -156,7 +156,7 @@ export default function StaffPage() {
         <form onSubmit={createEmployee} className="bg-zinc-900 border border-zinc-800 rounded-md p-4 space-y-3">
           <h2 className="font-semibold uppercase text-sm tracking-wide">Criar funcionario</h2>
           <input placeholder="Nome" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" required />
-          <input placeholder="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" required />
+          <input placeholder="Email (opcional)" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3">
             <option value="MANAGER">MANAGER</option>
             <option value="RECEPTION">RECEPTION</option>

@@ -1,8 +1,10 @@
-export const API_BASE = (process.env.REACT_APP_API_BASE || "").replace(/\/+$|\s+/g, "");
+export const API_BASE = (process.env.REACT_APP_API_BASE || '').replace(/\/+$|\s+/g, '');
 
 export function apiUrl(path) {
   if (!path.startsWith('/')) path = '/' + path;
   return `${API_BASE}${path}`;
 }
 
-export default { API_BASE, apiUrl };
+const config = { API_BASE, apiUrl };
+
+export default config;

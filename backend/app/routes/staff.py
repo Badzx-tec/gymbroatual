@@ -1,10 +1,11 @@
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.deps import require_roles
 from app.core.security import hash_password
+from app.core.time import UTC
 from app.db.mongo import get_db
 
 router = APIRouter()
@@ -62,7 +63,7 @@ async def _sync_employee_shadow_student(employee: dict) -> str:
 @router.post("/invites")
 async def create_invite(payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     role = (payload.get("role") or "").upper()
-    email = (payload.get("email") or "").strip().lower()
+    email = (payload.get("email") or "").strip().lower() or None
     if role not in ALLOWED_ROLES - {"OWNER"}:
         raise HTTPException(status_code=400, detail="Role invalida")
     if not email:
@@ -119,14 +120,14 @@ async def list_employees(actor: dict = Depends(require_roles("OWNER", "MANAGER")
 @router.post("/employees")
 async def create_employee(payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     db = get_db()
-    email = (payload.get("email") or "").strip().lower()
+    email = (payload.get("email") or "").strip().lower() or None
     role = (payload.get("role") or "").upper()
     if role not in ALLOWED_ROLES - {"OWNER"}:
         raise HTTPException(status_code=400, detail="Role invalida")
-    if not email or not payload.get("name"):
-        raise HTTPException(status_code=400, detail="Nome e email obrigatorios")
+    if not payload.get("name"):
+        raise HTTPException(status_code=400, detail="Nome obrigatorio")
 
-    if await db.employees.find_one({"email": email, "owner_id": actor["owner_id"]}, {"_id": 0}):
+    if email and await db.employees.find_one({"email": email, "owner_id": actor["owner_id"]}, {"_id": 0}):
         raise HTTPException(status_code=400, detail="Email ja cadastrado")
 
     raw_password = payload.get("password") or secrets.token_urlsafe(8)

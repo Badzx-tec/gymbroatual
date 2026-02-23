@@ -1,9 +1,10 @@
 import secrets
-from datetime import UTC, datetime
+from datetime import datetime
 
 import httpx
 
 from app.core.config import get_settings
+from app.core.time import UTC
 from app.db.mongo import get_db
 from app.services.observability import log_event
 from app.services.subscription import compute_grace_until, compute_next_period_end, now_utc

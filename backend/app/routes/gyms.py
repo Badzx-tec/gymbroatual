@@ -1,8 +1,9 @@
-from datetime import UTC, datetime
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.deps import require_active_subscription
+from app.core.time import UTC
 from app.db.mongo import get_db
 
 router = APIRouter()

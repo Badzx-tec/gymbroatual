@@ -18,3 +18,9 @@ def test_workout_model():
         codigo="A", exercicios=[WorkoutExercise(nome="Supino", series="4", reps="10")]
     )
     assert workout.exercicios[0].nome == "Supino"
+
+
+def test_student_model_allows_blank_email_and_normalizes_cpf():
+    student = StudentIn(nome="Maria", email="", cpf="12345678901", status="ativo")
+    assert student.email is None
+    assert student.cpf == "123.456.789-01"

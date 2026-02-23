@@ -24,6 +24,8 @@ services:
     environment:
       MONGO_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
       DB_NAME: ${DB_NAME}
+      APP_BASE_URL: ${APP_BASE_URL}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
       CORS_ORIGINS: ${CORS_ORIGINS}
     depends_on:
       mongo:
