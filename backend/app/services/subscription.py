@@ -7,15 +7,25 @@ def now_utc() -> datetime:
     return datetime.now(UTC)
 
 
+def _as_utc_datetime(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+    return None
+
+
 def subscription_allows_login(subscription: dict | None) -> bool:
     if not subscription:
         return False
 
     now = now_utc()
     status = subscription.get("status", "expired")
-    trial_ends_at = subscription.get("trial_ends_at")
-    current_period_end = subscription.get("current_period_end")
-    grace_until = subscription.get("grace_until")
+    trial_ends_at = _as_utc_datetime(subscription.get("trial_ends_at"))
+    current_period_end = _as_utc_datetime(subscription.get("current_period_end"))
+    grace_until = _as_utc_datetime(subscription.get("grace_until"))
 
     if status == "active" and current_period_end and current_period_end >= now:
         return True

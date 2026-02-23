@@ -10,6 +10,53 @@ from app.db.mongo import get_db
 router = APIRouter()
 
 ALLOWED_ROLES = {"OWNER", "MANAGER", "RECEPTION", "TRAINER"}
+TURNSTILE_FIELDS = ("tag_rfid", "biometria_id", "keypad_code", "matricula")
+
+
+def _clean_optional(value):
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
+def _extract_turnstile_fields(payload: dict) -> dict:
+    return {field: _clean_optional(payload.get(field)) for field in TURNSTILE_FIELDS}
+
+
+def _safe_employee(employee: dict) -> dict:
+    return {k: v for k, v in employee.items() if k != "password_hash"}
+
+
+async def _sync_employee_shadow_student(employee: dict) -> str:
+    db = get_db()
+    now = datetime.now(UTC)
+    shadow_student_id = f"empstd_{employee['employee_id']}"
+    shadow_doc = {
+        "student_id": shadow_student_id,
+        "owner_id": employee["owner_id"],
+        "gym_id": employee["gym_id"],
+        "nome": f"[FUNC] {employee['name']}",
+        "email": employee.get("email"),
+        "telefone": employee.get("telefone"),
+        "status": "ativo",
+        "matricula": employee.get("matricula") or employee["employee_id"],
+        "tag_rfid": employee.get("tag_rfid"),
+        "biometria_id": employee.get("biometria_id"),
+        "keypad_code": employee.get("keypad_code"),
+        "is_employee_shadow": True,
+        "employee_id": employee["employee_id"],
+        "updated_at": now,
+    }
+    await db.students.update_one(
+        {"student_id": shadow_student_id, "owner_id": employee["owner_id"]},
+        {
+            "$set": shadow_doc,
+            "$setOnInsert": {"created_at": now},
+        },
+        upsert=True,
+    )
+    return shadow_student_id
 
 
 @router.post("/invites")
@@ -92,11 +139,14 @@ async def create_employee(payload: dict, actor: dict = Depends(require_roles("OW
         "password_hash": hash_password(raw_password),
         "role": role,
         "is_active": True,
+        **_extract_turnstile_fields(payload),
         "created_at": datetime.now(UTC),
         "updated_at": datetime.now(UTC),
     }
     await db.employees.insert_one(employee)
-    result = {k: v for k, v in employee.items() if k != "password_hash"}
+    result = _safe_employee(employee)
+    if bool(payload.get("sync_shadow_student", False)):
+        result["shadow_student_id"] = await _sync_employee_shadow_student(employee)
     result["temp_password"] = raw_password
     return result
 
@@ -133,3 +183,55 @@ async def reset_password(
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
     return {"message": "Senha redefinida", "temp_password": new_password}
+
+
+@router.post("/employees/{employee_id}/credentials")
+async def update_employee_credentials(
+    employee_id: str,
+    payload: dict,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
+    db = get_db()
+    update_fields = {
+        **_extract_turnstile_fields(payload),
+        "updated_at": datetime.now(UTC),
+    }
+    result = await db.employees.update_one(
+        {"employee_id": employee_id, "owner_id": actor["owner_id"]},
+        {"$set": update_fields},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
+
+    employee = await db.employees.find_one(
+        {"employee_id": employee_id, "owner_id": actor["owner_id"]},
+        {"_id": 0},
+    )
+    if not employee:
+        raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
+
+    response = _safe_employee(employee)
+    if bool(payload.get("sync_shadow_student", False)):
+        response["shadow_student_id"] = await _sync_employee_shadow_student(employee)
+    return response
+
+
+@router.post("/employees/{employee_id}/sync-shadow-student")
+async def sync_employee_shadow_student(
+    employee_id: str,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
+    db = get_db()
+    employee = await db.employees.find_one(
+        {"employee_id": employee_id, "owner_id": actor["owner_id"]},
+        {"_id": 0},
+    )
+    if not employee:
+        raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
+
+    shadow_student_id = await _sync_employee_shadow_student(employee)
+    return {
+        "message": "Funcionario sincronizado para compatibilidade de catraca",
+        "employee_id": employee_id,
+        "shadow_student_id": shadow_student_id,
+    }

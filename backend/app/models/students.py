@@ -73,3 +73,23 @@ class TolletusStatusOut(BaseModel):
     has_biometric: bool
     enrolled_at: datetime | None = None
     provider: str | None = None
+
+
+class TolletusEmployeeEnrollStartIn(BaseModel):
+    employee_id: str
+    device_id: str
+
+
+class TolletusEmployeeEnrollConfirmIn(BaseModel):
+    employee_id: str
+    device_id: str
+    template: str
+    external_id: str | None = None
+
+
+class TolletusEmployeeStatusOut(BaseModel):
+    employee_id: str
+    has_biometric: bool
+    enrolled_at: datetime | None = None
+    provider: str | None = None
+    biometria_id: str | None = None

@@ -45,6 +45,23 @@ class Settings(BaseSettings):
 
     gateway_max_skew_seconds: int = 120
     gateway_nonce_ttl_seconds: int = 300
+    gateway_invalid_attempt_threshold: int = 5
+    gateway_block_seconds: int = 600
+
+    auth_login_rate_limit: int = 10
+    auth_login_window_seconds: int = 60
+    auth_verify_rate_limit: int = 5
+    auth_verify_window_seconds: int = 60
+    webhook_rate_limit: int = 120
+    webhook_window_seconds: int = 60
+
+    billing_reconcile_enabled: bool = True
+    billing_reconcile_interval_seconds: int = 900
+    billing_reconcile_batch_size: int = 200
+
+    alert_webhook_failures_threshold: int = 5
+    alert_access_denies_threshold: int = 20
+    alert_gateway_auth_failures_threshold: int = 10
 
     cors_origins: str = "*"
 

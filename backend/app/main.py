@@ -1,11 +1,16 @@
+import asyncio
+import time
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.db.mongo import init_indexes
 from app.routes import api_router
+from app.services.billing_reconcile import reconcile_subscriptions
+from app.services.observability import log_event, record_request
 
 settings = get_settings()
 
@@ -13,7 +18,30 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await init_indexes()
+    reconcile_task: asyncio.Task | None = None
+
+    if settings.billing_reconcile_enabled and settings.mp_access_token:
+
+        async def _reconcile_loop():
+            while True:
+                try:
+                    summary = await reconcile_subscriptions(
+                        limit=settings.billing_reconcile_batch_size
+                    )
+                    log_event("billing_reconcile_cycle", summary=summary)
+                except Exception as exc:  # pragma: no cover - loop resiliency
+                    log_event("billing_reconcile_loop_error", error=str(exc))
+                await asyncio.sleep(settings.billing_reconcile_interval_seconds)
+
+        reconcile_task = asyncio.create_task(_reconcile_loop())
+
     yield
+    if reconcile_task:
+        reconcile_task.cancel()
+        try:
+            await reconcile_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title=settings.app_name, version="3.0.0", lifespan=lifespan)
@@ -30,6 +58,42 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def request_observability_middleware(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+    request.state.request_id = request_id
+    started_at = time.perf_counter()
+
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        record_request(path=request.url.path, status_code=500, latency_ms=elapsed_ms)
+        log_event(
+            "http_request",
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            status_code=500,
+            latency_ms=round(elapsed_ms, 2),
+            error=str(exc),
+        )
+        raise
+
+    elapsed_ms = (time.perf_counter() - started_at) * 1000
+    response.headers["X-Request-ID"] = request_id
+    record_request(path=request.url.path, status_code=response.status_code, latency_ms=elapsed_ms)
+    log_event(
+        "http_request",
+        request_id=request_id,
+        method=request.method,
+        path=request.url.path,
+        status_code=response.status_code,
+        latency_ms=round(elapsed_ms, 2),
+    )
+    return response
 
 
 @app.get("/health")

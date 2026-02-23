@@ -13,8 +13,10 @@ import AcademiesPage from './pages/AcademiesPage';
 import NotificationsPage from './pages/NotificationsPage';
 import CatracaPage from './pages/CatracaPage';
 import SubscriptionPage from './pages/SubscriptionPage';
+import BillingCenterPage from './pages/BillingCenterPage';
 import StaffPage from './pages/StaffPage';
 import AdminLayout from './components/AdminLayout';
+import StudentContractsPage from './pages/StudentContractsPage';
 
 function AppRouter() {
   const location = useLocation();
@@ -29,13 +31,15 @@ function AppRouter() {
       <Route path="/admin" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
         <Route path="alunos" element={<StudentsPage />} />
+        <Route path="contratos" element={<RoleRoute roles={['OWNER', 'MANAGER', 'RECEPTION']}><StudentContractsPage /></RoleRoute>} />
         <Route path="planos" element={<PlansPage />} />
         <Route path="acessos" element={<AccessLogsPage />} />
         <Route path="franquias" element={<AcademiesPage />} />
         <Route path="notificacoes" element={<NotificationsPage />} />
         <Route path="catraca" element={<CatracaPage />} />
-        <Route path="funcionarios" element={<StaffPage />} />
-        <Route path="assinatura" element={<SubscriptionPage />} />
+        <Route path="funcionarios" element={<RoleRoute roles={['OWNER', 'MANAGER']}><StaffPage /></RoleRoute>} />
+        <Route path="assinatura" element={<RoleRoute roles={['OWNER', 'MANAGER']}><SubscriptionPage /></RoleRoute>} />
+        <Route path="cobranca" element={<RoleRoute roles={['OWNER', 'MANAGER']}><BillingCenterPage /></RoleRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -69,6 +73,13 @@ function ProtectedRoute({ children }) {
     </div>
   );
   if (!ok) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function RoleRoute({ children, roles }) {
+  const user = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
+  const role = String(user.role || 'OWNER').toUpperCase();
+  if (!roles.includes(role)) return <Navigate to="/admin" replace />;
   return children;
 }
 

@@ -22,12 +22,11 @@ async def dashboard(owner: dict = Depends(require_active_subscription)):
     total_alunos = await db.students.count_documents(base)
     alunos_ativos = await db.students.count_documents({**base, "status": "ativo"})
     alunos_inativos = await db.students.count_documents({**base, "status": "inativo"})
+    day_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     acessos_hoje = await db.access_logs.count_documents(
         {
             **base,
-            "timestamp": {
-                "$gte": datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-            },
+            "$or": [{"timestamp": {"$gte": day_start}}, {"created_at": {"$gte": day_start}}],
         }
     )
     sem_treino = await db.students.count_documents(
@@ -48,7 +47,7 @@ async def access_logs(limit: int = 100, owner: dict = Depends(require_active_sub
     db = get_db()
     return (
         await db.access_logs.find({"owner_id": owner["owner_id"]}, {"_id": 0})
-        .sort("timestamp", -1)
+        .sort("created_at", -1)
         .limit(limit)
         .to_list(limit)
     )

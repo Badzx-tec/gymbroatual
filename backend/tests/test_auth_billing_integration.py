@@ -46,6 +46,15 @@ class FakeDb:
         )
 
 
+class DummyClient:
+    host = "127.0.0.1"
+
+
+class DummyRequest:
+    headers: dict = {}
+    client = DummyClient()
+
+
 @pytest.mark.asyncio
 async def test_login_requires_payment(monkeypatch):
     db = FakeDb()
@@ -53,11 +62,18 @@ async def test_login_requires_payment(monkeypatch):
     async def fake_checkout(_owner):
         return CheckoutOut(checkout_url="https://checkout.test", preapproval_id="pre_1")
 
+    async def bypass_rate_limit(**_kwargs):
+        return None
+
     monkeypatch.setattr(auth, "get_db", lambda: db)
     monkeypatch.setattr(billing, "create_checkout_for_owner", fake_checkout)
+    monkeypatch.setattr(auth, "enforce_rate_limit", bypass_rate_limit)
 
     with pytest.raises(HTTPException) as exc:
-        await auth.login(LoginIn(email="owner@example.com", password="secret123"))
+        await auth.login(
+            LoginIn(email="owner@example.com", password="secret123"),
+            request=DummyRequest(),
+        )
 
     assert exc.value.status_code == 402
     assert exc.value.headers["X-Error-Code"] == "PAYMENT_REQUIRED"

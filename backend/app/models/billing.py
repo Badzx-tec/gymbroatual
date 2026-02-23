@@ -4,6 +4,8 @@ from typing import Literal
 from pydantic import BaseModel
 
 SubscriptionStatus = Literal["trialing", "active", "past_due", "canceled", "expired"]
+InvoiceStatus = Literal["draft", "open", "paid", "past_due", "canceled"]
+PaymentAttemptStatus = Literal["succeeded", "failed", "pending"]
 
 
 class SubscriptionStatusOut(BaseModel):
@@ -28,3 +30,57 @@ class MercadoPagoWebhookIn(BaseModel):
     type: str | None = None
     data: dict | None = None
     live_mode: bool | None = None
+
+
+class MembershipOut(BaseModel):
+    membership_id: str
+    owner_id: str
+    plan_code: str
+    amount: float
+    currency: str = "BRL"
+    provider: str = "mercadopago"
+    status: SubscriptionStatus
+    started_at: datetime
+    trial_ends_at: datetime | None = None
+    current_period_start: datetime | None = None
+    current_period_end: datetime | None = None
+    canceled_at: datetime | None = None
+    updated_at: datetime
+
+
+class InvoiceOut(BaseModel):
+    invoice_id: str
+    owner_id: str
+    period_label: str
+    amount: float
+    currency: str = "BRL"
+    status: InvoiceStatus
+    due_date: datetime
+    paid_at: datetime | None = None
+    provider_reference: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PaymentAttemptOut(BaseModel):
+    attempt_id: str
+    owner_id: str
+    invoice_id: str | None = None
+    amount: float
+    currency: str = "BRL"
+    status: PaymentAttemptStatus
+    provider: str = "mercadopago"
+    provider_reference: str | None = None
+    reason: str | None = None
+    payload: dict | None = None
+    created_at: datetime
+
+
+class SubscriptionEventOut(BaseModel):
+    event_id: str
+    owner_id: str
+    source: Literal["webhook", "reconcile", "manual", "system"]
+    event_type: str
+    status: str
+    metadata: dict | None = None
+    created_at: datetime

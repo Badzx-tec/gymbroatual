@@ -7,20 +7,23 @@ export default function CatracaPage() {
   const [devices, setDevices] = useState([]);
   const [logs, setLogs] = useState([]);
   const [commands, setCommands] = useState([]);
+  const [alerts, setAlerts] = useState([]);
   const [deviceName, setDeviceName] = useState('Gateway Toletus');
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [cmds, access, devs] = await Promise.all([
+      const [cmds, access, devs, opsAlerts] = await Promise.all([
         api.catracaCommands(),
         api.listTurnstileAccessLogs(50),
         api.listTurnstileDevices(),
+        api.opsAlerts(),
       ]);
       setCommands(cmds);
       setLogs(access);
       setDevices(devs);
+      setAlerts(opsAlerts.alerts || []);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -31,7 +34,12 @@ export default function CatracaPage() {
   useEffect(() => {
     load();
     const interval = setInterval(() => {
-      api.listTurnstileAccessLogs(50).then(setLogs).catch(() => {});
+      Promise.all([api.listTurnstileAccessLogs(50), api.opsAlerts()])
+        .then(([access, opsAlerts]) => {
+          setLogs(access);
+          setAlerts(opsAlerts.alerts || []);
+        })
+        .catch(() => {});
     }, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -56,6 +64,15 @@ export default function CatracaPage() {
     }
   };
 
+  const rotateToken = async (deviceId) => {
+    try {
+      const rotated = await api.rotateTurnstileDeviceToken(deviceId);
+      toast.success(`Novo token de ${deviceId}: ${rotated.token}`);
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-[#ccff00] border-t-transparent rounded-full animate-spin" /></div>;
   }
@@ -75,11 +92,32 @@ export default function CatracaPage() {
         </div>
         <ul className="space-y-2 text-sm">
           {devices.map((device) => (
-            <li key={device.device_id} className="border border-zinc-800 rounded-sm px-3 py-2">
-              {device.device_id} - {device.name}
+            <li key={device.device_id} className="border border-zinc-800 rounded-sm px-3 py-2 flex items-center justify-between gap-3">
+              <div>
+                <div>{device.device_id} - {device.name}</div>
+                <div className="text-xs text-zinc-500">
+                  Ultimo seen: {device.last_seen_at ? new Date(device.last_seen_at).toLocaleString('pt-BR') : 'nunca'}
+                  {device.blocked_until ? ` | Bloqueado ate ${new Date(device.blocked_until).toLocaleString('pt-BR')}` : ''}
+                </div>
+              </div>
+              <button onClick={() => rotateToken(device.device_id)} className="bg-zinc-800 px-3 h-8 rounded-sm text-xs uppercase tracking-wide">
+                Rotacionar token
+              </button>
             </li>
           ))}
           {devices.length === 0 && <li className="text-zinc-500">Nenhum dispositivo criado nesta sessao.</li>}
+        </ul>
+      </div>
+
+      <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
+        <h2 className="font-semibold uppercase text-sm tracking-wide mb-2">Alertas operacionais</h2>
+        <ul className="space-y-2 text-sm">
+          {alerts.map((alert) => (
+            <li key={alert.code} className="border border-amber-500/30 bg-amber-500/10 rounded-sm px-3 py-2">
+              <span className="font-semibold mr-2">[{alert.severity}]</span>{alert.message}
+            </li>
+          ))}
+          {alerts.length === 0 && <li className="text-zinc-500">Sem alertas no momento.</li>}
         </ul>
       </div>
 

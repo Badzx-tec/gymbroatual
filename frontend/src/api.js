@@ -87,6 +87,21 @@ export const api = {
   createPlan: (data) => request('/api/plans', { method: 'POST', body: JSON.stringify(data) }),
   updatePlan: (id, data) => request(`/api/plans/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deletePlan: (id) => request(`/api/plans/${id}`, { method: 'DELETE' }),
+  studentBillingOverview: () => request('/api/student-billing/overview'),
+  listStudentContracts: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.status) query.set('status', params.status);
+    if (params.student_id) query.set('student_id', params.student_id);
+    if (params.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request(`/api/student-billing/contracts${suffix}`);
+  },
+  createStudentContract: (data) => request('/api/student-billing/contracts', { method: 'POST', body: JSON.stringify(data) }),
+  cancelStudentContract: (contractId) => request(`/api/student-billing/contracts/${contractId}/cancel`, { method: 'POST' }),
+  listContractCharges: (contractId, limit = 200) => request(`/api/student-billing/contracts/${contractId}/charges?limit=${limit}`),
+  createContractCharge: (contractId, data) => request(`/api/student-billing/contracts/${contractId}/charges`, { method: 'POST', body: JSON.stringify(data) }),
+  markStudentChargePaid: (chargeId, data) => request(`/api/student-billing/charges/${chargeId}/mark-paid`, { method: 'POST', body: JSON.stringify(data) }),
+  listStudentBillingEvents: (limit = 100) => request(`/api/student-billing/events?limit=${limit}`),
 
   listAccessLogs: (limit = 50) => request(`/api/access-logs?limit=${limit}`),
   listWebhookLogs: (limit = 50) => request(`/api/webhook-logs?limit=${limit}`),
@@ -104,12 +119,21 @@ export const api = {
   deleteNotification: (id) => request(`/api/notifications/${id}`, { method: 'DELETE' }),
 
   subscriptionStatus: () => request('/api/billing/subscription/status'),
+  subscriptionStatusRefresh: () => request('/api/billing/subscription/status?refresh=true'),
   subscriptionCheckout: () => request('/api/billing/subscription/checkout', { method: 'POST' }),
+  subscriptionRefresh: () => request('/api/billing/subscription/refresh', { method: 'POST' }),
+  billingMembership: () => request('/api/billing/membership'),
+  billingInvoices: (limit = 50) => request(`/api/billing/invoices?limit=${limit}`),
+  billingPaymentAttempts: (limit = 100) => request(`/api/billing/payment-attempts?limit=${limit}`),
+  billingEvents: (limit = 100) => request(`/api/billing/events?limit=${limit}`),
   createAcademySubscriptionCheckout: () => request('/api/payments/academy/subscription/checkout', { method: 'POST', body: JSON.stringify({}) }),
 
   tolletusEnrollStart: (data) => request('/api/tolletus/enroll/start', { method: 'POST', body: JSON.stringify(data) }),
   tolletusEnrollConfirm: (data) => request('/api/tolletus/enroll/confirm', { method: 'POST', body: JSON.stringify(data) }),
   tolletusStudentStatus: (studentId) => request(`/api/tolletus/students/${studentId}/status`),
+  tolletusEmployeeEnrollStart: (data) => request('/api/tolletus/employees/enroll/start', { method: 'POST', body: JSON.stringify(data) }),
+  tolletusEmployeeEnrollConfirm: (data) => request('/api/tolletus/employees/enroll/confirm', { method: 'POST', body: JSON.stringify(data) }),
+  tolletusEmployeeStatus: (employeeId) => request(`/api/tolletus/employees/${employeeId}/status`),
 
   listStaffInvites: () => request('/api/staff/invites'),
   createStaffInvite: (data) => request('/api/staff/invites', { method: 'POST', body: JSON.stringify(data) }),
@@ -118,10 +142,16 @@ export const api = {
   createEmployee: (data) => request('/api/staff/employees', { method: 'POST', body: JSON.stringify(data) }),
   deactivateEmployee: (employeeId) => request(`/api/staff/employees/${employeeId}/deactivate`, { method: 'POST' }),
   resetEmployeePassword: (employeeId, data = {}) => request(`/api/staff/employees/${employeeId}/reset-password`, { method: 'POST', body: JSON.stringify(data) }),
+  updateEmployeeCredentials: (employeeId, data) => request(`/api/staff/employees/${employeeId}/credentials`, { method: 'POST', body: JSON.stringify(data) }),
+  syncEmployeeShadowStudent: (employeeId) => request(`/api/staff/employees/${employeeId}/sync-shadow-student`, { method: 'POST' }),
 
   createTurnstileDevice: (data) => request('/api/turnstiles/devices', { method: 'POST', body: JSON.stringify(data) }),
+  rotateTurnstileDeviceToken: (deviceId) => request(`/api/turnstiles/devices/${deviceId}/rotate-token`, { method: 'POST' }),
   listTurnstileDevices: () => request('/api/turnstiles/devices'),
   listTurnstileAccessLogs: (limit = 100) => request(`/api/turnstiles/access-logs?limit=${limit}`),
+
+  opsMetrics: () => request('/api/ops/metrics'),
+  opsAlerts: () => request('/api/ops/alerts'),
 
   catracaCommand: (data) => request('/api/catraca/command', { method: 'POST', body: JSON.stringify(data) }),
   catracaCommands: () => request('/api/catraca/commands'),

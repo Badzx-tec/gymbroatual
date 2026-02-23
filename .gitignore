@@ -35,3 +35,8 @@ Thumbs.db
 
 # Docker runtime
 mongo_data/
+
+# Backup / E2E artifacts
+backups/
+frontend/playwright-report/
+frontend/test-results/

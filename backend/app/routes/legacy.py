@@ -1,7 +1,7 @@
 import secrets
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Header, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from app.core.deps import get_current_actor, require_active_subscription, require_roles
@@ -410,10 +410,26 @@ async def ws_endpoint(websocket: WebSocket):
 
 
 @router.post("/turnstile/decision")
-async def turnstile_decision_alias(payload: dict):
-    return await turnstile_routes.turnstile_decision(payload)
+async def turnstile_decision_alias(
+    payload: dict,
+    request: Request,
+    x_device_token: str | None = Header(default=None),
+):
+    return await turnstile_routes.turnstile_decision(
+        payload=payload,
+        request=request,
+        x_device_token=x_device_token,
+    )
 
 
 @router.post("/turnstile/events")
-async def turnstile_events_alias(payload: dict):
-    return await turnstile_routes.turnstile_event(payload)
+async def turnstile_events_alias(
+    payload: dict,
+    request: Request,
+    x_device_token: str | None = Header(default=None),
+):
+    return await turnstile_routes.turnstile_event(
+        payload=payload,
+        request=request,
+        x_device_token=x_device_token,
+    )
