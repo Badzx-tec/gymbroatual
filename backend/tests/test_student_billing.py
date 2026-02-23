@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.models.student_billing import ChargeMarkPaidIn, ContractCreateIn
+from app.models.student_billing import ChargeCleanupIn, ChargeMarkPaidIn, ContractCreateIn
 from app.routes import student_billing
 
 
@@ -254,3 +254,120 @@ async def test_mark_charge_paid_extends_contract_period(monkeypatch):
     assert updated_contract["status"] == "active"
     assert updated_contract["current_period_end"] > old_end
     assert updated_student["plan_expires_at"] == updated_contract["current_period_end"]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_contract_charges_cancels_pending_and_records_event(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+
+    now = datetime.now(timezone.utc)
+    contract = {
+        "contract_id": "ctr_cleanup",
+        "owner_id": "own_1",
+        "gym_id": "gym_1",
+        "student_id": "std_1",
+        "student_name": "Aluno Teste",
+        "plan_id": "pln_1",
+        "plan_name": "Mensal",
+        "amount": 149.9,
+        "currency": "BRL",
+        "duration_days": 30,
+        "current_period_start": now - timedelta(days=15),
+        "current_period_end": now + timedelta(days=15),
+        "status": "past_due",
+        "auto_renew": False,
+        "notes": None,
+        "canceled_at": None,
+        "last_payment_at": None,
+        "last_charge_id": "chg_overdue",
+        "created_at": now - timedelta(days=20),
+        "updated_at": now - timedelta(days=1),
+    }
+    db.student_contracts.docs.append(contract)
+    db.student_charges.docs.extend(
+        [
+            {
+                "charge_id": "chg_open",
+                "contract_id": "ctr_cleanup",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "student_id": "std_1",
+                "amount": 149.9,
+                "currency": "BRL",
+                "due_at": now + timedelta(days=5),
+                "status": "open",
+                "paid_at": None,
+                "payment_method": None,
+                "amount_received": None,
+                "external_reference": None,
+                "notes": None,
+                "period_start": now - timedelta(days=15),
+                "period_end": now + timedelta(days=15),
+                "created_at": now,
+                "updated_at": now,
+            },
+            {
+                "charge_id": "chg_overdue",
+                "contract_id": "ctr_cleanup",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "student_id": "std_1",
+                "amount": 149.9,
+                "currency": "BRL",
+                "due_at": now - timedelta(days=3),
+                "status": "overdue",
+                "paid_at": None,
+                "payment_method": None,
+                "amount_received": None,
+                "external_reference": None,
+                "notes": None,
+                "period_start": now - timedelta(days=15),
+                "period_end": now + timedelta(days=15),
+                "created_at": now - timedelta(days=4),
+                "updated_at": now - timedelta(days=3),
+            },
+            {
+                "charge_id": "chg_paid",
+                "contract_id": "ctr_cleanup",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "student_id": "std_1",
+                "amount": 149.9,
+                "currency": "BRL",
+                "due_at": now - timedelta(days=20),
+                "status": "paid",
+                "paid_at": now - timedelta(days=20),
+                "payment_method": "card",
+                "amount_received": 149.9,
+                "external_reference": None,
+                "notes": None,
+                "period_start": now - timedelta(days=45),
+                "period_end": now - timedelta(days=15),
+                "created_at": now - timedelta(days=45),
+                "updated_at": now - timedelta(days=20),
+            },
+        ]
+    )
+
+    actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER"}
+    result = await student_billing.cleanup_contract_charges(
+        contract_id="ctr_cleanup",
+        payload=ChargeCleanupIn(status_filter="pending", reason="test_cleanup"),
+        actor=actor,
+    )
+
+    assert result.cleaned_count == 2
+    assert set(result.charge_ids) == {"chg_open", "chg_overdue"}
+    assert result.contract_status == "active"
+
+    open_charge = await db.student_charges.find_one({"charge_id": "chg_open", "owner_id": "own_1"})
+    overdue_charge = await db.student_charges.find_one(
+        {"charge_id": "chg_overdue", "owner_id": "own_1"}
+    )
+    paid_charge = await db.student_charges.find_one({"charge_id": "chg_paid", "owner_id": "own_1"})
+
+    assert open_charge["status"] == "canceled"
+    assert overdue_charge["status"] == "canceled"
+    assert paid_charge["status"] == "paid"
+    assert any(item["event_type"] == "charges_cleaned" for item in db.student_billing_events.docs)

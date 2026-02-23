@@ -129,12 +129,8 @@ async def dashboard(actor: dict = Depends(require_active_subscription)):
 
 
 @router.get("/dashboard/charts")
-async def dashboard_charts() -> dict:
-    return {
-        "receita_por_plano": [],
-        "acessos_por_hora": [],
-        "receita_mensal": [],
-    }
+async def dashboard_charts(actor: dict = Depends(require_active_subscription)) -> dict:
+    return await gym_routes.dashboard_charts(actor)
 
 
 @router.get("/access-logs")

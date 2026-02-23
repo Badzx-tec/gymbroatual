@@ -87,6 +87,7 @@ export default function StudentContractsPage() {
   const [selectedContract, setSelectedContract] = useState(null);
   const [charges, setCharges] = useState([]);
   const [chargesLoading, setChargesLoading] = useState(false);
+  const [cleaningCharges, setCleaningCharges] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [extendContractOnPayment, setExtendContractOnPayment] = useState(true);
 
@@ -272,6 +273,32 @@ export default function StudentContractsPage() {
     }
   };
 
+  const handleCleanupCharges = async () => {
+    if (!selectedContract?.contract_id) return;
+    const confirmed = window.confirm(
+      'Cancelar todas as cobrancas pendentes (abertas e vencidas) deste contrato?'
+    );
+    if (!confirmed) return;
+
+    setCleaningCharges(true);
+    try {
+      const result = await api.cleanupContractCharges(selectedContract.contract_id, {
+        status_filter: 'pending',
+        reason: 'cleanup_manual_panel',
+      });
+      toast.success(`${result.cleaned_count || 0} cobranca(s) cancelada(s)`);
+      await Promise.all([
+        loadOverview(),
+        loadContracts(),
+        loadCharges(selectedContract.contract_id),
+      ]);
+    } catch (err) {
+      toast.error(err?.message || 'Erro ao limpar cobrancas');
+    } finally {
+      setCleaningCharges(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -437,6 +464,15 @@ export default function StudentContractsPage() {
                 <button onClick={() => setSelectedContract(null)} className="h-9 px-3 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold uppercase tracking-wide">
                   Limpar selecao
                 </button>
+                {canManageContracts && (
+                  <button
+                    onClick={handleCleanupCharges}
+                    disabled={cleaningCharges}
+                    className="h-9 px-3 rounded-sm bg-red-500/15 hover:bg-red-500/25 text-red-300 text-xs font-semibold uppercase tracking-wide disabled:opacity-60"
+                  >
+                    {cleaningCharges ? 'Limpando...' : 'Limpar cobrancas pendentes'}
+                  </button>
+                )}
               </div>
             )}
           </div>

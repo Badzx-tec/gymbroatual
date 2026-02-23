@@ -18,6 +18,8 @@ from .billing import (
 )
 from .student_billing import (
     BillingOverviewOut,
+    ChargeCleanupIn,
+    ChargeCleanupOut,
     ChargeCreateIn,
     ChargeMarkPaidIn,
     ChargeOut,
@@ -38,6 +40,8 @@ from .students import (
 __all__ = [
     "AttendanceIn",
     "BillingOverviewOut",
+    "ChargeCleanupIn",
+    "ChargeCleanupOut",
     "ChargeCreateIn",
     "ChargeMarkPaidIn",
     "ChargeOut",

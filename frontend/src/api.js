@@ -136,6 +136,7 @@ export const api = {
   cancelStudentContract: (contractId) => request(`/api/student-billing/contracts/${contractId}/cancel`, { method: 'POST' }),
   listContractCharges: (contractId, limit = 200) => request(`/api/student-billing/contracts/${contractId}/charges?limit=${limit}`),
   createContractCharge: (contractId, data) => request(`/api/student-billing/contracts/${contractId}/charges`, { method: 'POST', body: JSON.stringify(data) }),
+  cleanupContractCharges: (contractId, data = {}) => request(`/api/student-billing/contracts/${contractId}/charges/cleanup`, { method: 'POST', body: JSON.stringify(data) }),
   markStudentChargePaid: (chargeId, data) => request(`/api/student-billing/charges/${chargeId}/mark-paid`, { method: 'POST', body: JSON.stringify(data) }),
   listStudentBillingEvents: (limit = 100) => request(`/api/student-billing/events?limit=${limit}`),
 

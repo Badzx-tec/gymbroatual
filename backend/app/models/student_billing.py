@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 ContractStatus = Literal["active", "past_due", "canceled", "expired"]
 ChargeStatus = Literal["open", "paid", "overdue", "canceled"]
 PaymentMethod = Literal["pix", "card", "cash", "boleto", "other"]
+ChargeCleanupScope = Literal["pending", "overdue"]
 
 
 class ContractCreateIn(BaseModel):
@@ -56,6 +57,12 @@ class ChargeMarkPaidIn(BaseModel):
     extend_contract: bool = True
 
 
+class ChargeCleanupIn(BaseModel):
+    status_filter: ChargeCleanupScope = "pending"
+    due_before: datetime | None = None
+    reason: str | None = Field(default=None, max_length=200)
+
+
 class ChargeOut(BaseModel):
     charge_id: str
     contract_id: str
@@ -85,3 +92,12 @@ class BillingOverviewOut(BaseModel):
     overdue_charges: int
     open_charges: int
     month_received_amount: float
+
+
+class ChargeCleanupOut(BaseModel):
+    contract_id: str
+    cleaned_count: int
+    status_filter: ChargeCleanupScope
+    due_before: datetime | None = None
+    contract_status: ContractStatus
+    charge_ids: list[str] = Field(default_factory=list)

@@ -8,6 +8,8 @@ from app.core.time import UTC
 from app.db.mongo import get_db
 from app.models.student_billing import (
     BillingOverviewOut,
+    ChargeCleanupIn,
+    ChargeCleanupOut,
     ChargeCreateIn,
     ChargeMarkPaidIn,
     ChargeOut,
@@ -428,6 +430,85 @@ async def list_charges(
         .sort("due_at", -1)
         .limit(limit)
         .to_list(limit)
+    )
+
+
+@router.post("/contracts/{contract_id}/charges/cleanup", response_model=ChargeCleanupOut)
+async def cleanup_contract_charges(
+    contract_id: str,
+    payload: ChargeCleanupIn | None = None,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
+    db = get_db()
+    now = _utc_now()
+    request_data = payload or ChargeCleanupIn()
+
+    contract = await db.student_contracts.find_one(
+        {"contract_id": contract_id, "owner_id": actor["owner_id"]},
+        {"_id": 0},
+    )
+    if not contract:
+        raise HTTPException(status_code=404, detail="Contrato nao encontrado")
+
+    due_before = _coerce_datetime_utc(request_data.due_before)
+    statuses = ["open", "overdue"] if request_data.status_filter == "pending" else ["overdue"]
+    query: dict = {
+        "owner_id": actor["owner_id"],
+        "contract_id": contract_id,
+        "status": {"$in": statuses},
+    }
+    if due_before:
+        query["due_at"] = {"$lte": due_before}
+
+    pending_charges = (
+        await db.student_charges.find(query, {"_id": 0, "charge_id": 1}).limit(2000).to_list(2000)
+    )
+    charge_ids = [item["charge_id"] for item in pending_charges if item.get("charge_id")]
+    cleaned_count = 0
+    if charge_ids:
+        update_payload = {
+            "status": "canceled",
+            "updated_at": now,
+            "canceled_at": now,
+        }
+        reason = (request_data.reason or "").strip()
+        if reason:
+            update_payload["cleanup_reason"] = reason
+        result = await db.student_charges.update_many(
+            {**query, "charge_id": {"$in": charge_ids}},
+            {"$set": update_payload},
+        )
+        cleaned_count = int(getattr(result, "modified_count", 0))
+
+    updated_contract = await db.student_contracts.find_one(
+        {"contract_id": contract_id, "owner_id": actor["owner_id"]},
+        {"_id": 0},
+    )
+    if updated_contract:
+        updated_contract = await _refresh_contract_status(updated_contract, now=now)
+    contract_status = (updated_contract or contract).get("status", "active")
+
+    await _record_event(
+        actor["owner_id"],
+        contract["gym_id"],
+        contract_id,
+        "charges_cleaned",
+        {
+            "status_filter": request_data.status_filter,
+            "due_before": due_before.isoformat() if due_before else None,
+            "cleaned_count": cleaned_count,
+            "charge_ids": charge_ids[:100],
+            "reason": request_data.reason,
+        },
+    )
+
+    return ChargeCleanupOut(
+        contract_id=contract_id,
+        cleaned_count=cleaned_count,
+        status_filter=request_data.status_filter,
+        due_before=due_before,
+        contract_status=contract_status,
+        charge_ids=charge_ids,
     )
 
 

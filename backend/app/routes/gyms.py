@@ -1,4 +1,5 @@
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -15,6 +16,67 @@ def _clean_doc(doc: dict) -> dict:
     return sanitized
 
 
+def _coerce_datetime_utc(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    return None
+
+
+def _is_access_allowed(log: dict) -> bool:
+    if "autorizado" in log:
+        return bool(log.get("autorizado"))
+    decision = str(log.get("decision") or "").strip().lower()
+    if decision:
+        return decision == "allow"
+    return True
+
+
+def _normalize_access_log(log: dict) -> dict:
+    timestamp = _coerce_datetime_utc(log.get("timestamp")) or _coerce_datetime_utc(
+        log.get("created_at")
+    )
+    return {
+        "log_id": log.get("log_id") or "",
+        "student_name": log.get("student_name") or log.get("employee_name") or "Nao identificado",
+        "tipo": log.get("tipo") or log.get("subject_type") or log.get("method") or "acesso",
+        "autorizado": _is_access_allowed(log),
+        "timestamp": timestamp,
+    }
+
+
+def _month_floor(value: datetime) -> datetime:
+    return value.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+def _shift_months(value: datetime, months: int) -> datetime:
+    year = value.year
+    month = value.month + months
+    while month <= 0:
+        month += 12
+        year -= 1
+    while month > 12:
+        month -= 12
+        year += 1
+    return value.replace(year=year, month=month)
+
+
+def _month_label(value: datetime) -> str:
+    names = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+    return f"{names[value.month - 1]}/{value.year % 100:02d}"
+
+
 @router.get("")
 async def list_gyms(owner: dict = Depends(require_active_subscription)):
     db = get_db()
@@ -25,11 +87,13 @@ async def list_gyms(owner: dict = Depends(require_active_subscription)):
 @router.get("/dashboard")
 async def dashboard(owner: dict = Depends(require_active_subscription)):
     db = get_db()
+    owner_id = owner["owner_id"]
     base = {"owner_id": owner["owner_id"]}
     total_alunos = await db.students.count_documents(base)
     alunos_ativos = await db.students.count_documents({**base, "status": "ativo"})
     alunos_inativos = await db.students.count_documents({**base, "status": "inativo"})
-    day_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    now = datetime.now(UTC)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     acessos_hoje = await db.access_logs.count_documents(
         {
             **base,
@@ -40,12 +104,147 @@ async def dashboard(owner: dict = Depends(require_active_subscription)):
         {**base, "$or": [{"treino": {"$exists": False}}, {"treino": ""}]}
     )
 
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    paid_charges = await db.student_charges.find(
+        {"owner_id": owner_id, "status": "paid", "paid_at": {"$gte": month_start}},
+        {"_id": 0, "amount": 1, "amount_received": 1},
+    ).to_list(5000)
+    faturamento_mensal = sum(
+        float(item.get("amount_received") or item.get("amount") or 0) for item in paid_charges
+    )
+
+    occupancy_window = now - timedelta(hours=2)
+    current_accesses = await db.access_logs.find(
+        {
+            "owner_id": owner_id,
+            "$or": [
+                {"timestamp": {"$gte": occupancy_window}},
+                {"created_at": {"$gte": occupancy_window}},
+            ],
+        },
+        {
+            "_id": 0,
+            "student_id": 1,
+            "student_name": 1,
+            "employee_id": 1,
+            "employee_name": 1,
+            "autorizado": 1,
+            "decision": 1,
+        },
+    ).to_list(4000)
+    unique_subjects: set[str] = set()
+    for access in current_accesses:
+        if not _is_access_allowed(access):
+            continue
+        identity = (
+            access.get("student_id")
+            or access.get("employee_id")
+            or access.get("student_name")
+            or access.get("employee_name")
+        )
+        if identity:
+            unique_subjects.add(str(identity))
+
+    latest_logs_raw = (
+        await db.access_logs.find({"owner_id": owner_id}, {"_id": 0})
+        .sort("created_at", -1)
+        .limit(120)
+        .to_list(120)
+    )
+    latest_logs = [_normalize_access_log(item) for item in latest_logs_raw]
+    latest_logs.sort(
+        key=lambda item: item.get("timestamp") or datetime.min.replace(tzinfo=UTC),
+        reverse=True,
+    )
+
     return {
         "total_alunos": total_alunos,
         "alunos_ativos": alunos_ativos,
         "alunos_inativos": alunos_inativos,
         "acessos_hoje": acessos_hoje,
         "alunos_sem_treino": sem_treino,
+        "faturamento_mensal": round(faturamento_mensal, 2),
+        "ocupacao_atual": len(unique_subjects),
+        "ultimos_acessos": latest_logs[:10],
+    }
+
+
+async def dashboard_charts(owner: dict) -> dict:
+    db = get_db()
+    owner_id = owner["owner_id"]
+    now = datetime.now(UTC)
+
+    contracts = await db.student_contracts.find(
+        {"owner_id": owner_id, "status": {"$in": ["active", "past_due"]}},
+        {"_id": 0, "plan_name": 1, "plan_id": 1, "amount": 1},
+    ).to_list(3000)
+    plan_totals: dict[str, float] = defaultdict(float)
+    for contract in contracts:
+        plan_name = contract.get("plan_name") or contract.get("plan_id") or "Sem plano"
+        plan_totals[str(plan_name)] += float(contract.get("amount") or 0)
+    receita_por_plano = [
+        {"plano": plan_name, "valor": round(total, 2)}
+        for plan_name, total in sorted(plan_totals.items(), key=lambda item: item[1], reverse=True)
+    ]
+
+    hour_start = (now - timedelta(hours=23)).replace(minute=0, second=0, microsecond=0)
+    hour_buckets = [hour_start + timedelta(hours=index) for index in range(24)]
+    hour_counts = {
+        bucket.strftime("%Y-%m-%d %H:%M"): 0
+        for bucket in hour_buckets
+    }
+    access_logs = await db.access_logs.find(
+        {
+            "owner_id": owner_id,
+            "$or": [
+                {"timestamp": {"$gte": hour_start}},
+                {"created_at": {"$gte": hour_start}},
+            ],
+        },
+        {"_id": 0, "timestamp": 1, "created_at": 1},
+    ).to_list(5000)
+    for access in access_logs:
+        timestamp = _coerce_datetime_utc(access.get("timestamp")) or _coerce_datetime_utc(
+            access.get("created_at")
+        )
+        if not timestamp:
+            continue
+        bucket_key = timestamp.replace(minute=0, second=0, microsecond=0).strftime("%Y-%m-%d %H:%M")
+        if bucket_key in hour_counts:
+            hour_counts[bucket_key] += 1
+    acessos_por_hora = [
+        {"hora": bucket.strftime("%H:00"), "acessos": hour_counts[bucket.strftime("%Y-%m-%d %H:%M")]}
+        for bucket in hour_buckets
+    ]
+
+    current_month = _month_floor(now)
+    month_buckets = [_month_floor(_shift_months(current_month, -offset)) for offset in range(5, -1, -1)]
+    month_start = month_buckets[0]
+    charges = await db.student_charges.find(
+        {"owner_id": owner_id, "status": "paid", "paid_at": {"$gte": month_start}},
+        {"_id": 0, "paid_at": 1, "amount": 1, "amount_received": 1},
+    ).to_list(10000)
+    month_totals: dict[str, float] = {
+        bucket.strftime("%Y-%m"): 0.0
+        for bucket in month_buckets
+    }
+    for charge in charges:
+        paid_at = _coerce_datetime_utc(charge.get("paid_at"))
+        if not paid_at:
+            continue
+        month_key = paid_at.strftime("%Y-%m")
+        if month_key not in month_totals:
+            continue
+        month_totals[month_key] += float(charge.get("amount_received") or charge.get("amount") or 0)
+    receita_mensal = [
+        {"mes": _month_label(bucket), "valor": round(month_totals[bucket.strftime("%Y-%m")], 2)}
+        for bucket in month_buckets
+    ]
+
+    return {
+        "receita_por_plano": receita_por_plano,
+        "acessos_por_hora": acessos_por_hora,
+        "receita_mensal": receita_mensal,
     }
 
 
