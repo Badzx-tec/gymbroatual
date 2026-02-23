@@ -7,6 +7,24 @@ from app.db.mongo import get_db
 from app.services.subscription import subscription_allows_login
 
 
+async def _resolve_owner_gym_id(db, owner: dict) -> str | None:
+    gym_id = owner.get("gym_id")
+    if gym_id:
+        return gym_id
+
+    gym = await db.gyms.find_one({"owner_id": owner["owner_id"]}, {"_id": 0, "gym_id": 1})
+    resolved = (gym or {}).get("gym_id")
+    if not resolved:
+        return None
+
+    owner["gym_id"] = resolved
+    await db.owners.update_one(
+        {"owner_id": owner["owner_id"]},
+        {"$set": {"gym_id": resolved}},
+    )
+    return resolved
+
+
 async def get_current_actor(authorization: str | None = Header(default=None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Nao autenticado")
@@ -28,12 +46,19 @@ async def get_current_actor(authorization: str | None = Header(default=None)) ->
         actor["actor_type"] = "employee"
         actor["owner_id"] = actor.get("owner_id") or payload.get("owner_id")
         actor["gym_id"] = actor.get("gym_id") or payload.get("gym_id")
+        if not actor["gym_id"] and actor.get("owner_id"):
+            gym = await db.gyms.find_one({"owner_id": actor["owner_id"]}, {"_id": 0, "gym_id": 1})
+            actor["gym_id"] = (gym or {}).get("gym_id")
+        if not actor["gym_id"]:
+            raise HTTPException(status_code=409, detail="Academia nao vinculada ao funcionario")
         actor["role"] = actor.get("role") or payload.get("role", "RECEPTION")
         return actor
 
     owner = await db.owners.find_one({"owner_id": payload.get("sub")}, {"_id": 0})
     if not owner:
         raise HTTPException(status_code=401, detail="Usuario nao encontrado")
+    if not await _resolve_owner_gym_id(db, owner):
+        raise HTTPException(status_code=409, detail="Academia nao vinculada ao usuario")
     owner["actor_type"] = "owner"
     owner["role"] = "OWNER"
     return owner

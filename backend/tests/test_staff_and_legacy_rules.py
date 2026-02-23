@@ -27,15 +27,15 @@ class FakeDb:
 
 
 @pytest.mark.asyncio
-async def test_create_academy_blocks_second_franchise(monkeypatch):
+async def test_create_academy_is_disabled(monkeypatch):
     db = FakeDb(gyms=[{"gym_id": "gym_1", "owner_id": "own_1", "created_at": datetime.now(timezone.utc)}])
     monkeypatch.setattr(legacy, "get_db", lambda: db)
 
     with pytest.raises(HTTPException) as exc:
         await legacy.create_academy(payload={"nome": "Outra"}, actor={"owner_id": "own_1", "gym_id": "gym_1"})
 
-    assert exc.value.status_code == 400
-    assert exc.value.detail == "Somente uma franquia por usuario"
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "Gestao de franquias desabilitada"
 
 
 @pytest.mark.asyncio

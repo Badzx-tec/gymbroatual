@@ -1,5 +1,6 @@
 import secrets
 from datetime import datetime
+from io import BytesIO
 
 from fastapi import (
     APIRouter,
@@ -10,7 +11,11 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 
 from app.core.deps import get_current_actor, require_active_subscription, require_roles
 from app.core.time import UTC
@@ -21,6 +26,90 @@ from . import gyms as gym_routes
 from . import turnstiles as turnstile_routes
 
 router = APIRouter()
+
+
+def _as_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        if value.tzinfo:
+            value = value.astimezone(UTC)
+        return value.strftime("%d/%m/%Y %H:%M")
+    if isinstance(value, bool):
+        return "Sim" if value else "Nao"
+    return str(value)
+
+
+def _xlsx_response(filename: str, sheet_name: str, headers: list[str], rows: list[list[str]]):
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = sheet_name
+    worksheet.append(headers)
+    for row in rows:
+        worksheet.append(row)
+    for index, header in enumerate(headers, start=1):
+        worksheet.column_dimensions[get_column_letter(index)].width = max(14, len(header) + 2)
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _students_pdf_response(filename: str, rows: list[list[str]]):
+    output = BytesIO()
+    pdf = canvas.Canvas(output, pagesize=A4)
+    width, height = A4
+    y = height - 36
+
+    pdf.setFont("Helvetica-Bold", 13)
+    pdf.drawString(32, y, "Relatorio de Alunos - GymBro")
+    y -= 18
+    pdf.setFont("Helvetica", 9)
+    pdf.drawString(32, y, f"Gerado em: {datetime.now(UTC).strftime('%d/%m/%Y %H:%M UTC')}")
+    y -= 20
+
+    pdf.setFont("Helvetica-Bold", 8)
+    pdf.drawString(32, y, "Nome")
+    pdf.drawString(210, y, "Email")
+    pdf.drawString(390, y, "CPF")
+    pdf.drawString(480, y, "Status")
+    y -= 12
+    pdf.setFont("Helvetica", 8)
+
+    for row in rows:
+        if y < 48:
+            pdf.showPage()
+            y = height - 36
+            pdf.setFont("Helvetica-Bold", 8)
+            pdf.drawString(32, y, "Nome")
+            pdf.drawString(210, y, "Email")
+            pdf.drawString(390, y, "CPF")
+            pdf.drawString(480, y, "Status")
+            y -= 12
+            pdf.setFont("Helvetica", 8)
+
+        nome = (row[1] or "")[:38]
+        email = (row[2] or "")[:33]
+        cpf = (row[3] or "")[:18]
+        status = (row[6] or "")[:10]
+        pdf.drawString(32, y, nome)
+        pdf.drawString(210, y, email)
+        pdf.drawString(390, y, cpf)
+        pdf.drawString(480, y, status)
+        y -= 12
+
+    pdf.save()
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/auth/logout")
@@ -81,79 +170,19 @@ async def list_academies(actor: dict = Depends(require_active_subscription)):
 
 @router.post("/academies")
 async def create_academy(payload: dict, actor: dict = Depends(require_active_subscription)):
-    db = get_db()
-    existing = await db.gyms.find_one({"owner_id": actor["owner_id"]}, {"_id": 0, "gym_id": 1})
-    if existing:
-        raise HTTPException(status_code=400, detail="Somente uma franquia por usuario")
-    now = datetime.now(UTC)
-    gym_id = payload.get("academy_id") or f"gym_{secrets.token_hex(6)}"
-    doc = {
-        "gym_id": gym_id,
-        "owner_id": actor["owner_id"],
-        "name": payload.get("nome", "Academia"),
-        "endereco": payload.get("endereco", ""),
-        "telefone": payload.get("telefone", ""),
-        "email": payload.get("email", ""),
-        "catraca_ip": payload.get("catraca_ip", "127.0.0.1"),
-        "catraca_port": int(payload.get("catraca_port", 7878)),
-        "ativo": bool(payload.get("ativo", True)),
-        "created_at": now,
-        "updated_at": now,
-    }
-    await db.gyms.insert_one(doc)
-    return {
-        "academy_id": gym_id,
-        "nome": doc["name"],
-        "endereco": doc["endereco"],
-        "telefone": doc["telefone"],
-        "email": doc["email"],
-        "catraca_ip": doc["catraca_ip"],
-        "catraca_port": doc["catraca_port"],
-        "ativo": doc["ativo"],
-    }
+    raise HTTPException(status_code=403, detail="Gestao de franquias desabilitada")
 
 
 @router.put("/academies/{academy_id}")
 async def update_academy(
     academy_id: str, payload: dict, actor: dict = Depends(require_active_subscription)
 ):
-    db = get_db()
-    mapped = {
-        "name": payload.get("nome"),
-        "endereco": payload.get("endereco"),
-        "telefone": payload.get("telefone"),
-        "email": payload.get("email"),
-        "catraca_ip": payload.get("catraca_ip"),
-        "catraca_port": payload.get("catraca_port"),
-        "ativo": payload.get("ativo"),
-        "updated_at": datetime.now(UTC),
-    }
-    mapped = {k: v for k, v in mapped.items() if v is not None}
-    await db.gyms.update_one(
-        {"gym_id": academy_id, "owner_id": actor["owner_id"]}, {"$set": mapped}
-    )
-    updated = await db.gyms.find_one(
-        {"gym_id": academy_id, "owner_id": actor["owner_id"]}, {"_id": 0}
-    )
-    if not updated:
-        return JSONResponse(status_code=404, content={"detail": "Academia nao encontrada"})
-    return {
-        "academy_id": academy_id,
-        "nome": updated.get("name", ""),
-        "endereco": updated.get("endereco", ""),
-        "telefone": updated.get("telefone", ""),
-        "email": updated.get("email", ""),
-        "catraca_ip": updated.get("catraca_ip", ""),
-        "catraca_port": updated.get("catraca_port", 7878),
-        "ativo": updated.get("ativo", True),
-    }
+    raise HTTPException(status_code=403, detail="Gestao de franquias desabilitada")
 
 
 @router.delete("/academies/{academy_id}")
 async def delete_academy(academy_id: str, actor: dict = Depends(require_active_subscription)):
-    db = get_db()
-    await db.gyms.delete_one({"gym_id": academy_id, "owner_id": actor["owner_id"]})
-    return {"message": "Academia removida"}
+    raise HTTPException(status_code=403, detail="Gestao de franquias desabilitada")
 
 
 @router.get("/academies/{academy_id}/stats")
@@ -277,31 +306,137 @@ async def webhook_logs(limit: int = 50, actor: dict = Depends(require_active_sub
 
 
 @router.get("/reports/students/excel")
-async def export_students_excel():
-    return JSONResponse(
-        status_code=501, content={"detail": "Exportacao nao implementada nesta versao"}
+async def export_students_excel(actor: dict = Depends(require_active_subscription)):
+    db = get_db()
+    students = (
+        await db.students.find({"owner_id": actor["owner_id"]}, {"_id": 0})
+        .sort("created_at", -1)
+        .to_list(5000)
     )
+    headers = [
+        "ID",
+        "Nome",
+        "Email",
+        "CPF",
+        "Telefone",
+        "Plano",
+        "Status",
+        "Vencimento",
+        "Criado em",
+    ]
+    rows = [
+        [
+            _as_text(student.get("student_id")),
+            _as_text(student.get("nome")),
+            _as_text(student.get("email")),
+            _as_text(student.get("cpf")),
+            _as_text(student.get("telefone")),
+            _as_text(student.get("plano_id")),
+            _as_text(student.get("status")),
+            _as_text(student.get("data_vencimento")),
+            _as_text(student.get("created_at")),
+        ]
+        for student in students
+    ]
+    return _xlsx_response("alunos_gymbro.xlsx", "Alunos", headers, rows)
 
 
 @router.get("/reports/students/pdf")
-async def export_students_pdf():
-    return JSONResponse(
-        status_code=501, content={"detail": "Exportacao nao implementada nesta versao"}
+async def export_students_pdf(actor: dict = Depends(require_active_subscription)):
+    db = get_db()
+    students = (
+        await db.students.find({"owner_id": actor["owner_id"]}, {"_id": 0})
+        .sort("created_at", -1)
+        .to_list(3000)
     )
+    rows = [
+        [
+            _as_text(student.get("student_id")),
+            _as_text(student.get("nome")),
+            _as_text(student.get("email")),
+            _as_text(student.get("cpf")),
+            _as_text(student.get("telefone")),
+            _as_text(student.get("plano_id")),
+            _as_text(student.get("status")),
+            _as_text(student.get("created_at")),
+        ]
+        for student in students
+    ]
+    return _students_pdf_response("alunos_gymbro.pdf", rows)
 
 
 @router.get("/reports/access-logs/excel")
-async def export_access_excel():
-    return JSONResponse(
-        status_code=501, content={"detail": "Exportacao nao implementada nesta versao"}
+async def export_access_excel(actor: dict = Depends(require_active_subscription)):
+    db = get_db()
+    logs = (
+        await db.access_logs.find({"owner_id": actor["owner_id"]}, {"_id": 0})
+        .sort("created_at", -1)
+        .to_list(10000)
     )
+    headers = [
+        "Data/Hora",
+        "Tipo",
+        "Aluno",
+        "Funcionario",
+        "Metodo",
+        "Autorizado",
+        "Motivo",
+    ]
+    rows = [
+        [
+            _as_text(log.get("timestamp") or log.get("created_at")),
+            _as_text(log.get("subject_type") or log.get("tipo")),
+            _as_text(log.get("student_name")),
+            _as_text(log.get("employee_name")),
+            _as_text(log.get("method")),
+            _as_text(log.get("autorizado")),
+            _as_text(log.get("motivo") or log.get("reason")),
+        ]
+        for log in logs
+    ]
+    return _xlsx_response("acessos_gymbro.xlsx", "Acessos", headers, rows)
 
 
 @router.get("/reports/financial/excel")
-async def export_financial_excel():
-    return JSONResponse(
-        status_code=501, content={"detail": "Exportacao nao implementada nesta versao"}
+async def export_financial_excel(actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
+    db = get_db()
+    invoices = (
+        await db.invoices.find({"owner_id": actor["owner_id"]}, {"_id": 0})
+        .sort("created_at", -1)
+        .to_list(5000)
     )
+    charges = (
+        await db.student_charges.find({"owner_id": actor["owner_id"]}, {"_id": 0})
+        .sort("created_at", -1)
+        .to_list(5000)
+    )
+    headers = ["Tipo", "Referencia", "Status", "Valor", "Vencimento", "Pago em", "Origem"]
+    rows: list[list[str]] = []
+    for invoice in invoices:
+        rows.append(
+            [
+                "Assinatura SaaS",
+                _as_text(invoice.get("period_label") or invoice.get("invoice_id")),
+                _as_text(invoice.get("status")),
+                _as_text(invoice.get("amount")),
+                _as_text(invoice.get("due_at") or invoice.get("created_at")),
+                _as_text(invoice.get("paid_at")),
+                "billing.invoices",
+            ]
+        )
+    for charge in charges:
+        rows.append(
+            [
+                "Contrato Aluno",
+                _as_text(charge.get("charge_id")),
+                _as_text(charge.get("status")),
+                _as_text(charge.get("amount")),
+                _as_text(charge.get("due_at")),
+                _as_text(charge.get("paid_at")),
+                "student_charges",
+            ]
+        )
+    return _xlsx_response("financeiro_gymbro.xlsx", "Financeiro", headers, rows)
 
 
 @router.post("/students/{student_id}/biometria")

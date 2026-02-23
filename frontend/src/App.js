@@ -9,7 +9,6 @@ import Dashboard from './pages/Dashboard';
 import StudentsPage from './pages/StudentsPage';
 import PlansPage from './pages/PlansPage';
 import AccessLogsPage from './pages/AccessLogsPage';
-import AcademiesPage from './pages/AcademiesPage';
 import NotificationsPage from './pages/NotificationsPage';
 import CatracaPage from './pages/CatracaPage';
 import SubscriptionPage from './pages/SubscriptionPage';
@@ -34,7 +33,6 @@ function AppRouter() {
         <Route path="contratos" element={<RoleRoute roles={['OWNER', 'MANAGER', 'RECEPTION']}><StudentContractsPage /></RoleRoute>} />
         <Route path="planos" element={<PlansPage />} />
         <Route path="acessos" element={<AccessLogsPage />} />
-        <Route path="franquias" element={<AcademiesPage />} />
         <Route path="notificacoes" element={<NotificationsPage />} />
         <Route path="catraca" element={<CatracaPage />} />
         <Route path="funcionarios" element={<RoleRoute roles={['OWNER', 'MANAGER']}><StaffPage /></RoleRoute>} />

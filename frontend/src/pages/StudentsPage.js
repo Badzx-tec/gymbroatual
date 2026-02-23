@@ -334,9 +334,9 @@ export default function StudentsPage() {
                       className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" required />
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">E-mail *</label>
+                    <label className="text-sm font-medium text-zinc-400 mb-1 block">E-mail</label>
                     <input data-testid="student-email-input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" required />
+                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
                   </div>
                   <div>
                     <label className="text-sm font-medium text-zinc-400 mb-1 block">CPF *</label>

@@ -11,6 +11,13 @@ from app.models.students import AttendanceIn, MeasurementIn, StudentIn, WorkoutP
 router = APIRouter()
 
 
+def _require_gym_id(owner: dict) -> str:
+    gym_id = owner.get("gym_id")
+    if not gym_id:
+        raise HTTPException(status_code=409, detail="Academia nao vinculada ao usuario")
+    return gym_id
+
+
 @router.get("")
 async def list_students(
     search: str = "",
@@ -39,10 +46,11 @@ async def create_student(payload: StudentIn, owner: dict = Depends(require_activ
     db = get_db()
     now = datetime.now(UTC)
     student_id = f"std_{secrets.token_hex(6)}"
+    gym_id = _require_gym_id(owner)
     doc = {
         "student_id": student_id,
         "owner_id": owner["owner_id"],
-        "gym_id": owner["gym_id"],
+        "gym_id": gym_id,
         **payload.model_dump(),
         "created_at": now,
         "updated_at": now,
@@ -121,11 +129,12 @@ async def add_measurement(
     owner: dict = Depends(require_active_subscription),
 ):
     db = get_db()
+    gym_id = _require_gym_id(owner)
     doc = {
         "measurement_id": f"mea_{secrets.token_hex(6)}",
         "student_id": student_id,
         "owner_id": owner["owner_id"],
-        "gym_id": owner["gym_id"],
+        "gym_id": gym_id,
         **payload.model_dump(by_alias=False),
         "created_at": datetime.now(UTC),
     }
@@ -153,11 +162,12 @@ async def add_workout(
     owner: dict = Depends(require_active_subscription),
 ):
     db = get_db()
+    gym_id = _require_gym_id(owner)
     doc = {
         "workout_id": f"wrk_{secrets.token_hex(6)}",
         "student_id": student_id,
         "owner_id": owner["owner_id"],
-        "gym_id": owner["gym_id"],
+        "gym_id": gym_id,
         **payload.model_dump(),
         "created_at": datetime.now(UTC),
     }
@@ -185,11 +195,12 @@ async def add_attendance(
     owner: dict = Depends(require_active_subscription),
 ):
     db = get_db()
+    gym_id = _require_gym_id(owner)
     doc = {
         "attendance_id": f"att_{secrets.token_hex(6)}",
         "student_id": student_id,
         "owner_id": owner["owner_id"],
-        "gym_id": owner["gym_id"],
+        "gym_id": gym_id,
         **payload.model_dump(),
         "created_at": datetime.now(UTC),
     }
@@ -207,7 +218,7 @@ async def add_attendance(
             "motivo": "Acesso registrado",
             "timestamp": payload.date_time,
             "owner_id": owner["owner_id"],
-            "gym_id": owner["gym_id"],
+            "gym_id": gym_id,
         }
     )
     return doc

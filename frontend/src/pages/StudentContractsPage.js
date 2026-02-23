@@ -1,5 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarClock, CircleDollarSign, ClipboardList, FileText, Plus, ShieldAlert, X } from 'lucide-react';
+import {
+  CalendarClock,
+  CircleDollarSign,
+  ClipboardList,
+  FileText,
+  Plus,
+  Search,
+  ShieldAlert,
+  X,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { api } from '../api';
@@ -43,6 +52,18 @@ function statusClass(status) {
   return 'bg-zinc-500/15 border-zinc-500/30 text-zinc-300';
 }
 
+function statusLabel(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'active') return 'Ativo';
+  if (normalized === 'paid') return 'Pago';
+  if (normalized === 'open') return 'Aberto';
+  if (normalized === 'past_due') return 'Atrasado';
+  if (normalized === 'overdue') return 'Vencido';
+  if (normalized === 'canceled') return 'Cancelado';
+  if (normalized === 'expired') return 'Expirado';
+  return status || '-';
+}
+
 function toIsoDateStart(value) {
   if (!value) return undefined;
   return `${value}T00:00:00Z`;
@@ -59,12 +80,19 @@ export default function StudentContractsPage() {
   const [events, setEvents] = useState([]);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterStudent, setFilterStudent] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [contractModalOpen, setContractModalOpen] = useState(false);
   const [contractForm, setContractForm] = useState(emptyContractForm);
   const [chargeForm, setChargeForm] = useState(emptyChargeForm);
   const [selectedContract, setSelectedContract] = useState(null);
   const [charges, setCharges] = useState([]);
   const [chargesLoading, setChargesLoading] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [extendContractOnPayment, setExtendContractOnPayment] = useState(true);
+
+  const user = useMemo(() => JSON.parse(localStorage.getItem('gymbro_user') || '{}'), []);
+  const role = String(user.role || 'OWNER').toUpperCase();
+  const canManageContracts = ['OWNER', 'MANAGER'].includes(role);
 
   const loadStaticData = async () => {
     const [studentsData, plansData] = await Promise.all([api.listStudents('', ''), api.listPlans()]);
@@ -85,9 +113,10 @@ export default function StudentContractsPage() {
     const data = await api.listStudentContracts({
       status: filterStatus,
       student_id: filterStudent,
-      limit: 200,
+      limit: 300,
     });
     setContracts(data);
+    return data;
   };
 
   const loadCharges = async (contractId) => {
@@ -97,10 +126,10 @@ export default function StudentContractsPage() {
     }
     setChargesLoading(true);
     try {
-      const data = await api.listContractCharges(contractId, 200);
+      const data = await api.listContractCharges(contractId, 300);
       setCharges(data);
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err?.message || 'Erro ao carregar cobrancas');
     } finally {
       setChargesLoading(false);
     }
@@ -111,7 +140,7 @@ export default function StudentContractsPage() {
     try {
       await Promise.all([loadStaticData(), loadOverview(), loadContracts()]);
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err?.message || 'Erro ao atualizar contratos');
     } finally {
       setLoading(false);
     }
@@ -123,7 +152,7 @@ export default function StudentContractsPage() {
 
   useEffect(() => {
     if (!loading) {
-      loadContracts().catch((err) => toast.error(err.message));
+      loadContracts().catch((err) => toast.error(err?.message || 'Erro ao carregar contratos'));
     }
   }, [filterStatus, filterStudent]);
 
@@ -133,10 +162,31 @@ export default function StudentContractsPage() {
     }
   }, [selectedContract?.contract_id]);
 
+  useEffect(() => {
+    if (!selectedContract?.contract_id) return;
+    const updated = contracts.find((item) => item.contract_id === selectedContract.contract_id);
+    if (!updated) {
+      setSelectedContract(null);
+      return;
+    }
+    setSelectedContract(updated);
+  }, [contracts, selectedContract?.contract_id]);
+
   const selectedStudentName = useMemo(() => {
     if (!selectedContract) return '-';
     return selectedContract.student_name || students.find((s) => s.student_id === selectedContract.student_id)?.nome || '-';
   }, [selectedContract, students]);
+
+  const visibleContracts = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return contracts;
+    return contracts.filter((contract) => {
+      const studentName = String(contract.student_name || '').toLowerCase();
+      const contractId = String(contract.contract_id || '').toLowerCase();
+      const planName = String(contract.plan_name || '').toLowerCase();
+      return studentName.includes(term) || contractId.includes(term) || planName.includes(term);
+    });
+  }, [contracts, searchTerm]);
 
   const openCreateModal = () => {
     setContractForm(emptyContractForm);
@@ -163,11 +213,11 @@ export default function StudentContractsPage() {
         create_initial_charge: !!contractForm.create_initial_charge,
       };
       await api.createStudentContract(payload);
-      toast.success('Contrato criado');
+      toast.success('Contrato criado com sucesso');
       setContractModalOpen(false);
       await Promise.all([loadOverview(), loadContracts()]);
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err?.message || 'Erro ao criar contrato');
     } finally {
       setSavingContract(false);
     }
@@ -183,7 +233,7 @@ export default function StudentContractsPage() {
       }
       await Promise.all([loadOverview(), loadContracts()]);
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err?.message || 'Erro ao cancelar contrato');
     }
   };
 
@@ -201,7 +251,7 @@ export default function StudentContractsPage() {
       setChargeForm(emptyChargeForm);
       await Promise.all([loadOverview(), loadContracts(), loadCharges(selectedContract.contract_id)]);
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err?.message || 'Erro ao criar cobranca');
     } finally {
       setSavingCharge(false);
     }
@@ -210,15 +260,15 @@ export default function StudentContractsPage() {
   const handleMarkPaid = async (chargeId) => {
     try {
       await api.markStudentChargePaid(chargeId, {
-        payment_method: 'cash',
-        extend_contract: true,
+        payment_method: paymentMethod,
+        extend_contract: extendContractOnPayment,
       });
       toast.success('Cobranca marcada como paga');
       if (selectedContract?.contract_id) {
         await Promise.all([loadOverview(), loadContracts(), loadCharges(selectedContract.contract_id)]);
       }
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err?.message || 'Erro ao marcar cobranca como paga');
     }
   };
 
@@ -232,18 +282,22 @@ export default function StudentContractsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Contratos de Alunos</h1>
-          <p className="text-zinc-400 mt-1">Gestao de contratos, cobrancas e renovacoes.</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={refreshAll} className="h-10 px-4 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold uppercase tracking-wide">
-            Atualizar
-          </button>
-          <button onClick={openCreateModal} className="h-10 px-4 rounded-sm bg-[#ccff00] hover:bg-[#b3e600] text-black text-xs font-bold uppercase tracking-wide flex items-center gap-2">
-            <Plus className="w-4 h-4" /> Novo contrato
-          </button>
+      <div className="bg-gradient-to-r from-zinc-900 via-zinc-900 to-zinc-800 border border-zinc-800 rounded-md p-5">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Contratos</h1>
+            <p className="text-zinc-400 mt-1">Gestao profissional de contratos, cobrancas e renovacoes.</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={refreshAll} className="h-10 px-4 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold uppercase tracking-wide">
+              Atualizar
+            </button>
+            {canManageContracts && (
+              <button onClick={openCreateModal} className="h-10 px-4 rounded-sm bg-[#ccff00] hover:bg-[#b3e600] text-black text-xs font-bold uppercase tracking-wide flex items-center gap-2">
+                <Plus className="w-4 h-4" /> Novo contrato
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -256,10 +310,10 @@ export default function StudentContractsPage() {
         <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
           <p className="text-xs text-zinc-500 uppercase tracking-wider flex items-center gap-1"><ShieldAlert className="w-3.5 h-3.5" /> Em risco</p>
           <p className="text-2xl font-bold mt-2">{overview?.past_due_contracts || 0}</p>
-          <p className="text-xs text-zinc-500 mt-1">Cobrancas vencidas: {overview?.overdue_charges || 0}</p>
+          <p className="text-xs text-zinc-500 mt-1">Vencidas: {overview?.overdue_charges || 0}</p>
         </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <p className="text-xs text-zinc-500 uppercase tracking-wider flex items-center gap-1"><CalendarClock className="w-3.5 h-3.5" /> Vencendo em 7d</p>
+          <p className="text-xs text-zinc-500 uppercase tracking-wider flex items-center gap-1"><CalendarClock className="w-3.5 h-3.5" /> Vencendo em 7 dias</p>
           <p className="text-2xl font-bold mt-2">{overview?.expiring_next_7d || 0}</p>
           <p className="text-xs text-zinc-500 mt-1">Abertas: {overview?.open_charges || 0}</p>
         </div>
@@ -271,20 +325,29 @@ export default function StudentContractsPage() {
 
       <div className="flex flex-col xl:flex-row gap-6">
         <div className="xl:w-2/3 space-y-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4 flex flex-col md:flex-row gap-3">
-            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4 flex flex-col lg:flex-row gap-3">
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm lg:w-40">
               <option value="">Todos os status</option>
               <option value="active">Ativo</option>
-              <option value="past_due">Past due</option>
+              <option value="past_due">Atrasado</option>
               <option value="expired">Expirado</option>
               <option value="canceled">Cancelado</option>
             </select>
-            <select value={filterStudent} onChange={(e) => setFilterStudent(e.target.value)} className="h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm flex-1">
+            <select value={filterStudent} onChange={(e) => setFilterStudent(e.target.value)} className="h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm lg:flex-1">
               <option value="">Todos os alunos</option>
               {students.map((student) => (
                 <option key={student.student_id} value={student.student_id}>{student.nome}</option>
               ))}
             </select>
+            <div className="relative lg:w-64">
+              <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Buscar contrato/aluno"
+                className="w-full h-10 pl-9 pr-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm"
+              />
+            </div>
           </div>
 
           <div className="bg-zinc-900 border border-zinc-800 rounded-md overflow-x-auto">
@@ -294,14 +357,14 @@ export default function StudentContractsPage() {
                   <th className="text-left px-4 py-3">Aluno</th>
                   <th className="text-left px-4 py-3">Plano</th>
                   <th className="text-left px-4 py-3">Valor</th>
-                  <th className="text-left px-4 py-3">Periodo fim</th>
+                  <th className="text-left px-4 py-3">Vigencia ate</th>
                   <th className="text-left px-4 py-3">Status</th>
                   <th className="text-right px-4 py-3">Acoes</th>
                 </tr>
               </thead>
               <tbody>
-                {contracts.map((contract) => (
-                  <tr key={contract.contract_id} className="border-b border-zinc-800/50">
+                {visibleContracts.map((contract) => (
+                  <tr key={contract.contract_id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
                     <td className="px-4 py-3">
                       <p className="font-medium">{contract.student_name}</p>
                       <p className="text-xs text-zinc-500">{contract.contract_id}</p>
@@ -311,7 +374,7 @@ export default function StudentContractsPage() {
                     <td className="px-4 py-3 text-zinc-400">{formatDate(contract.current_period_end)}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-1 rounded-sm border text-xs font-semibold uppercase ${statusClass(contract.status)}`}>
-                        {contract.status}
+                        {statusLabel(contract.status)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -319,7 +382,7 @@ export default function StudentContractsPage() {
                         <button onClick={() => setSelectedContract(contract)} className="h-8 px-3 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-[11px] font-semibold uppercase tracking-wide">
                           Cobrancas
                         </button>
-                        {['OWNER', 'MANAGER'].includes((JSON.parse(localStorage.getItem('gymbro_user') || '{}').role || 'OWNER').toUpperCase()) && (
+                        {canManageContracts && (
                           <button onClick={() => handleCancelContract(contract.contract_id)} className="h-8 px-3 rounded-sm bg-red-500/10 hover:bg-red-500/20 text-red-300 text-[11px] font-semibold uppercase tracking-wide">
                             Cancelar
                           </button>
@@ -328,7 +391,7 @@ export default function StudentContractsPage() {
                     </td>
                   </tr>
                 ))}
-                {contracts.length === 0 && (
+                {visibleContracts.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">Nenhum contrato encontrado.</td>
                   </tr>
@@ -354,7 +417,7 @@ export default function StudentContractsPage() {
 
           <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
             <h2 className="font-semibold uppercase tracking-wide text-sm mb-3">Contrato selecionado</h2>
-            {!selectedContract && <p className="text-sm text-zinc-500">Selecione um contrato para ver e gerenciar cobrancas.</p>}
+            {!selectedContract && <p className="text-sm text-zinc-500">Selecione um contrato para gerenciar as cobrancas.</p>}
             {selectedContract && (
               <div className="space-y-3 text-sm">
                 <div>
@@ -364,7 +427,7 @@ export default function StudentContractsPage() {
                 <div>
                   <p className="text-zinc-500">Status</p>
                   <p className={`inline-flex px-2 py-1 rounded-sm border text-xs uppercase font-semibold ${statusClass(selectedContract.status)}`}>
-                    {selectedContract.status}
+                    {statusLabel(selectedContract.status)}
                   </p>
                 </div>
                 <div>
@@ -385,13 +448,27 @@ export default function StudentContractsPage() {
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
             <h2 className="font-semibold uppercase tracking-wide text-sm">Cobrancas do contrato {selectedContract.contract_id}</h2>
             <form onSubmit={handleCreateCharge} className="flex flex-wrap gap-2">
-              <input type="number" min="0.01" step="0.01" value={chargeForm.amount} onChange={(e) => setChargeForm({ ...chargeForm, amount: e.target.value })} placeholder="Valor" className="h-9 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-xs w-28" />
-              <input type="date" value={chargeForm.due_at} onChange={(e) => setChargeForm({ ...chargeForm, due_at: e.target.value })} className="h-9 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-xs" />
-              <input value={chargeForm.notes} onChange={(e) => setChargeForm({ ...chargeForm, notes: e.target.value })} placeholder="Observacao" className="h-9 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-xs w-40" />
+              <input type="number" min="0.01" step="0.01" value={chargeForm.amount} onChange={(event) => setChargeForm({ ...chargeForm, amount: event.target.value })} placeholder="Valor" className="h-9 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-xs w-28" />
+              <input type="date" value={chargeForm.due_at} onChange={(event) => setChargeForm({ ...chargeForm, due_at: event.target.value })} className="h-9 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-xs" />
+              <input value={chargeForm.notes} onChange={(event) => setChargeForm({ ...chargeForm, notes: event.target.value })} placeholder="Observacao" className="h-9 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-xs w-44" />
               <button disabled={savingCharge} className="h-9 px-3 rounded-sm bg-[#ccff00] hover:bg-[#b3e600] text-black text-[11px] font-bold uppercase tracking-wide disabled:opacity-60">
                 {savingCharge ? 'Salvando...' : 'Nova cobranca'}
               </button>
             </form>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 bg-zinc-950 border border-zinc-800 rounded-sm p-3">
+            <label className="text-xs text-zinc-400 uppercase tracking-wider">Metodo de pagamento</label>
+            <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className="h-8 px-3 rounded-sm bg-zinc-900 border border-zinc-700 text-xs">
+              <option value="cash">Dinheiro</option>
+              <option value="pix">PIX</option>
+              <option value="card">Cartao</option>
+              <option value="transfer">Transferencia</option>
+            </select>
+            <label className="inline-flex items-center gap-2 text-xs">
+              <input type="checkbox" className="accent-[#ccff00]" checked={extendContractOnPayment} onChange={(event) => setExtendContractOnPayment(event.target.checked)} />
+              Estender contrato automaticamente ao marcar pagamento
+            </label>
           </div>
 
           <div className="overflow-x-auto">
@@ -419,7 +496,7 @@ export default function StudentContractsPage() {
                     <td className="px-4 py-3">{formatMoney(charge.amount)}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-1 rounded-sm border text-xs font-semibold uppercase ${statusClass(charge.status)}`}>
-                        {charge.status}
+                        {statusLabel(charge.status)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-zinc-400">{formatDate(charge.paid_at)}</td>
@@ -456,7 +533,7 @@ export default function StudentContractsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="text-xs uppercase tracking-wider text-zinc-500">Aluno</label>
-                  <select required value={contractForm.student_id} onChange={(e) => setContractForm({ ...contractForm, student_id: e.target.value })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm">
+                  <select required value={contractForm.student_id} onChange={(event) => setContractForm({ ...contractForm, student_id: event.target.value })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm">
                     <option value="">Selecione</option>
                     {students.map((student) => (
                       <option key={student.student_id} value={student.student_id}>{student.nome}</option>
@@ -465,7 +542,7 @@ export default function StudentContractsPage() {
                 </div>
                 <div>
                   <label className="text-xs uppercase tracking-wider text-zinc-500">Plano</label>
-                  <select value={contractForm.plan_id} onChange={(e) => setContractForm({ ...contractForm, plan_id: e.target.value })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm">
+                  <select value={contractForm.plan_id} onChange={(event) => setContractForm({ ...contractForm, plan_id: event.target.value })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm">
                     <option value="">Sem plano</option>
                     {plans.map((plan) => (
                       <option key={plan.plan_id} value={plan.plan_id}>{plan.nome}</option>
@@ -474,26 +551,26 @@ export default function StudentContractsPage() {
                 </div>
                 <div>
                   <label className="text-xs uppercase tracking-wider text-zinc-500">Inicio</label>
-                  <input type="date" value={contractForm.start_at} onChange={(e) => setContractForm({ ...contractForm, start_at: e.target.value })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm" />
+                  <input type="date" value={contractForm.start_at} onChange={(event) => setContractForm({ ...contractForm, start_at: event.target.value })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm" />
                 </div>
                 <div>
                   <label className="text-xs uppercase tracking-wider text-zinc-500">Valor (BRL)</label>
-                  <input type="number" min="0.01" step="0.01" value={contractForm.amount} onChange={(e) => setContractForm({ ...contractForm, amount: e.target.value })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm" />
+                  <input type="number" min="0.01" step="0.01" value={contractForm.amount} onChange={(event) => setContractForm({ ...contractForm, amount: event.target.value })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm" />
                 </div>
                 <div>
                   <label className="text-xs uppercase tracking-wider text-zinc-500">Duracao (dias)</label>
-                  <input type="number" min="1" value={contractForm.duration_days} onChange={(e) => setContractForm({ ...contractForm, duration_days: e.target.value })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm" />
+                  <input type="number" min="1" value={contractForm.duration_days} onChange={(event) => setContractForm({ ...contractForm, duration_days: event.target.value })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm" />
                 </div>
                 <div className="md:col-span-2">
                   <label className="text-xs uppercase tracking-wider text-zinc-500">Observacao</label>
-                  <textarea rows={3} value={contractForm.notes} onChange={(e) => setContractForm({ ...contractForm, notes: e.target.value })} className="mt-1 w-full p-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm resize-none" />
+                  <textarea rows={3} value={contractForm.notes} onChange={(event) => setContractForm({ ...contractForm, notes: event.target.value })} className="mt-1 w-full p-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm resize-none" />
                 </div>
                 <label className="inline-flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={contractForm.auto_renew} onChange={(e) => setContractForm({ ...contractForm, auto_renew: e.target.checked })} className="accent-[#ccff00]" />
+                  <input type="checkbox" checked={contractForm.auto_renew} onChange={(event) => setContractForm({ ...contractForm, auto_renew: event.target.checked })} className="accent-[#ccff00]" />
                   Auto renovar
                 </label>
                 <label className="inline-flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={contractForm.create_initial_charge} onChange={(e) => setContractForm({ ...contractForm, create_initial_charge: e.target.checked })} className="accent-[#ccff00]" />
+                  <input type="checkbox" checked={contractForm.create_initial_charge} onChange={(event) => setContractForm({ ...contractForm, create_initial_charge: event.target.checked })} className="accent-[#ccff00]" />
                   Criar cobranca inicial
                 </label>
               </div>

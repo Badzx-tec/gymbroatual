@@ -433,5 +433,7 @@ Exemplo de agendamento no host (cron):
 - **Erro de CORS**: ajuste `CORS_ORIGINS` com a URL exata do frontend.
 - **Compose v2**: use `docker compose` (sem hífen).
 - **Funcionário sem email**: permitido; a unicidade de email é aplicada somente quando o campo é informado.
-- **Franquias por usuário**: o sistema permite apenas 1 academia por `owner_id`.
+- **Franquias por usuário**: gestão de franquias desabilitada (sem criação/edição/remoção no painel e API legado).
+- **Email de aluno**: opcional no cadastro de alunos.
+- **Exportações**: disponíveis em `/api/reports/students/excel`, `/api/reports/students/pdf`, `/api/reports/access-logs/excel` e `/api/reports/financial/excel`.
 - **Toast `[object Object]` no frontend**: indica erro HTTP não normalizado no client; atualize para a versão atual do frontend (parser de erro converte validações para mensagem legível).
