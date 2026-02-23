@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime
+from datetime import date, datetime, time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -22,6 +22,15 @@ def _require_gym_id(owner: dict) -> str:
     if not gym_id:
         raise HTTPException(status_code=409, detail="Academia nao vinculada ao usuario")
     return gym_id
+
+
+def _normalize_student_doc_data(payload: StudentIn) -> dict:
+    data = payload.model_dump()
+    for field in ("data_nascimento", "data_vencimento"):
+        value = data.get(field)
+        if isinstance(value, date):
+            data[field] = datetime.combine(value, time.min, tzinfo=UTC)
+    return data
 
 
 @router.get("")
@@ -53,11 +62,12 @@ async def create_student(payload: StudentIn, owner: dict = Depends(require_activ
     now = datetime.now(UTC)
     student_id = f"std_{secrets.token_hex(6)}"
     gym_id = _require_gym_id(owner)
+    payload_data = _normalize_student_doc_data(payload)
     doc = {
         "student_id": student_id,
         "owner_id": owner["owner_id"],
         "gym_id": gym_id,
-        **payload.model_dump(),
+        **payload_data,
         "created_at": now,
         "updated_at": now,
     }

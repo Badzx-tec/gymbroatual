@@ -1,4 +1,5 @@
 import pytest
+from bson import BSON
 
 from app.models.students import StudentIn
 from app.routes import students
@@ -37,3 +38,18 @@ async def test_create_student_response_strips_mongo_id(monkeypatch):
     assert result["owner_id"] == "own_1"
     assert result["gym_id"] == "gym_1"
     assert "_id" not in result
+
+
+def test_normalize_student_doc_data_converts_dates_for_mongo():
+    payload = StudentIn(
+        nome="Aluno",
+        cpf="12345678901",
+        data_vencimento="2026-02-23",
+        data_nascimento="1990-01-01",
+        status="ativo",
+    )
+    normalized = students._normalize_student_doc_data(payload)
+
+    assert isinstance(normalized["data_vencimento"], students.datetime)
+    assert isinstance(normalized["data_nascimento"], students.datetime)
+    BSON.encode(normalized)
