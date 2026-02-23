@@ -177,6 +177,8 @@ export const api = {
   cancelStaffInvite: (inviteId) => request(`/api/staff/invites/${inviteId}`, { method: 'DELETE' }),
   listEmployees: () => request('/api/staff/employees'),
   createEmployee: (data) => request('/api/staff/employees', { method: 'POST', body: JSON.stringify(data) }),
+  updateEmployee: (employeeId, data) => request(`/api/staff/employees/${employeeId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteEmployee: (employeeId) => request(`/api/staff/employees/${employeeId}`, { method: 'DELETE' }),
   deactivateEmployee: (employeeId) => request(`/api/staff/employees/${employeeId}/deactivate`, { method: 'POST' }),
   resetEmployeePassword: (employeeId, data = {}) => request(`/api/staff/employees/${employeeId}/reset-password`, { method: 'POST', body: JSON.stringify(data) }),
   updateEmployeeCredentials: (employeeId, data) => request(`/api/staff/employees/${employeeId}/credentials`, { method: 'POST', body: JSON.stringify(data) }),

@@ -2,6 +2,7 @@ import secrets
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
+from pymongo.errors import DuplicateKeyError
 
 from app.core.deps import require_roles
 from app.core.security import hash_password
@@ -150,6 +151,102 @@ async def create_employee(payload: dict, actor: dict = Depends(require_roles("OW
         result["shadow_student_id"] = await _sync_employee_shadow_student(employee)
     result["temp_password"] = raw_password
     return result
+
+
+@router.put("/employees/{employee_id}")
+async def update_employee(
+    employee_id: str,
+    payload: dict,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
+    db = get_db()
+    now = datetime.now(UTC)
+    update_fields: dict = {"updated_at": now}
+
+    if "name" in payload:
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Nome invalido")
+        update_fields["name"] = name
+
+    if "email" in payload:
+        email = str(payload.get("email") or "").strip().lower()
+        if not email:
+            raise HTTPException(status_code=400, detail="Email invalido")
+        update_fields["email"] = email
+
+    if "role" in payload:
+        role = (payload.get("role") or "").upper()
+        if role not in ALLOWED_ROLES - {"OWNER"}:
+            raise HTTPException(status_code=400, detail="Role invalida")
+        update_fields["role"] = role
+
+    if "is_active" in payload:
+        update_fields["is_active"] = bool(payload.get("is_active"))
+
+    turnstile_fields = _extract_turnstile_fields(payload)
+    for field in TURNSTILE_FIELDS:
+        if field in payload:
+            update_fields[field] = turnstile_fields[field]
+
+    try:
+        result = await db.employees.update_one(
+            {"employee_id": employee_id, "owner_id": actor["owner_id"]},
+            {"$set": update_fields},
+        )
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="Email ja cadastrado") from exc
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
+
+    employee = await db.employees.find_one(
+        {"employee_id": employee_id, "owner_id": actor["owner_id"]},
+        {"_id": 0},
+    )
+    if not employee:
+        raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
+
+    response = _safe_employee(employee)
+    if bool(payload.get("sync_shadow_student", False)):
+        response["shadow_student_id"] = await _sync_employee_shadow_student(employee)
+    return response
+
+
+@router.delete("/employees/{employee_id}")
+async def delete_employee(
+    employee_id: str,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
+    db = get_db()
+    employee = await db.employees.find_one(
+        {"employee_id": employee_id, "owner_id": actor["owner_id"]},
+        {"_id": 0},
+    )
+    if not employee:
+        raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
+
+    await db.employees.delete_one({"employee_id": employee_id, "owner_id": actor["owner_id"]})
+    await db.students.delete_one(
+        {
+            "owner_id": actor["owner_id"],
+            "$or": [
+                {"student_id": f"empstd_{employee_id}"},
+                {"employee_id": employee_id, "is_employee_shadow": True},
+            ],
+        }
+    )
+    await db.biometrics.delete_many(
+        {
+            "owner_id": actor["owner_id"],
+            "$or": [
+                {"employee_id": employee_id},
+                {"subject_type": "employee", "subject_id": employee_id},
+            ],
+        }
+    )
+
+    return {"message": "Funcionario removido", "employee_id": employee_id}
 
 
 @router.post("/employees/{employee_id}/deactivate")
