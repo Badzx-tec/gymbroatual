@@ -2,10 +2,38 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.config import get_settings
 from app.core.deps import require_active_subscription
 from app.db.mongo import get_db
 
 router = APIRouter()
+
+
+def _default_public_plans() -> list[dict]:
+    monthly = float(get_settings().subscription_monthly_amount)
+    return [
+        {
+            "plan_id": "owner_monthly",
+            "nome": "GymBro Mensal",
+            "valor": round(monthly, 2),
+            "duracao_dias": 30,
+            "descricao": "Plano mensal para 1 franquia",
+        },
+        {
+            "plan_id": "owner_quarterly",
+            "nome": "GymBro Trimestral",
+            "valor": round(monthly * 3, 2),
+            "duracao_dias": 90,
+            "descricao": "Plano trimestral para 1 franquia",
+        },
+        {
+            "plan_id": "owner_annual",
+            "nome": "GymBro Anual",
+            "valor": round(monthly * 12, 2),
+            "duracao_dias": 365,
+            "descricao": "Plano anual para 1 franquia",
+        },
+    ]
 
 
 @router.get("")
@@ -62,18 +90,19 @@ async def list_plans(owner: dict = Depends(require_active_subscription)):
 @router.get("/plans/public")
 async def list_plans_public():
     db = get_db()
+    default_plans = _default_public_plans()
     plans = await db.public_plans.find({}, {"_id": 0}).to_list(20)
-    if plans:
-        return plans
-    return [
-        {
-            "plan_id": "owner_monthly",
-            "nome": "GymBro SaaS",
-            "valor": 139.9,
-            "duracao_dias": 30,
-            "descricao": "Plano mensal do dono da academia",
-        }
-    ]
+    if not plans:
+        return default_plans
+
+    by_id = {
+        str(plan.get("plan_id")): plan for plan in plans if isinstance(plan, dict) and plan.get("plan_id")
+    }
+    merged = []
+    for default_plan in default_plans:
+        merged.append(by_id.pop(default_plan["plan_id"], default_plan))
+    merged.extend(by_id.values())
+    return merged[:20]
 
 
 @router.post("/plans")

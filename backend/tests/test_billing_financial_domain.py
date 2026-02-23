@@ -154,6 +154,7 @@ async def test_checkout_webhook_populates_financial_domain(monkeypatch):
 
     settings = SimpleNamespace(
         mp_access_token=None,
+        mp_preapproval_plan_id=None,
         mp_webhook_secret=None,
         frontend_base_url="http://localhost:3000",
         app_base_url="http://localhost:8000",
@@ -173,7 +174,7 @@ async def test_checkout_webhook_populates_financial_domain(monkeypatch):
     }
 
     checkout = await billing.create_checkout_for_owner(owner)
-    assert checkout.preapproval_id == "mock_pre_own_1"
+    assert checkout.preapproval_id == "mock_pre_own_1_owner_monthly"
     assert "/admin/assinatura" in checkout.checkout_url
 
     actor = {"owner_id": "own_1", "role": "OWNER"}
@@ -208,3 +209,42 @@ async def test_checkout_webhook_populates_financial_domain(monkeypatch):
     assert attempts_after[0]["status"] == "succeeded"
     assert events_after[0]["source"] == "webhook"
     assert events_after[0]["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_checkout_with_plan_id_uses_hosted_checkout_without_preapproval_post(monkeypatch):
+    db = FakeDb()
+    settings = SimpleNamespace(
+        mp_access_token="token_live",
+        mp_preapproval_plan_id="plan_abc123",
+        mp_webhook_secret=None,
+        frontend_base_url="https://gymbro.dev.br",
+        app_base_url="https://gymbro.dev.br",
+        subscription_monthly_amount=139.90,
+        webhook_rate_limit=100,
+        webhook_window_seconds=60,
+    )
+
+    class FailClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, *_args, **_kwargs):  # pragma: no cover - should not run
+            raise AssertionError("preapproval POST should not be called for plan checkout")
+
+    monkeypatch.setattr(billing, "get_db", lambda: db)
+    monkeypatch.setattr(billing, "get_settings", lambda: settings)
+    monkeypatch.setattr(billing.httpx, "AsyncClient", lambda timeout=15: FailClient())
+
+    owner = {
+        "owner_id": "own_1",
+        "email": "owner@example.com",
+        "name": "Owner Test",
+    }
+    checkout = await billing.create_checkout_for_owner(owner, plan_code="owner_monthly")
+
+    assert checkout.checkout_url.endswith("preapproval_plan_id=plan_abc123")
+    assert checkout.preapproval_id is None

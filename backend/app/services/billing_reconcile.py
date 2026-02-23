@@ -93,9 +93,12 @@ async def reconcile_subscriptions(owner_id: str | None = None, limit: int | None
                     },
                 }
                 if mapped == "active":
+                    plan_days = int(sub.get("plan_duration_days") or 30)
                     update["last_payment_at"] = now
                     update["grace_until"] = None
-                    update["current_period_end"] = next_payment or compute_next_period_end(now)
+                    update["current_period_end"] = next_payment or compute_next_period_end(
+                        now, days=plan_days
+                    )
                 elif mapped == "past_due":
                     update["grace_until"] = compute_grace_until(now)
 

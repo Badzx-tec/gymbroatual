@@ -36,9 +36,10 @@ def subscription_allows_login(subscription: dict | None) -> bool:
     return False
 
 
-def compute_next_period_end(reference: datetime | None = None) -> datetime:
+def compute_next_period_end(reference: datetime | None = None, *, days: int = 30) -> datetime:
     base = reference or now_utc()
-    return base + timedelta(days=30)
+    period_days = max(1, int(days or 30))
+    return base + timedelta(days=period_days)
 
 
 def compute_grace_until(reference: datetime | None = None) -> datetime:
