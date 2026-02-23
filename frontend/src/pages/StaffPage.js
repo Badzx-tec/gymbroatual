@@ -3,11 +3,7 @@ import { toast } from 'sonner';
 
 import { api } from '../api';
 
-export default function StaffPage() {
-  const [employees, setEmployees] = useState([]);
-  const [invites, setInvites] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({
+const emptyEmployeeForm = {
   name: '',
   email: '',
   role: 'RECEPTION',
@@ -16,18 +12,44 @@ export default function StaffPage() {
   biometria_id: '',
   keypad_code: '',
   sync_shadow_student: true,
-  });
-  const [inviteForm, setInviteForm] = useState({ email: '', role: 'RECEPTION' });
+};
 
-  const load = async () => {
+export default function StaffPage() {
+  const [employees, setEmployees] = useState([]);
+  const [invites, setInvites] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState(emptyEmployeeForm);
+  const [inviteForm, setInviteForm] = useState({ email: '', role: 'RECEPTION' });
+  const [editingEmployee, setEditingEmployee] = useState(null);
+  const [editForm, setEditForm] = useState({
+    ...emptyEmployeeForm,
+    is_active: true,
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const load = async ({ silent = false } = {}) => {
     setLoading(true);
-    try {
-      const [emp, inv] = await Promise.all([api.listEmployees(), api.listStaffInvites()]);
-      setEmployees(emp);
-      setInvites(inv);
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
+    const [employeesRes, invitesRes] = await Promise.allSettled([
+      api.listEmployees(),
+      api.listStaffInvites(),
+    ]);
+
+    if (employeesRes.status === 'fulfilled') {
+      setEmployees(employeesRes.value);
+    } else if (!silent) {
+      toast.error(employeesRes.reason?.message || 'Erro ao carregar funcionarios');
+    }
+
+    if (invitesRes.status === 'fulfilled') {
+      setInvites(invitesRes.value);
+    } else {
+      setInvites([]);
+      const inviteErr = invitesRes.reason;
+      if (!silent && inviteErr?.status !== 403) {
+        toast.error(inviteErr?.message || 'Erro ao carregar convites');
+      }
+    }
+
     setLoading(false);
   };
 
@@ -291,7 +313,7 @@ export default function StaffPage() {
 
             <form onSubmit={saveEmployeeEdit} className="space-y-3">
               <input placeholder="Nome" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" required />
-              <input placeholder="Email" type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" required />
+              <input placeholder="Email" type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
               <select value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3">
                 <option value="MANAGER">MANAGER</option>
                 <option value="RECEPTION">RECEPTION</option>
