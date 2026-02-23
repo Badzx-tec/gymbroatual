@@ -1,7 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from app.core.config import get_settings
-from app.core.time import UTC
 
 
 def now_utc() -> datetime:

@@ -1,10 +1,9 @@
 import secrets
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.deps import require_active_subscription
-from app.core.time import UTC
 from app.db.mongo import get_db
 from app.models.students import AttendanceIn, MeasurementIn, StudentIn, WorkoutPlanIn
 

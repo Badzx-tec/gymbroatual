@@ -6,15 +6,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const emptyStudent = { nome: '', email: '', cpf: '', telefone: '', plano_id: '', tag_rfid: '', biometria_id: '', status: 'ativo', data_vencimento: '', peso_kg: '', idade: '', altura_cm: '', treino: '', dias_frequencia: 0 };
 
-const normalizeCpfInput = (value) => {
-  const digits = String(value || '').replace(/\D/g, '').slice(0, 11);
-  if (!digits) return '';
-  if (digits.length <= 3) return digits;
-  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
-  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
-  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
-};
-
 export default function StudentsPage() {
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -340,8 +331,8 @@ export default function StudentsPage() {
                   </div>
                   <div>
                     <label className="text-sm font-medium text-zinc-400 mb-1 block">CPF *</label>
-                    <input data-testid="student-cpf-input" value={form.cpf} onChange={e => setForm({ ...form, cpf: normalizeCpfInput(e.target.value) })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" placeholder="000.000.000-00" required />
+                    <input data-testid="student-cpf-input" value={form.cpf} onChange={e => setForm({ ...form, cpf: e.target.value })}
+                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" required />
                   </div>
                   <div>
                     <label className="text-sm font-medium text-zinc-400 mb-1 block">Telefone</label>

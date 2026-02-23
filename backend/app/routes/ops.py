@@ -1,10 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends
 
 from app.core.config import get_settings
 from app.core.deps import require_roles
-from app.core.time import UTC
 from app.db.mongo import get_db
 from app.services.observability import metrics_snapshot
 

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -88,7 +88,7 @@ class FakeCollection:
 
 class FakeDb:
     def __init__(self):
-        now = datetime(2026, 2, 22, 12, 0, tzinfo=timezone.utc)
+        now = datetime(2026, 2, 22, 12, 0, tzinfo=UTC)
         self.students = FakeCollection(
             [
                 {
@@ -189,7 +189,7 @@ async def test_mark_charge_paid_extends_contract_period(monkeypatch):
     db = FakeDb()
     monkeypatch.setattr(student_billing, "get_db", lambda: db)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     old_end = now + timedelta(days=10)
     contract = {
         "contract_id": "ctr_test",

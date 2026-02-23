@@ -1,9 +1,8 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.deps import require_active_subscription
-from app.core.time import UTC
 from app.db.mongo import get_db
 from app.integrations.tolletus.client import get_tolletus_client
 from app.models.students import (

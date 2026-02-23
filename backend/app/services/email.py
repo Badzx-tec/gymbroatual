@@ -1,9 +1,8 @@
 import smtplib
-from datetime import datetime
+from datetime import UTC, datetime
 from email.message import EmailMessage
 
 from app.core.config import get_settings
-from app.core.time import UTC
 from app.db.mongo import get_db
 
 

@@ -25,7 +25,7 @@ Fluxo Toletus correto (NAT-safe):
 ## Requisitos
 
 - Docker + Docker Compose
-- Python 3.10+ (compatível) e recomendado 3.11+ para produção
+- Python 3.11+ (para rodar backend/testes local sem Docker)
 - Node 20+ (para build/lint frontend sem Docker)
 
 ## Variáveis de ambiente
@@ -424,12 +424,3 @@ Exemplo de agendamento no host (cron):
 - `template` biométrico é armazenado criptografado (`FERNET_KEY`)
 - remover artefatos locais (`venv`, `__pycache__`, `node_modules`)
 
-
-
-## Troubleshooting rápido
-
-- **Backend não sobe localmente**: valide variáveis do `.env` e conectividade com Mongo (`MONGO_URI`).
-- **Erro de CORS**: ajuste `CORS_ORIGINS` com a URL exata do frontend.
-- **Compose v2**: use `docker compose` (sem hífen).
-- **Funcionário sem email**: permitido; a unicidade de email é aplicada somente quando o campo é informado.
-- **Franquias por usuário**: o sistema permite apenas 1 academia por `owner_id`.

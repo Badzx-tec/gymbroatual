@@ -1,10 +1,9 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.deps import require_roles
-from app.core.time import UTC
 from app.db.mongo import get_db
 from app.models.student_billing import (
     BillingOverviewOut,

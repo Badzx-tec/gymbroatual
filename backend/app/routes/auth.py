@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -13,7 +13,6 @@ from app.core.security import (
     verification_code_hash,
     verify_password,
 )
-from app.core.time import UTC
 from app.db.mongo import get_db
 from app.models.auth import (
     LoginIn,
