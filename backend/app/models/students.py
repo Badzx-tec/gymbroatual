@@ -1,12 +1,13 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class StudentIn(BaseModel):
     nome: str
     email: EmailStr | None = None
+    cpf: str | None = None
     telefone: str | None = None
     sexo: str | None = None
     data_nascimento: date | None = None

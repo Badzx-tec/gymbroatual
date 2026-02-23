@@ -5,10 +5,15 @@ async function parseError(res) {
   const body = await res.json().catch(() => fallback);
   const headerCode = res.headers.get('X-Error-Code');
   const checkoutUrl = res.headers.get('X-Checkout-Url');
+  const rawDetail = body.detail ?? fallback.detail;
+  const detail = typeof rawDetail === 'string'
+    ? rawDetail
+    : rawDetail?.message || rawDetail?.detail || JSON.stringify(rawDetail);
+
   return {
     status: res.status,
     code: body.code || headerCode || null,
-    detail: body.detail || fallback.detail,
+    detail: detail || fallback.detail,
     checkout_url: body.checkout_url || checkoutUrl || null,
   };
 }

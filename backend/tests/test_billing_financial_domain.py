@@ -1,5 +1,5 @@
 ﻿import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -74,7 +74,7 @@ class FakeCollection:
 
 class FakeDb:
     def __init__(self):
-        trial_end = datetime(2026, 2, 28, tzinfo=UTC)
+        trial_end = datetime(2026, 2, 28, tzinfo=timezone.utc)
         self.subscriptions = FakeCollection(
             [
                 {
@@ -86,7 +86,7 @@ class FakeDb:
                     "current_period_end": None,
                     "last_payment_at": None,
                     "grace_until": None,
-                    "updated_at": datetime(2026, 2, 22, tzinfo=UTC),
+                    "updated_at": datetime(2026, 2, 22, tzinfo=timezone.utc),
                 }
             ]
         )
