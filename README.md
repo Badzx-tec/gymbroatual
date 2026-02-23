@@ -176,9 +176,21 @@ Comandos implementados:
 
 Eventos parseados:
 - `0x0301`: RFID
+- `0x0302`: barcode
 - `0x0303`: teclado
 - `0x0306`: biometria
 - `0x0304`: passagem
+- `0x0305`: timeout de liberação
+- `0x0307`: biometria não cadastrada
+
+Gateway real (resiliência TCP):
+- reconexão automática em EOF/desconexão
+- timeout de leitura com probe opcional
+- variáveis:
+  - `TOLETUS_READ_TIMEOUT` (segundos, default `60`)
+  - `TOLETUS_RECONNECT_DELAY` (segundos, default `3`)
+  - `TOLETUS_PROBE_ON_CONNECT` (default `true`)
+  - `TOLETUS_PROBE_ON_TIMEOUT` (default `true`)
 
 ### API SaaS para Gateway
 - `POST /api/turnstiles/devices`
@@ -187,6 +199,13 @@ Eventos parseados:
 - `POST /api/turnstiles/events`
 - `GET /api/turnstiles/access-logs`
 - aliases legados: `/api/turnstile/decision` e `/api/turnstile/events`
+
+Métodos aceitos no payload assinado do gateway:
+- `rfid`
+- `keypad`
+- `biometry`
+- `barcode`
+- `passage` (eventos operacionais)
 
 A decisão da catraca aceita credenciais de:
 - alunos (`students.tag_rfid`, `students.biometria_id`, `students.keypad_code`, `students.matricula`)

@@ -15,7 +15,7 @@ from app.services.subscription import subscription_allows_login
 
 router = APIRouter()
 
-ALLOWED_METHODS = {"rfid", "keypad", "biometry", "passage"}
+ALLOWED_METHODS = {"rfid", "keypad", "biometry", "barcode", "passage"}
 WEEKDAY_NAMES = {
     "monday": 0,
     "mon": 0,
