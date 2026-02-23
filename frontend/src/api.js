@@ -119,7 +119,9 @@ export const api = {
   deleteNotification: (id) => request(`/api/notifications/${id}`, { method: 'DELETE' }),
 
   subscriptionStatus: () => request('/api/billing/subscription/status'),
+  subscriptionStatusRefresh: () => request('/api/billing/subscription/status?refresh=true'),
   subscriptionCheckout: () => request('/api/billing/subscription/checkout', { method: 'POST' }),
+  subscriptionRefresh: () => request('/api/billing/subscription/refresh', { method: 'POST' }),
   billingMembership: () => request('/api/billing/membership'),
   billingInvoices: (limit = 50) => request(`/api/billing/invoices?limit=${limit}`),
   billingPaymentAttempts: (limit = 100) => request(`/api/billing/payment-attempts?limit=${limit}`),

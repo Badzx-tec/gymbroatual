@@ -3,7 +3,7 @@ import secrets
 from datetime import UTC, datetime
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 
 from app.core.config import get_settings
 from app.core.deps import require_roles
@@ -240,7 +240,12 @@ async def _subscription_status(owner_id: str) -> SubscriptionStatusOut:
 
 
 @router.get("/subscription/status", response_model=SubscriptionStatusOut)
-async def subscription_status(actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
+async def subscription_status(
+    refresh: bool = Query(default=False),
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
+    if refresh:
+        await reconcile_subscriptions(owner_id=actor["owner_id"], limit=1)
     return await _subscription_status(actor["owner_id"])
 
 
@@ -307,12 +312,6 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
     if settings.mp_access_token:
         payload = {
             "reason": "Assinatura GymBro",
-            "auto_recurring": {
-                "frequency": 1,
-                "frequency_type": "months",
-                "transaction_amount": settings.subscription_monthly_amount,
-                "currency_id": "BRL",
-            },
             "payer_email": owner["email"],
             "back_url": settings.frontend_base_url,
             "status": "pending",
@@ -320,6 +319,15 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
             "external_reference": owner_id,
             "metadata": {"owner_id": owner_id},
         }
+        if settings.mp_preapproval_plan_id:
+            payload["preapproval_plan_id"] = settings.mp_preapproval_plan_id
+        else:
+            payload["auto_recurring"] = {
+                "frequency": 1,
+                "frequency_type": "months",
+                "transaction_amount": settings.subscription_monthly_amount,
+                "currency_id": "BRL",
+            }
         async with httpx.AsyncClient(timeout=15) as client:
             response = await client.post(
                 "https://api.mercadopago.com/preapproval",
@@ -333,9 +341,13 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
                 )
                 preapproval_id = data.get("id") or preapproval_id
             else:
+                body = response.text[:300]
                 raise HTTPException(
                     status_code=502,
-                    detail=f"Falha ao criar checkout no Mercado Pago (status {response.status_code})",
+                    detail=(
+                        "Falha ao criar checkout no Mercado Pago "
+                        f"(status {response.status_code}). Detalhe: {body}"
+                    ),
                 )
 
     await db.subscriptions.update_one(
@@ -535,3 +547,14 @@ async def webhook_logs(limit: int = 100, actor: dict = Depends(require_roles("OW
 async def run_reconcile(actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     summary = await reconcile_subscriptions(owner_id=actor["owner_id"], limit=1)
     return {"owner_id": actor["owner_id"], "summary": summary}
+
+
+@router.post("/subscription/refresh")
+async def subscription_refresh(actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
+    summary = await reconcile_subscriptions(owner_id=actor["owner_id"], limit=1)
+    status_data = await _subscription_status(actor["owner_id"])
+    return {
+        "owner_id": actor["owner_id"],
+        "summary": summary,
+        "subscription": status_data.model_dump(),
+    }

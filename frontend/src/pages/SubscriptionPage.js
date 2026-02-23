@@ -50,6 +50,19 @@ export default function SubscriptionPage() {
     }
   };
 
+  const refreshNow = async () => {
+    setLoading(true);
+    try {
+      const result = await api.subscriptionRefresh();
+      setStatus(result.subscription);
+      toast.success('Status atualizado com o Mercado Pago.');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-[#ccff00] border-t-transparent rounded-full animate-spin" /></div>;
   }
@@ -84,6 +97,9 @@ export default function SubscriptionPage() {
         </button>
         <button onClick={loadStatus} className="ml-3 bg-zinc-800 text-white font-semibold uppercase tracking-wide text-sm h-11 px-6 rounded-sm hover:bg-zinc-700">
           Atualizar status
+        </button>
+        <button onClick={refreshNow} className="ml-3 bg-blue-600 text-white font-semibold uppercase tracking-wide text-sm h-11 px-6 rounded-sm hover:bg-blue-500">
+          Ja paguei, verificar agora
         </button>
       </div>
 

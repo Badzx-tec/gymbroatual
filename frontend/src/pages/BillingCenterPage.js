@@ -76,6 +76,19 @@ export default function BillingCenterPage() {
     }
   };
 
+  const refreshFromMp = async () => {
+    setLoading(true);
+    try {
+      await api.subscriptionRefresh();
+      await load();
+      toast.success('Status conferido com o Mercado Pago.');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const summary = useMemo(() => {
     const paidInvoices = data.invoices.filter((item) => item.status === 'paid');
     const revenue = paidInvoices.reduce((sum, item) => sum + Number(item.amount || 0), 0);
@@ -147,6 +160,9 @@ export default function BillingCenterPage() {
         <div className="mt-4 flex gap-2">
           <button onClick={startCheckout} disabled={processingCheckout} className="bg-[#ccff00] text-black font-bold uppercase tracking-wide text-xs h-10 px-4 rounded-sm hover:bg-[#b3e600] disabled:opacity-50">
             {processingCheckout ? 'Abrindo...' : 'Assinar / Renovar'}
+          </button>
+          <button onClick={refreshFromMp} className="bg-blue-600 text-white font-semibold uppercase tracking-wide text-xs h-10 px-4 rounded-sm hover:bg-blue-500">
+            Ja paguei, verificar
           </button>
           <button onClick={load} className="bg-zinc-800 text-white font-semibold uppercase tracking-wide text-xs h-10 px-4 rounded-sm hover:bg-zinc-700">
             Atualizar

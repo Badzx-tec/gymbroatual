@@ -89,6 +89,7 @@ npm start
 Endpoints principais:
 - `POST /api/billing/subscription/checkout`
 - `GET /api/billing/subscription/status`
+- `POST /api/billing/subscription/refresh`
 - `GET /api/billing/membership`
 - `GET /api/billing/invoices`
 - `GET /api/billing/payment-attempts`
@@ -102,6 +103,7 @@ Implementado:
 - `external_reference` = `owner_id`
 - `metadata.owner_id`
 - fallback para `sandbox_init_point`
+- suporte a `MP_PREAPPROVAL_PLAN_ID` quando definido
 - idempotência por `event_id`
 - atualização robusta de `active/past_due/canceled`
 - reconciliação ativa com Mercado Pago (loop de background + endpoint manual)
