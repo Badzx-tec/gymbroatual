@@ -4,7 +4,7 @@ import hmac
 import json
 import os
 import secrets
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import httpx
 
@@ -24,7 +24,7 @@ def sign_payload(method: str, credential: str, timestamp: str, nonce: str) -> st
 
 
 def build_auth_payload(method: str, credential: str) -> dict:
-    timestamp = datetime.now(UTC).isoformat()
+    timestamp = datetime.now(timezone.utc).isoformat()
     nonce = secrets.token_hex(8)
     signature = sign_payload(method, credential, timestamp, nonce)
     return {

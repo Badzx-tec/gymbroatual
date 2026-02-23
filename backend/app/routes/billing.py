@@ -1,6 +1,6 @@
 import hashlib
 import secrets
-from datetime import UTC, datetime
+from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.core.deps import require_roles
 from app.core.http import get_client_ip
 from app.core.rate_limit import enforce_rate_limit
+from app.core.time import UTC
 from app.db.mongo import get_db
 from app.models.billing import (
     CheckoutOut,
