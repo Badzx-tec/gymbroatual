@@ -299,10 +299,76 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 `deploy/nginx/default.conf` roteia:
 - `/` -> frontend
 - `/api` -> backend
+- `/.well-known/acme-challenge/` -> webroot certbot
 
-Para HTTPS:
-- usar Nginx + Certbot ou Caddy na frente
-- configurar domínio e certificados antes de abrir tráfego público
+### DNS (Registro.br) para este projeto
+
+Use estes registros para o droplet `167.71.177.198`:
+
+1. `A` para raiz:
+   - `Nome`: `@`
+   - `Valor`: `167.71.177.198`
+2. `CNAME` para `www`:
+   - `Nome`: `www`
+   - `Valor`: `gymbro.dev.br`
+
+Validação:
+```bash
+dig +short gymbro.dev.br
+dig +short www.gymbro.dev.br
+```
+
+### Ajuste de ambiente para domínio
+
+No `.env` de produção:
+
+```env
+APP_BASE_URL=https://gymbro.dev.br
+FRONTEND_BASE_URL=https://gymbro.dev.br
+CORS_ORIGINS=https://gymbro.dev.br,https://www.gymbro.dev.br
+```
+
+Aplicar:
+```bash
+docker compose -f docker-compose.prod.yml up -d backend nginx
+```
+
+### HTTPS (Let's Encrypt) no droplet
+
+1. Garanta stack no ar com `deploy/nginx/default.conf` (HTTP + challenge).
+2. Emita o certificado com webroot:
+
+```bash
+cd /opt/gymbroatual
+mkdir -p deploy/certs deploy/www
+docker run --rm \
+  -v "$(pwd)/deploy/certs:/etc/letsencrypt" \
+  -v "$(pwd)/deploy/www:/var/www/certbot" \
+  certbot/certbot certonly \
+  --webroot -w /var/www/certbot \
+  -d gymbro.dev.br -d www.gymbro.dev.br \
+  --email seu-email@dominio.com --agree-tos --no-eff-email
+```
+
+3. Ative config SSL:
+
+```bash
+cd /opt/gymbroatual
+cp deploy/nginx/default.ssl.conf deploy/nginx/default.conf
+docker compose -f docker-compose.prod.yml up -d nginx
+```
+
+4. Verifique:
+
+```bash
+curl -I https://gymbro.dev.br
+curl -I https://www.gymbro.dev.br
+```
+
+Renovação (cron mensal):
+```bash
+0 4 1 * * cd /opt/gymbroatual && docker run --rm -v "$PWD/deploy/certs:/etc/letsencrypt" -v "$PWD/deploy/www:/var/www/certbot" certbot/certbot renew --webroot -w /var/www/certbot --quiet && docker compose -f docker-compose.prod.yml up -d nginx
+```
 
 ## Qualidade e testes
 
