@@ -119,9 +119,8 @@ export default function LandingPage() {
             )) : (
               [
                 { nome: 'Mensal', valor: 139.90, dias: 30 },
-                { nome: 'Trimestral', valor: 369.90, dias: 90 },
-                { nome: 'Semestral', valor: 669.90, dias: 180 },
-                { nome: 'Anual', valor: 1249.90, dias: 365 },
+                { nome: 'Trimestral', valor: 419.70, dias: 90 },
+                { nome: 'Anual', valor: 1678.80, dias: 365 },
               ].map((plan, i) => (
                 <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
                   className={`bg-zinc-900 border rounded-md p-6 md:p-8 ${i === 1 ? 'border-[#ccff00]' : 'border-zinc-800'}`}>
@@ -150,9 +149,9 @@ export default function LandingPage() {
               <p className="text-zinc-400 text-lg mb-8 leading-relaxed">Fale conosco e descubra como o GymBro pode transformar a gestao da sua academia.</p>
               <div className="space-y-4">
                 {[
-                  { icon: Mail, text: 'contato@gymbro.com.br' },
-                  { icon: Phone, text: '(11) 99999-9999' },
-                  { icon: MapPin, text: 'Sao Paulo, SP - Brasil' },
+                  { icon: Mail, text: 'juannicarosa@gmail.com' },
+                  { icon: Phone, text: '(33) 98851-5895' },
+                  { icon: MapPin, text: 'Machacalis/MG - Brasil' },
                 ].map((item, i) => (
                   <div key={i} className="flex items-center gap-3 text-zinc-300">
                     <item.icon className="w-5 h-5 text-[#ccff00]" />
@@ -187,3 +186,4 @@ export default function LandingPage() {
     </div>
   );
 }
+
