@@ -342,14 +342,57 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
                 )
                 preapproval_id = data.get("id") or preapproval_id
             else:
-                body = response.text[:300]
-                raise HTTPException(
-                    status_code=502,
-                    detail=(
-                        "Falha ao criar checkout no Mercado Pago "
-                        f"(status {response.status_code}). Detalhe: {body}"
-                    ),
+                preapproval_body = response.text[:300]
+                log_event(
+                    "billing_checkout_preapproval_failed",
+                    owner_id=owner_id,
+                    status_code=response.status_code,
+                    detail=preapproval_body,
                 )
+
+                preference_payload = {
+                    "items": [
+                        {
+                            "title": "Assinatura GymBro",
+                            "quantity": 1,
+                            "currency_id": "BRL",
+                            "unit_price": float(settings.subscription_monthly_amount),
+                        }
+                    ],
+                    "payer": {"email": owner["email"]},
+                    "external_reference": owner_id,
+                    "notification_url": f"{settings.app_base_url.rstrip('/')}/api/billing/webhook/mercadopago",
+                    "back_urls": {
+                        "success": f"{settings.frontend_base_url.rstrip('/')}/admin/assinatura?status=success",
+                        "failure": f"{settings.frontend_base_url.rstrip('/')}/admin/assinatura?status=failure",
+                        "pending": f"{settings.frontend_base_url.rstrip('/')}/admin/assinatura?status=pending",
+                    },
+                    "auto_return": "approved",
+                    "metadata": {"owner_id": owner_id},
+                }
+                pref_response = await client.post(
+                    "https://api.mercadopago.com/checkout/preferences",
+                    headers={"Authorization": f"Bearer {settings.mp_access_token}"},
+                    json=preference_payload,
+                )
+                if pref_response.is_success:
+                    pref_data = pref_response.json()
+                    checkout_url = (
+                        pref_data.get("init_point")
+                        or pref_data.get("sandbox_init_point")
+                        or checkout_url
+                    )
+                    preapproval_id = pref_data.get("id") or preapproval_id
+                else:
+                    pref_body = pref_response.text[:300]
+                    raise HTTPException(
+                        status_code=502,
+                        detail=(
+                            "Falha ao criar checkout no Mercado Pago "
+                            f"(preapproval {response.status_code}: {preapproval_body}; "
+                            f"preference {pref_response.status_code}: {pref_body})"
+                        ),
+                    )
 
     await db.subscriptions.update_one(
         {"owner_id": owner_id},

@@ -9,6 +9,12 @@ from app.db.mongo import get_db
 router = APIRouter()
 
 
+def _clean_doc(doc: dict) -> dict:
+    sanitized = dict(doc)
+    sanitized.pop("_id", None)
+    return sanitized
+
+
 @router.get("")
 async def list_gyms(owner: dict = Depends(require_active_subscription)):
     db = get_db()
@@ -86,7 +92,7 @@ async def create_plan(payload: dict, owner: dict = Depends(require_active_subscr
         **payload,
     }
     await db.plans.insert_one(doc)
-    return doc
+    return _clean_doc(doc)
 
 
 @router.put("/plans/{plan_id}")

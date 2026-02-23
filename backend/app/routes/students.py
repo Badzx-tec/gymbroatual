@@ -11,6 +11,12 @@ from app.models.students import AttendanceIn, MeasurementIn, StudentIn, WorkoutP
 router = APIRouter()
 
 
+def _clean_doc(doc: dict) -> dict:
+    sanitized = dict(doc)
+    sanitized.pop("_id", None)
+    return sanitized
+
+
 def _require_gym_id(owner: dict) -> str:
     gym_id = owner.get("gym_id")
     if not gym_id:
@@ -56,7 +62,7 @@ async def create_student(payload: StudentIn, owner: dict = Depends(require_activ
         "updated_at": now,
     }
     await db.students.insert_one(doc)
-    return doc
+    return _clean_doc(doc)
 
 
 @router.get("/{student_id}")
@@ -139,7 +145,7 @@ async def add_measurement(
         "created_at": datetime.now(UTC),
     }
     await db.measurements.insert_one(doc)
-    return doc
+    return _clean_doc(doc)
 
 
 @router.get("/{student_id}/measurements")
@@ -172,7 +178,7 @@ async def add_workout(
         "created_at": datetime.now(UTC),
     }
     await db.workouts.insert_one(doc)
-    return doc
+    return _clean_doc(doc)
 
 
 @router.get("/{student_id}/workouts")
@@ -221,7 +227,7 @@ async def add_attendance(
             "gym_id": gym_id,
         }
     )
-    return doc
+    return _clean_doc(doc)
 
 
 @router.get("/{student_id}/attendance")

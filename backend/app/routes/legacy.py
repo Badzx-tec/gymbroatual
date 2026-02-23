@@ -28,6 +28,12 @@ from . import turnstiles as turnstile_routes
 router = APIRouter()
 
 
+def _clean_doc(doc: dict) -> dict:
+    sanitized = dict(doc)
+    sanitized.pop("_id", None)
+    return sanitized
+
+
 def _as_text(value) -> str:
     if value is None:
         return ""
@@ -280,7 +286,7 @@ async def catraca_command(payload: dict, actor: dict = Depends(require_active_su
         "created_at": datetime.now(UTC),
     }
     await db.catraca_commands.insert_one(doc)
-    return doc
+    return _clean_doc(doc)
 
 
 @router.get("/catraca/commands")
@@ -464,7 +470,7 @@ async def student_progress(
         "created_at": datetime.now(UTC),
     }
     await db.measurements.insert_one(doc)
-    return doc
+    return _clean_doc(doc)
 
 
 @router.get("/students/{student_id}/progress")

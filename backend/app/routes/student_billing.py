@@ -18,6 +18,14 @@ from app.models.student_billing import (
 router = APIRouter()
 
 
+def _clean_doc(doc: dict | None) -> dict | None:
+    if doc is None:
+        return None
+    sanitized = dict(doc)
+    sanitized.pop("_id", None)
+    return sanitized
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -336,7 +344,7 @@ async def create_contract(
             "initial_charge_id": initial_charge["charge_id"] if initial_charge else None,
         },
     )
-    return {"contract": contract, "initial_charge": initial_charge}
+    return {"contract": _clean_doc(contract), "initial_charge": _clean_doc(initial_charge)}
 
 
 @router.post("/contracts/{contract_id}/charges", response_model=ChargeOut)
@@ -391,7 +399,7 @@ async def create_charge(
         "charge_created",
         {"charge_id": charge["charge_id"], "amount": float(amount), "due_at": due_at.isoformat()},
     )
-    return charge
+    return _clean_doc(charge)
 
 
 @router.get("/contracts/{contract_id}/charges", response_model=list[ChargeOut])
