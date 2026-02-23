@@ -4,9 +4,12 @@ import {
   CircleDollarSign,
   ClipboardList,
   FileText,
+  ListChecks,
   Plus,
+  RefreshCw,
   Search,
   ShieldAlert,
+  Trash2,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -69,10 +72,18 @@ function toIsoDateStart(value) {
   return `${value}T00:00:00Z`;
 }
 
+function eventLabel(value) {
+  return String(value || '-')
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 export default function StudentContractsPage() {
   const [loading, setLoading] = useState(true);
   const [savingContract, setSavingContract] = useState(false);
   const [savingCharge, setSavingCharge] = useState(false);
+  const [cancelingContract, setCancelingContract] = useState(false);
   const [overview, setOverview] = useState(null);
   const [contracts, setContracts] = useState([]);
   const [students, setStudents] = useState([]);
@@ -117,6 +128,14 @@ export default function StudentContractsPage() {
       limit: 300,
     });
     setContracts(data);
+    setSelectedContract((previous) => {
+      if (!data.length) return null;
+      if (previous?.contract_id) {
+        const sameContract = data.find((item) => item.contract_id === previous.contract_id);
+        if (sameContract) return sameContract;
+      }
+      return data[0];
+    });
     return data;
   };
 
@@ -189,6 +208,15 @@ export default function StudentContractsPage() {
     });
   }, [contracts, searchTerm]);
 
+  const chargeStats = useMemo(() => {
+    const summary = { open: 0, overdue: 0, paid: 0, canceled: 0 };
+    charges.forEach((charge) => {
+      const key = String(charge.status || '').toLowerCase();
+      if (summary[key] !== undefined) summary[key] += 1;
+    });
+    return summary;
+  }, [charges]);
+
   const openCreateModal = () => {
     setContractForm(emptyContractForm);
     setContractModalOpen(true);
@@ -224,17 +252,22 @@ export default function StudentContractsPage() {
     }
   };
 
-  const handleCancelContract = async (contractId) => {
+  const handleCancelContract = async (contractId = null) => {
+    const targetId = contractId || selectedContract?.contract_id;
+    if (!targetId) {
+      toast.error('Selecione um contrato');
+      return;
+    }
     if (!window.confirm('Cancelar este contrato?')) return;
+    setCancelingContract(true);
     try {
-      await api.cancelStudentContract(contractId);
+      await api.cancelStudentContract(targetId);
       toast.success('Contrato cancelado');
-      if (selectedContract?.contract_id === contractId) {
-        setSelectedContract(null);
-      }
       await Promise.all([loadOverview(), loadContracts()]);
     } catch (err) {
       toast.error(err?.message || 'Erro ao cancelar contrato');
+    } finally {
+      setCancelingContract(false);
     }
   };
 
@@ -273,16 +306,20 @@ export default function StudentContractsPage() {
     }
   };
 
-  const handleCleanupCharges = async () => {
-    if (!selectedContract?.contract_id) return;
+  const handleCleanupCharges = async (contract = null) => {
+    const targetContract = contract || selectedContract;
+    if (!targetContract?.contract_id) {
+      toast.error('Selecione um contrato');
+      return;
+    }
     const confirmed = window.confirm(
-      'Cancelar todas as cobrancas pendentes (abertas e vencidas) deste contrato?'
+      `Cancelar todas as cobrancas pendentes do contrato ${targetContract.contract_id}?`
     );
     if (!confirmed) return;
 
     setCleaningCharges(true);
     try {
-      const result = await api.cleanupContractCharges(selectedContract.contract_id, {
+      const result = await api.cleanupContractCharges(targetContract.contract_id, {
         status_filter: 'pending',
         reason: 'cleanup_manual_panel',
       });
@@ -290,7 +327,7 @@ export default function StudentContractsPage() {
       await Promise.all([
         loadOverview(),
         loadContracts(),
-        loadCharges(selectedContract.contract_id),
+        loadCharges(targetContract.contract_id),
       ]);
     } catch (err) {
       toast.error(err?.message || 'Erro ao limpar cobrancas');
@@ -313,14 +350,14 @@ export default function StudentContractsPage() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Contratos</h1>
-            <p className="text-zinc-400 mt-1">Gestao profissional de contratos, cobrancas e renovacoes.</p>
+            <p className="text-zinc-400 mt-1">Workspace profissional para contratos, cobrancas e renovacoes.</p>
           </div>
-          <div className="flex gap-2">
-            <button onClick={refreshAll} className="h-10 px-4 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold uppercase tracking-wide">
-              Atualizar
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={refreshAll} className="h-10 px-4 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold uppercase tracking-wide inline-flex items-center gap-2">
+              <RefreshCw className="w-4 h-4" /> Atualizar
             </button>
             {canManageContracts && (
-              <button onClick={openCreateModal} className="h-10 px-4 rounded-sm bg-[#ccff00] hover:bg-[#b3e600] text-black text-xs font-bold uppercase tracking-wide flex items-center gap-2">
+              <button onClick={openCreateModal} className="h-10 px-4 rounded-sm bg-[#ccff00] hover:bg-[#b3e600] text-black text-xs font-bold uppercase tracking-wide inline-flex items-center gap-2">
                 <Plus className="w-4 h-4" /> Novo contrato
               </button>
             )}
@@ -390,34 +427,45 @@ export default function StudentContractsPage() {
                 </tr>
               </thead>
               <tbody>
-                {visibleContracts.map((contract) => (
-                  <tr key={contract.contract_id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
-                    <td className="px-4 py-3">
-                      <p className="font-medium">{contract.student_name}</p>
-                      <p className="text-xs text-zinc-500">{contract.contract_id}</p>
-                    </td>
-                    <td className="px-4 py-3">{contract.plan_name || '-'}</td>
-                    <td className="px-4 py-3">{formatMoney(contract.amount)}</td>
-                    <td className="px-4 py-3 text-zinc-400">{formatDate(contract.current_period_end)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-sm border text-xs font-semibold uppercase ${statusClass(contract.status)}`}>
-                        {statusLabel(contract.status)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => setSelectedContract(contract)} className="h-8 px-3 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-[11px] font-semibold uppercase tracking-wide">
-                          Cobrancas
-                        </button>
-                        {canManageContracts && (
-                          <button onClick={() => handleCancelContract(contract.contract_id)} className="h-8 px-3 rounded-sm bg-red-500/10 hover:bg-red-500/20 text-red-300 text-[11px] font-semibold uppercase tracking-wide">
-                            Cancelar
+                {visibleContracts.map((contract) => {
+                  const selected = selectedContract?.contract_id === contract.contract_id;
+                  return (
+                    <tr
+                      key={contract.contract_id}
+                      onClick={() => setSelectedContract(contract)}
+                      className={`border-b border-zinc-800/50 cursor-pointer transition-colors ${selected ? 'bg-zinc-800/45' : 'hover:bg-zinc-800/30'}`}
+                    >
+                      <td className="px-4 py-3">
+                        <p className="font-medium">{contract.student_name}</p>
+                        <p className="text-xs text-zinc-500">{contract.contract_id}</p>
+                      </td>
+                      <td className="px-4 py-3">{contract.plan_name || '-'}</td>
+                      <td className="px-4 py-3">{formatMoney(contract.amount)}</td>
+                      <td className="px-4 py-3 text-zinc-400">{formatDate(contract.current_period_end)}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded-sm border text-xs font-semibold uppercase ${statusClass(contract.status)}`}>
+                          {statusLabel(contract.status)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-2" onClick={(event) => event.stopPropagation()}>
+                          <button onClick={() => setSelectedContract(contract)} className="h-8 px-3 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-[11px] font-semibold uppercase tracking-wide">
+                            Gerenciar
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {canManageContracts && (
+                            <button
+                              onClick={() => handleCleanupCharges(contract)}
+                              disabled={cleaningCharges}
+                              className="h-8 px-3 rounded-sm bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-[11px] font-semibold uppercase tracking-wide disabled:opacity-60"
+                            >
+                              Limpar pendentes
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {visibleContracts.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">Nenhum contrato encontrado.</td>
@@ -430,23 +478,14 @@ export default function StudentContractsPage() {
 
         <div className="xl:w-1/3 space-y-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-            <h2 className="font-semibold uppercase tracking-wide text-sm flex items-center gap-2"><FileText className="w-4 h-4" /> Timeline</h2>
-            <ul className="mt-3 space-y-2 text-xs">
-              {events.map((item) => (
-                <li key={item.event_id} className="border border-zinc-800 rounded-sm px-3 py-2">
-                  <p className="font-semibold uppercase">{item.event_type}</p>
-                  <p className="text-zinc-500 mt-1">{formatDate(item.created_at)}</p>
-                </li>
-              ))}
-              {events.length === 0 && <li className="text-zinc-500">Sem eventos</li>}
-            </ul>
-          </div>
-
-          <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-            <h2 className="font-semibold uppercase tracking-wide text-sm mb-3">Contrato selecionado</h2>
-            {!selectedContract && <p className="text-sm text-zinc-500">Selecione um contrato para gerenciar as cobrancas.</p>}
+            <h2 className="font-semibold uppercase tracking-wide text-sm flex items-center gap-2"><ListChecks className="w-4 h-4" /> Painel do contrato</h2>
+            {!selectedContract && (
+              <div className="mt-3 border border-dashed border-zinc-700 rounded-sm p-3 text-sm text-zinc-500">
+                Selecione um contrato na tabela para abrir a gestao de cobrancas.
+              </div>
+            )}
             {selectedContract && (
-              <div className="space-y-3 text-sm">
+              <div className="space-y-3 text-sm mt-3">
                 <div>
                   <p className="text-zinc-500">Aluno</p>
                   <p className="font-semibold">{selectedStudentName}</p>
@@ -461,100 +500,157 @@ export default function StudentContractsPage() {
                   <p className="text-zinc-500">Periodo atual</p>
                   <p>{formatDate(selectedContract.current_period_start)} - {formatDate(selectedContract.current_period_end)}</p>
                 </div>
-                <button onClick={() => setSelectedContract(null)} className="h-9 px-3 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold uppercase tracking-wide">
-                  Limpar selecao
-                </button>
-                {canManageContracts && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
-                    onClick={handleCleanupCharges}
-                    disabled={cleaningCharges}
+                    onClick={() => handleCleanupCharges()}
+                    disabled={cleaningCharges || !canManageContracts}
+                    className="h-9 px-3 rounded-sm bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-xs font-semibold uppercase tracking-wide disabled:opacity-60 inline-flex items-center justify-center gap-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> {cleaningCharges ? 'Limpando...' : 'Limpar pendentes'}
+                  </button>
+                  <button
+                    onClick={() => handleCancelContract()}
+                    disabled={cancelingContract || !canManageContracts}
                     className="h-9 px-3 rounded-sm bg-red-500/15 hover:bg-red-500/25 text-red-300 text-xs font-semibold uppercase tracking-wide disabled:opacity-60"
                   >
-                    {cleaningCharges ? 'Limpando...' : 'Limpar cobrancas pendentes'}
+                    {cancelingContract ? 'Cancelando...' : 'Cancelar contrato'}
                   </button>
-                )}
+                  <button
+                    onClick={() => document.getElementById('charge-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                    className="h-9 px-3 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold uppercase tracking-wide"
+                  >
+                    Nova cobranca
+                  </button>
+                  <button onClick={() => setSelectedContract(null)} className="h-9 px-3 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold uppercase tracking-wide">
+                    Limpar selecao
+                  </button>
+                </div>
               </div>
             )}
+          </div>
+
+          <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
+            <h2 className="font-semibold uppercase tracking-wide text-sm flex items-center gap-2"><FileText className="w-4 h-4" /> Timeline</h2>
+            <ul className="mt-3 space-y-2 text-xs max-h-[360px] overflow-auto pr-1">
+              {events.map((item) => (
+                <li key={item.event_id} className="border border-zinc-800 rounded-sm px-3 py-2">
+                  <p className="font-semibold uppercase">{eventLabel(item.event_type)}</p>
+                  <p className="text-zinc-500 mt-1">{formatDate(item.created_at)}</p>
+                </li>
+              ))}
+              {events.length === 0 && <li className="text-zinc-500">Sem eventos</li>}
+            </ul>
           </div>
         </div>
       </div>
 
-      {selectedContract && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4 space-y-4">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-            <h2 className="font-semibold uppercase tracking-wide text-sm">Cobrancas do contrato {selectedContract.contract_id}</h2>
-            <form onSubmit={handleCreateCharge} className="flex flex-wrap gap-2">
-              <input type="number" min="0.01" step="0.01" value={chargeForm.amount} onChange={(event) => setChargeForm({ ...chargeForm, amount: event.target.value })} placeholder="Valor" className="h-9 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-xs w-28" />
-              <input type="date" value={chargeForm.due_at} onChange={(event) => setChargeForm({ ...chargeForm, due_at: event.target.value })} className="h-9 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-xs" />
-              <input value={chargeForm.notes} onChange={(event) => setChargeForm({ ...chargeForm, notes: event.target.value })} placeholder="Observacao" className="h-9 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-xs w-44" />
-              <button disabled={savingCharge} className="h-9 px-3 rounded-sm bg-[#ccff00] hover:bg-[#b3e600] text-black text-[11px] font-bold uppercase tracking-wide disabled:opacity-60">
-                {savingCharge ? 'Salvando...' : 'Nova cobranca'}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4 space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <h2 className="font-semibold uppercase tracking-wide text-sm">
+            {selectedContract ? `Cobrancas do contrato ${selectedContract.contract_id}` : 'Workspace de cobrancas'}
+          </h2>
+          {selectedContract && (
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="px-2 py-1 rounded-sm border border-blue-500/30 bg-blue-500/10 text-blue-300">Abertas: {chargeStats.open}</span>
+              <span className="px-2 py-1 rounded-sm border border-yellow-500/30 bg-yellow-500/10 text-yellow-300">Vencidas: {chargeStats.overdue}</span>
+              <span className="px-2 py-1 rounded-sm border border-green-500/30 bg-green-500/10 text-green-300">Pagas: {chargeStats.paid}</span>
+              <span className="px-2 py-1 rounded-sm border border-zinc-600 bg-zinc-800 text-zinc-300">Canceladas: {chargeStats.canceled}</span>
+            </div>
+          )}
+        </div>
+
+        {!selectedContract && (
+          <div className="border border-dashed border-zinc-700 rounded-sm p-4 text-sm text-zinc-500">
+            Selecione um contrato para criar, limpar ou marcar cobrancas.
+          </div>
+        )}
+
+        {selectedContract && (
+          <>
+            <form id="charge-form" onSubmit={handleCreateCharge} className="grid grid-cols-1 md:grid-cols-12 gap-2">
+              <input type="number" min="0.01" step="0.01" value={chargeForm.amount} onChange={(event) => setChargeForm({ ...chargeForm, amount: event.target.value })} placeholder="Valor" className="h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm md:col-span-2" />
+              <input type="date" value={chargeForm.due_at} onChange={(event) => setChargeForm({ ...chargeForm, due_at: event.target.value })} className="h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm md:col-span-2" />
+              <input value={chargeForm.notes} onChange={(event) => setChargeForm({ ...chargeForm, notes: event.target.value })} placeholder="Observacao" className="h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm md:col-span-5" />
+              <button disabled={savingCharge} className="h-10 px-3 rounded-sm bg-[#ccff00] hover:bg-[#b3e600] text-black text-xs font-bold uppercase tracking-wide disabled:opacity-60 md:col-span-3">
+                {savingCharge ? 'Salvando...' : 'Adicionar cobranca'}
               </button>
             </form>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-3 bg-zinc-950 border border-zinc-800 rounded-sm p-3">
-            <label className="text-xs text-zinc-400 uppercase tracking-wider">Metodo de pagamento</label>
-            <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className="h-8 px-3 rounded-sm bg-zinc-900 border border-zinc-700 text-xs">
-              <option value="cash">Dinheiro</option>
-              <option value="pix">PIX</option>
-              <option value="card">Cartao</option>
-              <option value="transfer">Transferencia</option>
-            </select>
-            <label className="inline-flex items-center gap-2 text-xs">
-              <input type="checkbox" className="accent-[#ccff00]" checked={extendContractOnPayment} onChange={(event) => setExtendContractOnPayment(event.target.checked)} />
-              Estender contrato automaticamente ao marcar pagamento
-            </label>
-          </div>
+            <div className="flex flex-wrap items-center gap-3 bg-zinc-950 border border-zinc-800 rounded-sm p-3">
+              <label className="text-xs text-zinc-400 uppercase tracking-wider">Metodo de pagamento</label>
+              <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className="h-8 px-3 rounded-sm bg-zinc-900 border border-zinc-700 text-xs">
+                <option value="cash">Dinheiro</option>
+                <option value="pix">PIX</option>
+                <option value="card">Cartao</option>
+                <option value="transfer">Transferencia</option>
+              </select>
+              <label className="inline-flex items-center gap-2 text-xs">
+                <input type="checkbox" className="accent-[#ccff00]" checked={extendContractOnPayment} onChange={(event) => setExtendContractOnPayment(event.target.checked)} />
+                Estender contrato automaticamente ao marcar pagamento
+              </label>
+              <button
+                onClick={() => handleCleanupCharges()}
+                disabled={cleaningCharges || !canManageContracts}
+                className="ml-auto h-8 px-3 rounded-sm bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-[11px] font-semibold uppercase tracking-wide disabled:opacity-60 inline-flex items-center gap-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> {cleaningCharges ? 'Limpando...' : 'Limpar pendentes'}
+              </button>
+            </div>
+          </>
+        )}
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
-                  <th className="text-left px-4 py-3">ID</th>
-                  <th className="text-left px-4 py-3">Vencimento</th>
-                  <th className="text-left px-4 py-3">Valor</th>
-                  <th className="text-left px-4 py-3">Status</th>
-                  <th className="text-left px-4 py-3">Pago em</th>
-                  <th className="text-right px-4 py-3">Acoes</th>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
+                <th className="text-left px-4 py-3">ID</th>
+                <th className="text-left px-4 py-3">Vencimento</th>
+                <th className="text-left px-4 py-3">Valor</th>
+                <th className="text-left px-4 py-3">Status</th>
+                <th className="text-left px-4 py-3">Pago em</th>
+                <th className="text-right px-4 py-3">Acoes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {chargesLoading && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">Carregando cobrancas...</td>
                 </tr>
-              </thead>
-              <tbody>
-                {chargesLoading && (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">Carregando cobrancas...</td>
-                  </tr>
-                )}
-                {!chargesLoading && charges.map((charge) => (
-                  <tr key={charge.charge_id} className="border-b border-zinc-800/50">
-                    <td className="px-4 py-3 text-xs">{charge.charge_id}</td>
-                    <td className="px-4 py-3 text-zinc-400">{formatDate(charge.due_at)}</td>
-                    <td className="px-4 py-3">{formatMoney(charge.amount)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-sm border text-xs font-semibold uppercase ${statusClass(charge.status)}`}>
-                        {statusLabel(charge.status)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-zinc-400">{formatDate(charge.paid_at)}</td>
-                    <td className="px-4 py-3 text-right">
-                      {charge.status !== 'paid' && (
-                        <button onClick={() => handleMarkPaid(charge.charge_id)} className="h-8 px-3 rounded-sm bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-[11px] font-semibold uppercase tracking-wide">
-                          Marcar pago
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {!chargesLoading && charges.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">Sem cobrancas registradas.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+              )}
+              {!chargesLoading && !selectedContract && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">Selecione um contrato para ver as cobrancas.</td>
+                </tr>
+              )}
+              {!chargesLoading && selectedContract && charges.map((charge) => (
+                <tr key={charge.charge_id} className="border-b border-zinc-800/50 hover:bg-zinc-800/25">
+                  <td className="px-4 py-3 text-xs">{charge.charge_id}</td>
+                  <td className="px-4 py-3 text-zinc-400">{formatDate(charge.due_at)}</td>
+                  <td className="px-4 py-3">{formatMoney(charge.amount)}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 rounded-sm border text-xs font-semibold uppercase ${statusClass(charge.status)}`}>
+                      {statusLabel(charge.status)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-zinc-400">{formatDate(charge.paid_at)}</td>
+                  <td className="px-4 py-3 text-right">
+                    {charge.status !== 'paid' && (
+                      <button onClick={() => handleMarkPaid(charge.charge_id)} className="h-8 px-3 rounded-sm bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-[11px] font-semibold uppercase tracking-wide">
+                        Marcar pago
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {!chargesLoading && selectedContract && charges.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">Sem cobrancas registradas.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
 
       {contractModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setContractModalOpen(false)}>
