@@ -8,14 +8,14 @@ export default function StaffPage() {
   const [invites, setInvites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({
-    name: '',
-    email: '',
-    role: 'RECEPTION',
-    matricula: '',
-    tag_rfid: '',
-    biometria_id: '',
-    keypad_code: '',
-    sync_shadow_student: true,
+  name: '',
+  email: '',
+  role: 'RECEPTION',
+  matricula: '',
+  tag_rfid: '',
+  biometria_id: '',
+  keypad_code: '',
+  sync_shadow_student: true,
   });
   const [inviteForm, setInviteForm] = useState({ email: '', role: 'RECEPTION' });
 
@@ -28,8 +28,7 @@ export default function StaffPage() {
     } catch (err) {
       toast.error(err.message);
     } finally {
-      setLoading(false);
-    }
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -44,17 +43,8 @@ export default function StaffPage() {
       if (result.shadow_student_id) {
         toast.success(`Compatibilidade ativada. Aluno tecnico: ${result.shadow_student_id}`);
       }
-      setForm({
-        name: '',
-        email: '',
-        role: 'RECEPTION',
-        matricula: '',
-        tag_rfid: '',
-        biometria_id: '',
-        keypad_code: '',
-        sync_shadow_student: true,
-      });
-      load();
+      setForm(emptyEmployeeForm);
+      await load({ silent: true });
     } catch (err) {
       toast.error(err.message);
     }
@@ -66,7 +56,7 @@ export default function StaffPage() {
       await api.createStaffInvite(inviteForm);
       toast.success('Convite criado');
       setInviteForm({ email: '', role: 'RECEPTION' });
-      load();
+      await load({ silent: true });
     } catch (err) {
       toast.error(err.message);
     }
@@ -76,6 +66,51 @@ export default function StaffPage() {
     try {
       const result = await api.syncEmployeeShadowStudent(employeeId);
       toast.success(`Sincronizado: ${result.shadow_student_id}`);
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const openEditModal = (employee) => {
+    setEditingEmployee(employee);
+    setEditForm({
+      name: employee.name || '',
+      email: employee.email || '',
+      role: employee.role || 'RECEPTION',
+      matricula: employee.matricula || '',
+      tag_rfid: employee.tag_rfid || '',
+      biometria_id: employee.biometria_id || '',
+      keypad_code: employee.keypad_code || '',
+      sync_shadow_student: true,
+      is_active: employee.is_active !== false,
+    });
+  };
+
+  const saveEmployeeEdit = async (e) => {
+    e.preventDefault();
+    if (!editingEmployee) return;
+    setSavingEdit(true);
+    try {
+      await api.updateEmployee(editingEmployee.employee_id, editForm);
+      toast.success('Funcionario atualizado');
+      setEditingEmployee(null);
+      await load({ silent: true });
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const deleteEmployee = async (employee) => {
+    const confirmed = window.confirm(
+      `Apagar funcionario ${employee.name}? Esta acao remove o cadastro.`
+    );
+    if (!confirmed) return;
+    try {
+      await api.deleteEmployee(employee.employee_id);
+      toast.success('Funcionario removido');
+      await load({ silent: true });
     } catch (err) {
       toast.error(err.message);
     }
@@ -100,7 +135,7 @@ export default function StaffPage() {
         sync_shadow_student: true,
       });
       toast.success(`Credenciais atualizadas para ${updated.name}`);
-      load();
+      await load({ silent: true });
     } catch (err) {
       toast.error(err.message);
     }
@@ -135,14 +170,18 @@ export default function StaffPage() {
         sync_shadow_student: true,
       });
       toast.success('Biometria cadastrada e credencial vinculada');
-      load();
+      await load({ silent: true });
     } catch (err) {
       toast.error(err.message);
     }
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-[#ccff00] border-t-transparent rounded-full animate-spin" /></div>;
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-2 border-[#ccff00] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
   return (
@@ -214,11 +253,13 @@ export default function StaffPage() {
                 </td>
                 <td className="px-4 py-3">{employee.is_active ? 'Ativo' : 'Inativo'}</td>
                 <td className="px-4 py-3 text-right space-x-2">
+                  <button onClick={() => openEditModal(employee)} className="bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-sm text-xs">Editar</button>
+                  <button onClick={() => deleteEmployee(employee)} className="bg-red-500/20 text-red-300 px-3 py-1 rounded-sm text-xs">Apagar</button>
                   <button onClick={() => enrollEmployeeBiometry(employee)} className="bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-sm text-xs">Biometria</button>
                   <button onClick={() => updateCredentials(employee)} className="bg-blue-500/20 text-blue-300 px-3 py-1 rounded-sm text-xs">Credenciais</button>
                   <button onClick={() => syncShadowStudent(employee.employee_id)} className="bg-amber-500/20 text-amber-300 px-3 py-1 rounded-sm text-xs">Sync</button>
                   <button onClick={() => api.resetEmployeePassword(employee.employee_id).then((r) => toast.success(`Senha: ${r.temp_password}`)).catch((err) => toast.error(err.message))} className="bg-zinc-800 px-3 py-1 rounded-sm text-xs">Reset</button>
-                  <button onClick={() => api.deactivateEmployee(employee.employee_id).then(load).catch((err) => toast.error(err.message))} className="bg-red-500/20 text-red-300 px-3 py-1 rounded-sm text-xs">Desativar</button>
+                  <button onClick={() => api.deactivateEmployee(employee.employee_id).then(() => load({ silent: true })).catch((err) => toast.error(err.message))} className="bg-red-500/20 text-red-300 px-3 py-1 rounded-sm text-xs">Desativar</button>
                 </td>
               </tr>
             ))}
@@ -233,12 +274,55 @@ export default function StaffPage() {
           {invites.map((invite) => (
             <li key={invite.invite_id} className="flex items-center justify-between border border-zinc-800 rounded-sm px-3 py-2">
               <span>{invite.email} - {invite.role}</span>
-              <button onClick={() => api.cancelStaffInvite(invite.invite_id).then(load).catch((err) => toast.error(err.message))} className="text-red-300 text-xs">Cancelar</button>
+              <button onClick={() => api.cancelStaffInvite(invite.invite_id).then(() => load({ silent: true })).catch((err) => toast.error(err.message))} className="text-red-300 text-xs">Cancelar</button>
             </li>
           ))}
           {invites.length === 0 && <li className="text-zinc-500">Sem convites ativos.</li>}
         </ul>
       </div>
+
+      {editingEmployee && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-md w-full max-w-lg p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold uppercase text-sm tracking-wide">Editar funcionario</h3>
+              <button className="text-zinc-400 hover:text-white" onClick={() => setEditingEmployee(null)}>Fechar</button>
+            </div>
+
+            <form onSubmit={saveEmployeeEdit} className="space-y-3">
+              <input placeholder="Nome" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" required />
+              <input placeholder="Email" type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" required />
+              <select value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3">
+                <option value="MANAGER">MANAGER</option>
+                <option value="RECEPTION">RECEPTION</option>
+                <option value="TRAINER">TRAINER</option>
+              </select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <input placeholder="Matricula" value={editForm.matricula} onChange={(e) => setEditForm({ ...editForm, matricula: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
+                <input placeholder="Tag RFID" value={editForm.tag_rfid} onChange={(e) => setEditForm({ ...editForm, tag_rfid: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
+                <input placeholder="ID Biometria" value={editForm.biometria_id} onChange={(e) => setEditForm({ ...editForm, biometria_id: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
+                <input placeholder="Codigo teclado" value={editForm.keypad_code} onChange={(e) => setEditForm({ ...editForm, keypad_code: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
+              </div>
+              <label className="flex items-center gap-2 text-xs text-zinc-300">
+                <input type="checkbox" checked={editForm.is_active} onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })} />
+                Funcionario ativo
+              </label>
+              <label className="flex items-center gap-2 text-xs text-zinc-300">
+                <input type="checkbox" checked={editForm.sync_shadow_student} onChange={(e) => setEditForm({ ...editForm, sync_shadow_student: e.target.checked })} />
+                Sincronizar aluno tecnico
+              </label>
+              <div className="flex gap-2 pt-2">
+                <button type="submit" disabled={savingEdit} className="bg-[#ccff00] text-black font-bold text-xs uppercase tracking-wider h-10 px-4 rounded-sm disabled:opacity-60">
+                  {savingEdit ? 'Salvando...' : 'Salvar'}
+                </button>
+                <button type="button" onClick={() => setEditingEmployee(null)} className="bg-zinc-800 text-white font-semibold text-xs uppercase tracking-wide h-10 px-4 rounded-sm">
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
