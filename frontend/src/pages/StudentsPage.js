@@ -71,7 +71,7 @@ export default function StudentsPage() {
       const refreshed = await api.getStudent(selectedStudent.student_id);
       setSelectedStudent(refreshed);
       loadData();
-    } catch (err) { toast.error(err.message); }
+    } catch (err) { toast.error(err?.message || 'Erro ao salvar aluno'); }
   };
 
   const registerPasskey = async (cred) => {
@@ -80,7 +80,7 @@ export default function StudentsPage() {
       toast.success('Passkey registrada');
       const pk = await api.listStudentPasskeys(selectedStudent.student_id);
       setPasskeys(pk.webauthn_credentials || []);
-    } catch (err) { toast.error(err.message); }
+    } catch (err) { toast.error(err?.message || 'Erro ao registrar passkey'); }
   };
 
   const handleSave = async (e) => {
@@ -96,7 +96,7 @@ export default function StudentsPage() {
       }
       setModal(null);
       loadData();
-    } catch (err) { toast.error(err.message); }
+    } catch (err) { toast.error(err?.message || 'Erro ao salvar aluno'); }
     setSaving(false);
   };
 
@@ -106,7 +106,7 @@ export default function StudentsPage() {
       await api.deleteStudent(id);
       toast.success('Aluno removido');
       loadData();
-    } catch (err) { toast.error(err.message); }
+    } catch (err) { toast.error(err?.message || 'Erro ao remover aluno'); }
   };
 
   const getPlanName = (pid) => plans.find(p => p.plan_id === pid)?.nome || '-';
@@ -118,7 +118,7 @@ export default function StudentsPage() {
       toast.success('Biometria cadastrada com sucesso');
       loadData();
     } catch (err) {
-      toast.error(err.message);
+      toast.error(err?.message || 'Erro ao registrar biometria');
     }
   };
 
@@ -235,7 +235,7 @@ export default function StudentsPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-zinc-400">Peso (kg)</label>
-                <input type="number" step="0.1" defaultValue={selectedStudent.peso || ''} onBlur={e => saveStudentDetails({ peso: parseFloat(e.target.value) || 0 })}
+                <input type="number" step="0.1" defaultValue={selectedStudent.peso_kg ?? selectedStudent.peso ?? ''} onBlur={e => saveStudentDetails({ peso_kg: parseFloat(e.target.value) || 0 })}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3 text-sm" />
               </div>
               <div>
@@ -245,12 +245,12 @@ export default function StudentsPage() {
               </div>
               <div>
                 <label className="text-xs text-zinc-400">Altura (cm)</label>
-                <input type="number" step="0.1" defaultValue={selectedStudent.altura || ''} onBlur={e => saveStudentDetails({ altura: parseFloat(e.target.value) || 0 })}
+                <input type="number" step="0.1" defaultValue={selectedStudent.altura_cm ?? selectedStudent.altura ?? ''} onBlur={e => saveStudentDetails({ altura_cm: parseFloat(e.target.value) || 0 })}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3 text-sm" />
               </div>
               <div>
                 <label className="text-xs text-zinc-400">Frequência (dias)</label>
-                <input type="number" defaultValue={selectedStudent.dias_presenca || 0} onBlur={e => saveStudentDetails({ dias_presenca: parseInt(e.target.value) || 0 })}
+                <input type="number" defaultValue={selectedStudent.dias_frequencia ?? selectedStudent.dias_presenca ?? 0} onBlur={e => saveStudentDetails({ dias_frequencia: parseInt(e.target.value) || 0 })}
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3 text-sm" />
               </div>
             </div>

@@ -1,14 +1,40 @@
 import { apiUrl, API_BASE } from './config';
 
+function stringifyDetail(detail) {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item === 'object') {
+          const loc = Array.isArray(item.loc) ? item.loc.join('.') : '';
+          const msg = item.msg || item.detail || '';
+          return [loc, msg].filter(Boolean).join(': ');
+        }
+        return String(item);
+      })
+      .filter(Boolean)
+      .join(' | ');
+  }
+  if (detail && typeof detail === 'object') {
+    if (typeof detail.message === 'string') return detail.message;
+    if (typeof detail.detail === 'string') return detail.detail;
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return String(detail);
+    }
+  }
+  return String(detail || '');
+}
+
 async function parseError(res) {
   const fallback = { detail: 'Erro na requisicao' };
   const body = await res.json().catch(() => fallback);
   const headerCode = res.headers.get('X-Error-Code');
   const checkoutUrl = res.headers.get('X-Checkout-Url');
   const rawDetail = body.detail ?? fallback.detail;
-  const detail = typeof rawDetail === 'string'
-    ? rawDetail
-    : rawDetail?.message || rawDetail?.detail || JSON.stringify(rawDetail);
+  const detail = stringifyDetail(rawDetail) || fallback.detail;
 
   return {
     status: res.status,
@@ -48,6 +74,7 @@ async function request(path, options = {}) {
   }
 
   if (options.isBlob) return res.blob();
+  if (res.status === 204) return null;
   return res.json();
 }
 
@@ -77,6 +104,10 @@ export const api = {
   updateStudent: (id, data) => request(`/api/students/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteStudent: (id) => request(`/api/students/${id}`, { method: 'DELETE' }),
   registerBiometria: (id, biometria_id) => request(`/api/students/${id}/biometria`, { method: 'POST', body: JSON.stringify({ biometria_id }) }),
+  registerStudentPasskey: (studentId, data) => request(`/api/students/${studentId}/passkey/register`, { method: 'POST', body: JSON.stringify(data || {}) }),
+  passkeyRegisterOptions: (studentId) => request(`/api/students/${studentId}/passkey/register/options`, { method: 'POST' }),
+  passkeyRegisterVerify: (studentId, data) => request(`/api/students/${studentId}/passkey/register/verify`, { method: 'POST', body: JSON.stringify(data) }),
+  listStudentPasskeys: (studentId) => request(`/api/students/${studentId}/passkeys`),
 
   addMeasurement: (studentId, data) => request(`/api/students/${studentId}/measurements`, { method: 'POST', body: JSON.stringify(data) }),
   listMeasurements: (studentId) => request(`/api/students/${studentId}/measurements`),

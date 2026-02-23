@@ -2,25 +2,49 @@ from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class StudentIn(BaseModel):
     nome: str
     email: EmailStr | None = None
     cpf: str | None = None
-    cpf: str | None = None
     telefone: str | None = None
     sexo: str | None = None
     data_nascimento: date | None = None
     altura_cm: float | None = None
+    peso_kg: float | None = None
     peso_atual_kg: float | None = None
+    idade: int | None = None
     objetivo: str | None = None
     restricoes: str | None = None
+    treino: str | None = None
     matricula: str | None = None
+    plano_id: str | None = None
+    data_vencimento: date | None = None
+    dias_frequencia: int | None = None
+    tag_rfid: str | None = None
+    biometria_id: str | None = None
     status: Literal["ativo", "inativo"] = "ativo"
 
-<<<<<<< ours
+    @field_validator(
+        "telefone",
+        "sexo",
+        "objetivo",
+        "restricoes",
+        "treino",
+        "matricula",
+        "plano_id",
+        "tag_rfid",
+        "biometria_id",
+        mode="before",
+    )
+    @classmethod
+    def empty_optional_string_to_none(cls, value):
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
+
     @field_validator("email", mode="before")
     @classmethod
     def empty_email_to_none(cls, value):
@@ -41,35 +65,31 @@ class StudentIn(BaseModel):
             raise ValueError("CPF deve ter 11 digitos")
         return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
 
-=======
->>>>>>> theirs
-    @field_validator("email", mode="before")
-    @classmethod
-    def empty_email_to_none(cls, value):
-        if value is None:
-            return None
-        cleaned = str(value).strip()
-        return cleaned or None
-
-    @field_validator("cpf", mode="before")
-    @classmethod
-    def normalize_cpf(cls, value):
-        if value is None:
-            return None
-        digits = "".join(ch for ch in str(value) if ch.isdigit())
-        if not digits:
-            return None
-        if len(digits) != 11:
-            raise ValueError("CPF deve ter 11 digitos")
-        return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
-
-    @field_validator("data_nascimento", "altura_cm", "peso_atual_kg", mode="before")
+    @field_validator(
+        "data_nascimento",
+        "data_vencimento",
+        "altura_cm",
+        "peso_kg",
+        "peso_atual_kg",
+        "idade",
+        "dias_frequencia",
+        mode="before",
+    )
     @classmethod
     def empty_string_to_none(cls, value):
         if value is None:
             return None
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+    @field_validator("dias_frequencia")
+    @classmethod
+    def validate_dias_frequencia(cls, value: int | None):
+        if value is None:
+            return None
+        if value < 0:
+            raise ValueError("dias_frequencia deve ser maior ou igual a zero")
         return value
 
 

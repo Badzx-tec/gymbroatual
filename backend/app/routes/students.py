@@ -27,6 +27,8 @@ async def list_students(
             {"email": {"$regex": search, "$options": "i"}},
             {"telefone": {"$regex": search, "$options": "i"}},
             {"matricula": {"$regex": search, "$options": "i"}},
+            {"cpf": {"$regex": search, "$options": "i"}},
+            {"tag_rfid": {"$regex": search, "$options": "i"}},
         ]
 
     return await db.students.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)

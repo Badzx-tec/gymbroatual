@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     alert_access_denies_threshold: int = 20
     alert_gateway_auth_failures_threshold: int = 10
 
-    cors_origins: str = "*"
+    cors_origins: str = "http://localhost:3000"
 
     @field_validator("jwt_secret")
     @classmethod

@@ -429,7 +429,9 @@ Exemplo de agendamento no host (cron):
 ## Troubleshooting rápido
 
 - **Backend não sobe localmente**: valide variáveis do `.env` e conectividade com Mongo (`MONGO_URI`).
+- **Backend preso em `Waiting for application startup`**: normalmente indica indisponibilidade do MongoDB no `MONGO_URI` (o startup inicializa índices no boot).
 - **Erro de CORS**: ajuste `CORS_ORIGINS` com a URL exata do frontend.
 - **Compose v2**: use `docker compose` (sem hífen).
 - **Funcionário sem email**: permitido; a unicidade de email é aplicada somente quando o campo é informado.
 - **Franquias por usuário**: o sistema permite apenas 1 academia por `owner_id`.
+- **Toast `[object Object]` no frontend**: indica erro HTTP não normalizado no client; atualize para a versão atual do frontend (parser de erro converte validações para mensagem legível).
