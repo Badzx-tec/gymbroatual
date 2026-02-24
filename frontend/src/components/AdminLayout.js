@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Tag, ScanLine, Menu, X, LogOut, Dumbbell, Bell, Wifi, CreditCard, UserCog, FileText } from 'lucide-react';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { LayoutDashboard, Users, Tag, ScanLine, Menu, X, LogOut, Dumbbell, Bell, Wifi, CreditCard, UserCog, FileText, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../api';
 
@@ -17,11 +17,26 @@ const navItems = [
   { to: '/admin/funcionarios', icon: UserCog, label: 'Funcionarios' },
 ];
 
+const SUPPORT_WHATSAPP = '5533988515895';
+
+const buildHelpUrl = ({ user, pathname }) => {
+  const helpMessage = [
+    'Ola! Preciso de ajuda no GymBro.',
+    `Usuario: ${user.name || 'Nao informado'}`,
+    `Email: ${user.email || 'Nao informado'}`,
+    `Tela: ${pathname || '/admin'}`,
+    `Data: ${new Date().toLocaleString('pt-BR')}`,
+  ].join('\n');
+  return `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(helpMessage)}`;
+};
+
 export default function AdminLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const user = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
+  const helpUrl = buildHelpUrl({ user, pathname: location.pathname });
   const role = (user.role || 'OWNER').toUpperCase();
   const canSeeBilling = ['OWNER', 'MANAGER'].includes(role);
   const canSeeStaff = ['OWNER', 'MANAGER'].includes(role);
@@ -114,6 +129,17 @@ export default function AdminLayout() {
           <Outlet />
         </main>
       </div>
+
+      <a
+        data-testid="help-whatsapp-btn"
+        href={helpUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-full bg-[#25D366] text-black font-bold text-sm px-4 py-3 shadow-lg hover:brightness-110 transition"
+      >
+        <MessageCircle className="w-4 h-4" />
+        Ajuda
+      </a>
     </div>
   );
 }
