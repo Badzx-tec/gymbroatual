@@ -65,6 +65,9 @@ export default function StaffPage() {
       if (result.shadow_student_id) {
         toast.success(`Compatibilidade ativada. Aluno tecnico: ${result.shadow_student_id}`);
       }
+      if (result.shadow_sync_warning) {
+        toast.warning(result.shadow_sync_warning);
+      }
       setForm(emptyEmployeeForm);
       await load({ silent: true });
     } catch (err) {
@@ -113,8 +116,11 @@ export default function StaffPage() {
     if (!editingEmployee) return;
     setSavingEdit(true);
     try {
-      await api.updateEmployee(editingEmployee.employee_id, editForm);
+      const result = await api.updateEmployee(editingEmployee.employee_id, editForm);
       toast.success('Funcionario atualizado');
+      if (result.shadow_sync_warning) {
+        toast.warning(result.shadow_sync_warning);
+      }
       setEditingEmployee(null);
       await load({ silent: true });
     } catch (err) {
@@ -157,6 +163,9 @@ export default function StaffPage() {
         sync_shadow_student: true,
       });
       toast.success(`Credenciais atualizadas para ${updated.name}`);
+      if (updated.shadow_sync_warning) {
+        toast.warning(updated.shadow_sync_warning);
+      }
       await load({ silent: true });
     } catch (err) {
       toast.error(err.message);

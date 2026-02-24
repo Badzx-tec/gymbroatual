@@ -1,5 +1,6 @@
 import secrets
 from datetime import datetime, timedelta
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pymongo.errors import DuplicateKeyError
@@ -10,6 +11,7 @@ from app.core.time import UTC
 from app.db.mongo import get_db
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 ALLOWED_ROLES = {"OWNER", "MANAGER", "RECEPTION", "TRAINER"}
 TURNSTILE_FIELDS = ("tag_rfid", "biometria_id", "keypad_code", "matricula")
@@ -24,6 +26,18 @@ def _clean_optional(value):
 
 def _extract_turnstile_fields(payload: dict) -> dict:
     return {field: _clean_optional(payload.get(field)) for field in TURNSTILE_FIELDS}
+
+
+def _normalize_optional_email(value) -> str | None:
+    email = (str(value or "").strip().lower()) or None
+    if not email:
+        return None
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="Email invalido")
+    local, domain = email.split("@", 1)
+    if not local or not domain or "." not in domain:
+        raise HTTPException(status_code=400, detail="Email invalido")
+    return email
 
 
 def _safe_employee(employee: dict) -> dict:
@@ -61,10 +75,27 @@ async def _sync_employee_shadow_student(employee: dict) -> str:
     return shadow_student_id
 
 
+async def _sync_shadow_student_safe(employee: dict) -> tuple[str | None, str | None]:
+    try:
+        return await _sync_employee_shadow_student(employee), None
+    except DuplicateKeyError:
+        logger.exception(
+            "DuplicateKeyError ao sincronizar aluno tecnico de funcionario",
+            extra={"employee_id": employee.get("employee_id"), "owner_id": employee.get("owner_id")},
+        )
+        return None, "Funcionario criado, mas houve conflito ao sincronizar aluno tecnico"
+    except Exception:
+        logger.exception(
+            "Erro inesperado ao sincronizar aluno tecnico de funcionario",
+            extra={"employee_id": employee.get("employee_id"), "owner_id": employee.get("owner_id")},
+        )
+        return None, "Funcionario criado, mas nao foi possivel sincronizar aluno tecnico"
+
+
 @router.post("/invites")
 async def create_invite(payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     role = (payload.get("role") or "").upper()
-    email = (payload.get("email") or "").strip().lower() or None
+    email = _normalize_optional_email(payload.get("email"))
     if role not in ALLOWED_ROLES - {"OWNER"}:
         raise HTTPException(status_code=400, detail="Role invalida")
     if not email:
@@ -121,11 +152,12 @@ async def list_employees(actor: dict = Depends(require_roles("OWNER", "MANAGER")
 @router.post("/employees")
 async def create_employee(payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     db = get_db()
-    email = (payload.get("email") or "").strip().lower() or None
+    email = _normalize_optional_email(payload.get("email"))
     role = (payload.get("role") or "").upper()
+    name = str(payload.get("name") or "").strip()
     if role not in ALLOWED_ROLES - {"OWNER"}:
         raise HTTPException(status_code=400, detail="Role invalida")
-    if not payload.get("name"):
+    if not name:
         raise HTTPException(status_code=400, detail="Nome obrigatorio")
 
     if email and await db.employees.find_one({"email": email, "owner_id": actor["owner_id"]}, {"_id": 0}):
@@ -136,7 +168,7 @@ async def create_employee(payload: dict, actor: dict = Depends(require_roles("OW
         "employee_id": f"emp_{secrets.token_hex(6)}",
         "gym_id": actor["gym_id"],
         "owner_id": actor["owner_id"],
-        "name": payload["name"],
+        "name": name,
         "email": email,
         "password_hash": hash_password(raw_password),
         "role": role,
@@ -145,10 +177,18 @@ async def create_employee(payload: dict, actor: dict = Depends(require_roles("OW
         "created_at": datetime.now(UTC),
         "updated_at": datetime.now(UTC),
     }
-    await db.employees.insert_one(employee)
+    try:
+        await db.employees.insert_one(employee)
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="Dados de funcionario ja cadastrados") from exc
+
     result = _safe_employee(employee)
     if bool(payload.get("sync_shadow_student", False)):
-        result["shadow_student_id"] = await _sync_employee_shadow_student(employee)
+        shadow_student_id, shadow_sync_warning = await _sync_shadow_student_safe(employee)
+        if shadow_student_id:
+            result["shadow_student_id"] = shadow_student_id
+        if shadow_sync_warning:
+            result["shadow_sync_warning"] = shadow_sync_warning
     result["temp_password"] = raw_password
     return result
 
@@ -170,9 +210,7 @@ async def update_employee(
         update_fields["name"] = name
 
     if "email" in payload:
-        email = str(payload.get("email") or "").strip().lower()
-        if not email:
-            raise HTTPException(status_code=400, detail="Email invalido")
+        email = _normalize_optional_email(payload.get("email"))
         update_fields["email"] = email
 
     if "role" in payload:
@@ -209,7 +247,11 @@ async def update_employee(
 
     response = _safe_employee(employee)
     if bool(payload.get("sync_shadow_student", False)):
-        response["shadow_student_id"] = await _sync_employee_shadow_student(employee)
+        shadow_student_id, shadow_sync_warning = await _sync_shadow_student_safe(employee)
+        if shadow_student_id:
+            response["shadow_student_id"] = shadow_student_id
+        if shadow_sync_warning:
+            response["shadow_sync_warning"] = shadow_sync_warning
     return response
 
 
@@ -310,7 +352,11 @@ async def update_employee_credentials(
 
     response = _safe_employee(employee)
     if bool(payload.get("sync_shadow_student", False)):
-        response["shadow_student_id"] = await _sync_employee_shadow_student(employee)
+        shadow_student_id, shadow_sync_warning = await _sync_shadow_student_safe(employee)
+        if shadow_student_id:
+            response["shadow_student_id"] = shadow_student_id
+        if shadow_sync_warning:
+            response["shadow_sync_warning"] = shadow_sync_warning
     return response
 
 
@@ -327,7 +373,10 @@ async def sync_employee_shadow_student(
     if not employee:
         raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
 
-    shadow_student_id = await _sync_employee_shadow_student(employee)
+    try:
+        shadow_student_id = await _sync_employee_shadow_student(employee)
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="Conflito ao sincronizar aluno tecnico") from exc
     return {
         "message": "Funcionario sincronizado para compatibilidade de catraca",
         "employee_id": employee_id,

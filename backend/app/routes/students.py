@@ -40,7 +40,10 @@ async def list_students(
     owner: dict = Depends(require_active_subscription),
 ):
     db = get_db()
-    query = {"owner_id": owner["owner_id"]}
+    query = {
+        "owner_id": owner["owner_id"],
+        "is_employee_shadow": {"$ne": True},
+    }
     if status:
         query["status"] = status
     if search:
