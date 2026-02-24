@@ -41,7 +41,11 @@ def _normalize_optional_email(value) -> str | None:
 
 
 def _safe_employee(employee: dict) -> dict:
-    return {k: v for k, v in employee.items() if k != "password_hash"}
+    return {k: v for k, v in employee.items() if k not in {"_id", "password_hash"}}
+
+
+def _safe_invite(invite: dict) -> dict:
+    return {k: v for k, v in invite.items() if k != "_id"}
 
 
 async def _sync_employee_shadow_student(employee: dict) -> str:
@@ -115,7 +119,7 @@ async def create_invite(payload: dict, actor: dict = Depends(require_roles("OWNE
         "created_at": datetime.now(UTC),
     }
     await db.employee_invites.insert_one(invite)
-    return invite
+    return _safe_invite(invite)
 
 
 @router.get("/invites")
