@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, Tag, ScanLine, Menu, X, LogOut, Dumbbell, Bell, Wifi, CreditCard, UserCog, FileText, MessageCircle } from 'lucide-react';
+import { LayoutDashboard, Users, Tag, ScanLine, Menu, X, LogOut, Dumbbell, Bell, Wifi, CreditCard, UserCog, FileText, MessageCircle, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../api';
+import { applyBrandingToDocument, loadBranding, saveBranding } from '../branding';
 
 const navItems = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
@@ -35,7 +36,8 @@ export default function AdminLayout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const user = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('gymbro_user') || '{}'));
+  const [branding, setBranding] = useState(() => loadBranding());
   const helpUrl = buildHelpUrl({ user, pathname: location.pathname });
   const role = (user.role || 'OWNER').toUpperCase();
   const canSeeBilling = ['OWNER', 'MANAGER'].includes(role);
@@ -48,6 +50,32 @@ export default function AdminLayout() {
     if (item.to === '/admin/contratos') return canSeeContracts;
     return true;
   });
+
+  useEffect(() => {
+    applyBrandingToDocument(branding);
+  }, [branding]);
+
+  useEffect(() => {
+    api.profileMe().then((profile) => {
+      if (profile?.branding) {
+        const normalized = {
+          theme_key: profile.branding.theme_key,
+          logo_data_url: profile.branding.logo_data_url || null,
+        };
+        setBranding(normalized);
+        saveBranding(normalized);
+      }
+      if (profile?.name || profile?.email) {
+        const updatedUser = {
+          ...JSON.parse(localStorage.getItem('gymbro_user') || '{}'),
+          name: profile.name || user.name,
+          email: profile.email || user.email,
+        };
+        localStorage.setItem('gymbro_user', JSON.stringify(updatedUser));
+        setUser(updatedUser);
+      }
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     api.listNotifications(50).then(notifs => {
@@ -66,7 +94,11 @@ export default function AdminLayout() {
   const SidebarContent = ({ onNavClick }) => (
     <>
       <div className="flex items-center gap-2 px-6 h-16 border-b border-zinc-800 shrink-0">
-        <Dumbbell className="w-6 h-6 text-[#ccff00]" />
+        {branding.logo_data_url ? (
+          <img src={branding.logo_data_url} alt="Logo da academia" className="w-8 h-8 rounded-sm object-cover border border-zinc-700" />
+        ) : (
+          <Dumbbell className="w-6 h-6 text-[#ccff00]" />
+        )}
         <span className="font-heading text-xl font-bold tracking-tight uppercase">GymBro</span>
       </div>
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
@@ -91,6 +123,17 @@ export default function AdminLayout() {
             <p className="text-sm font-medium truncate">{user.name || 'Admin'}</p>
             <p className="text-xs text-zinc-500 truncate">{user.email || ''}</p>
           </div>
+          <button
+            data-testid="profile-link-btn"
+            onClick={() => {
+              navigate('/admin/perfil');
+              if (onNavClick) onNavClick();
+            }}
+            className="ml-auto text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-sm p-2 transition-colors"
+            title="Perfil"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
         </div>
         <button data-testid="logout-btn" onClick={handleLogout}
           className="flex items-center gap-3 px-4 py-2.5 rounded-sm text-sm font-medium text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors w-full">

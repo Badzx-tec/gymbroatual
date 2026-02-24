@@ -2,6 +2,7 @@ import secrets
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pymongo.errors import DuplicateKeyError
 
 from app.core.config import get_settings
 from app.core.deps import get_current_actor
@@ -27,6 +28,8 @@ from app.services.email import EmailDeliveryError, send_email_code
 from app.services.subscription import initial_subscription, subscription_allows_login
 
 router = APIRouter()
+ALLOWED_THEME_KEYS = {"lime", "blue", "emerald", "amber", "rose"}
+MAX_LOGO_DATA_URL_LENGTH = 1_500_000
 
 
 def _as_utc_datetime(value) -> datetime | None:
@@ -47,6 +50,99 @@ def _owner_out(owner: dict) -> OwnerOut:
         email_verified=owner.get("email_verified", False),
         gym_id=owner["gym_id"],
     )
+
+
+def _clean_optional(value) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
+
+
+def _normalize_email(value, *, required: bool = False) -> str | None:
+    email = _clean_optional(value)
+    if not email:
+        if required:
+            raise HTTPException(status_code=400, detail="Email obrigatorio")
+        return None
+    email = email.lower()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="Email invalido")
+    local, domain = email.split("@", 1)
+    if not local or not domain or "." not in domain:
+        raise HTTPException(status_code=400, detail="Email invalido")
+    return email
+
+
+def _normalize_name(value, *, required: bool = False) -> str | None:
+    name = _clean_optional(value)
+    if not name:
+        if required:
+            raise HTTPException(status_code=400, detail="Nome obrigatorio")
+        return None
+    if len(name) < 2:
+        raise HTTPException(status_code=400, detail="Nome invalido")
+    return name
+
+
+def _normalize_theme_key(value, *, strict: bool = False) -> str:
+    key = (_clean_optional(value) or "lime").lower()
+    if key not in ALLOWED_THEME_KEYS:
+        if strict:
+            raise HTTPException(status_code=400, detail="Tema invalido")
+        return "lime"
+    return key
+
+
+def _normalize_logo_data_url(value) -> str | None:
+    logo_data_url = _clean_optional(value)
+    if logo_data_url is None:
+        return None
+    if not logo_data_url.startswith("data:image/") or ";base64," not in logo_data_url:
+        raise HTTPException(status_code=400, detail="Logo invalido")
+    if len(logo_data_url) > MAX_LOGO_DATA_URL_LENGTH:
+        raise HTTPException(status_code=400, detail="Logo muito grande")
+    return logo_data_url
+
+
+async def _owner_profile_payload(owner: dict) -> dict:
+    db = get_db()
+    gym = await db.gyms.find_one({"owner_id": owner["owner_id"]}, {"_id": 0, "name": 1})
+    branding = owner.get("branding") or {}
+    return {
+        "actor_type": "owner",
+        "role": "OWNER",
+        "owner_id": owner["owner_id"],
+        "name": owner.get("name") or "",
+        "email": owner.get("email") or "",
+        "phone": owner.get("phone"),
+        "gym_name": (gym or {}).get("name"),
+        "branding": {
+            "theme_key": _normalize_theme_key(branding.get("theme_key")),
+            "logo_data_url": branding.get("logo_data_url"),
+        },
+    }
+
+
+async def _employee_profile_payload(employee: dict) -> dict:
+    db = get_db()
+    gym = await db.gyms.find_one({"owner_id": employee["owner_id"]}, {"_id": 0, "name": 1})
+    owner = await db.owners.find_one({"owner_id": employee["owner_id"]}, {"_id": 0, "branding": 1})
+    branding = (owner or {}).get("branding") or {}
+    return {
+        "actor_type": "employee",
+        "role": employee.get("role") or "RECEPTION",
+        "employee_id": employee["employee_id"],
+        "owner_id": employee["owner_id"],
+        "name": employee.get("name") or "",
+        "email": employee.get("email") or "",
+        "phone": employee.get("phone"),
+        "gym_name": (gym or {}).get("name"),
+        "branding": {
+            "theme_key": _normalize_theme_key(branding.get("theme_key")),
+            "logo_data_url": branding.get("logo_data_url"),
+        },
+    }
 
 
 async def _enforce_auth_rate_limit(
@@ -355,3 +451,189 @@ async def me(actor: dict = Depends(get_current_actor)):
         }
 
     return _owner_out(actor).model_dump()
+
+
+@router.get("/profile")
+async def profile(actor: dict = Depends(get_current_actor)):
+    db = get_db()
+    if actor.get("actor_type") == "employee":
+        employee = await db.employees.find_one(
+            {"employee_id": actor["employee_id"], "is_active": True},
+            {"_id": 0},
+        )
+        if not employee:
+            raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
+        return await _employee_profile_payload(employee)
+
+    owner = await db.owners.find_one({"owner_id": actor["owner_id"]}, {"_id": 0})
+    if not owner:
+        raise HTTPException(status_code=404, detail="Usuario nao encontrado")
+    return await _owner_profile_payload(owner)
+
+
+@router.put("/profile")
+async def update_profile(payload: dict, actor: dict = Depends(get_current_actor)):
+    db = get_db()
+    now = datetime.now(UTC)
+
+    if actor.get("actor_type") == "employee":
+        employee = await db.employees.find_one(
+            {"employee_id": actor["employee_id"], "is_active": True},
+            {"_id": 0},
+        )
+        if not employee:
+            raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
+
+        update_fields = {"updated_at": now}
+
+        if "name" in payload:
+            update_fields["name"] = _normalize_name(payload.get("name"), required=True)
+
+        if "email" in payload:
+            email = _normalize_email(payload.get("email"), required=True)
+            existing = await db.employees.find_one(
+                {
+                    "owner_id": employee["owner_id"],
+                    "employee_id": {"$ne": employee["employee_id"]},
+                    "email": email,
+                },
+                {"_id": 0, "employee_id": 1},
+            )
+            if existing:
+                raise HTTPException(status_code=409, detail="Email ja cadastrado")
+            update_fields["email"] = email
+
+        if "phone" in payload:
+            update_fields["phone"] = _clean_optional(payload.get("phone"))
+
+        try:
+            result = await db.employees.update_one(
+                {"employee_id": employee["employee_id"], "owner_id": employee["owner_id"]},
+                {"$set": update_fields},
+            )
+        except DuplicateKeyError as exc:
+            raise HTTPException(status_code=409, detail="Email ja cadastrado") from exc
+
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
+
+        updated_employee = await db.employees.find_one(
+            {"employee_id": employee["employee_id"], "owner_id": employee["owner_id"]},
+            {"_id": 0},
+        )
+        if not updated_employee:
+            raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
+        return await _employee_profile_payload(updated_employee)
+
+    owner = await db.owners.find_one({"owner_id": actor["owner_id"]}, {"_id": 0})
+    if not owner:
+        raise HTTPException(status_code=404, detail="Usuario nao encontrado")
+
+    update_owner_fields: dict = {"updated_at": now}
+
+    if "name" in payload:
+        update_owner_fields["name"] = _normalize_name(payload.get("name"), required=True)
+
+    if "email" in payload:
+        email = _normalize_email(payload.get("email"), required=True)
+        existing_owner = await db.owners.find_one(
+            {"email": email, "owner_id": {"$ne": owner["owner_id"]}},
+            {"_id": 0, "owner_id": 1},
+        )
+        if existing_owner:
+            raise HTTPException(status_code=409, detail="Email ja cadastrado")
+        update_owner_fields["email"] = email
+
+    if "phone" in payload:
+        update_owner_fields["phone"] = _clean_optional(payload.get("phone"))
+
+    if any(key in payload for key in ("theme_key", "logo_data_url", "remove_logo")):
+        current_branding = dict(owner.get("branding") or {})
+        if "theme_key" in payload:
+            current_branding["theme_key"] = _normalize_theme_key(payload.get("theme_key"), strict=True)
+        if "logo_data_url" in payload:
+            current_branding["logo_data_url"] = _normalize_logo_data_url(payload.get("logo_data_url"))
+        if payload.get("remove_logo"):
+            current_branding["logo_data_url"] = None
+        current_branding["updated_at"] = now
+        update_owner_fields["branding"] = current_branding
+
+    try:
+        result = await db.owners.update_one(
+            {"owner_id": owner["owner_id"]},
+            {"$set": update_owner_fields},
+        )
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="Email ja cadastrado") from exc
+
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Usuario nao encontrado")
+
+    if "gym_name" in payload:
+        gym_name = _normalize_name(payload.get("gym_name"), required=True)
+        await db.gyms.update_one(
+            {"owner_id": owner["owner_id"]},
+            {"$set": {"name": gym_name, "updated_at": now}},
+        )
+
+    updated_owner = await db.owners.find_one({"owner_id": owner["owner_id"]}, {"_id": 0})
+    if not updated_owner:
+        raise HTTPException(status_code=404, detail="Usuario nao encontrado")
+    return await _owner_profile_payload(updated_owner)
+
+
+@router.post("/profile/password")
+async def change_profile_password(payload: dict, actor: dict = Depends(get_current_actor)):
+    current_password = str(payload.get("current_password") or "")
+    new_password = str(payload.get("new_password") or "")
+
+    if len(current_password) < 8:
+        raise HTTPException(status_code=400, detail="Senha atual invalida")
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="Nova senha deve ter ao menos 8 caracteres")
+    if current_password == new_password:
+        raise HTTPException(status_code=400, detail="Nova senha deve ser diferente da atual")
+
+    db = get_db()
+    now = datetime.now(UTC)
+
+    if actor.get("actor_type") == "employee":
+        employee = await db.employees.find_one(
+            {"employee_id": actor["employee_id"], "is_active": True},
+            {"_id": 0, "password_hash": 1, "owner_id": 1},
+        )
+        if not employee:
+            raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
+        if not verify_password(current_password, employee["password_hash"]):
+            raise HTTPException(status_code=401, detail="Senha atual incorreta")
+
+        await db.employees.update_one(
+            {"employee_id": actor["employee_id"], "owner_id": employee["owner_id"]},
+            {
+                "$set": {
+                    "password_hash": hash_password(new_password),
+                    "updated_at": now,
+                }
+            },
+        )
+        return {"message": "Senha atualizada com sucesso"}
+
+    owner = await db.owners.find_one(
+        {"owner_id": actor["owner_id"]},
+        {"_id": 0, "password_hash": 1},
+    )
+    if not owner:
+        raise HTTPException(status_code=404, detail="Usuario nao encontrado")
+    if not verify_password(current_password, owner["password_hash"]):
+        raise HTTPException(status_code=401, detail="Senha atual incorreta")
+
+    await db.owners.update_one(
+        {"owner_id": actor["owner_id"]},
+        {
+            "$set": {
+                "password_hash": hash_password(new_password),
+                "updated_at": now,
+            }
+        },
+    )
+    return {"message": "Senha atualizada com sucesso"}

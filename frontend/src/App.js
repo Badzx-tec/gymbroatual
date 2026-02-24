@@ -14,6 +14,7 @@ import CatracaPage from './pages/CatracaPage';
 import SubscriptionPage from './pages/SubscriptionPage';
 import BillingCenterPage from './pages/BillingCenterPage';
 import StaffPage from './pages/StaffPage';
+import ProfilePage from './pages/ProfilePage';
 import AdminLayout from './components/AdminLayout';
 import StudentContractsPage from './pages/StudentContractsPage';
 
@@ -36,6 +37,7 @@ function AppRouter() {
         <Route path="notificacoes" element={<NotificationsPage />} />
         <Route path="catraca" element={<CatracaPage />} />
         <Route path="funcionarios" element={<RoleRoute roles={['OWNER', 'MANAGER']}><StaffPage /></RoleRoute>} />
+        <Route path="perfil" element={<ProfilePage />} />
         <Route path="assinatura" element={<RoleRoute roles={['OWNER', 'MANAGER']}><SubscriptionPage /></RoleRoute>} />
         <Route path="cobranca" element={<RoleRoute roles={['OWNER', 'MANAGER']}><BillingCenterPage /></RoleRoute>} />
       </Route>

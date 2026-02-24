@@ -93,6 +93,9 @@ export const api = {
   verifyConfirm: (email, code) => request('/api/auth/verify/confirm', { method: 'POST', body: JSON.stringify({ email, code }) }),
   login: (data) => request('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request('/api/auth/me'),
+  profileMe: () => request('/api/auth/profile'),
+  updateProfile: (data) => request('/api/auth/profile', { method: 'PUT', body: JSON.stringify(data) }),
+  changeMyPassword: (data) => request('/api/auth/profile/password', { method: 'POST', body: JSON.stringify(data) }),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
 
   dashboard: () => request('/api/dashboard'),

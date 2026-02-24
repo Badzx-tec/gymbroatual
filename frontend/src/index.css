@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --brand-primary: #ccff00;
+  --brand-primary-hover: #b3e600;
+  --brand-primary-rgb: 204 255 0;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -36,4 +42,48 @@ h1, h2, h3, h4, h5, h6 {
 input:-webkit-autofill {
   -webkit-box-shadow: 0 0 0 1000px #09090b inset !important;
   -webkit-text-fill-color: #fafafa !important;
+}
+
+.bg-\[\#ccff00\] {
+  background-color: var(--brand-primary) !important;
+}
+
+.hover\:bg-\[\#b3e600\]:hover {
+  background-color: var(--brand-primary-hover) !important;
+}
+
+.text-\[\#ccff00\] {
+  color: var(--brand-primary) !important;
+}
+
+.border-\[\#ccff00\] {
+  border-color: var(--brand-primary) !important;
+}
+
+.bg-\[\#ccff00\]\/10 {
+  background-color: rgb(var(--brand-primary-rgb) / 0.1) !important;
+}
+
+.bg-\[\#ccff00\]\/20 {
+  background-color: rgb(var(--brand-primary-rgb) / 0.2) !important;
+}
+
+.focus\:ring-\[\#ccff00\]:focus {
+  --tw-ring-color: var(--brand-primary) !important;
+}
+
+.focus\:border-\[\#ccff00\]:focus {
+  border-color: var(--brand-primary) !important;
+}
+
+.hover\:border-\[\#ccff00\]:hover {
+  border-color: var(--brand-primary) !important;
+}
+
+.hover\:text-\[\#ccff00\]:hover {
+  color: var(--brand-primary) !important;
+}
+
+.accent-\[\#ccff00\] {
+  accent-color: var(--brand-primary) !important;
 }
