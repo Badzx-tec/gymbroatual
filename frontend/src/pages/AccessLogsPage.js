@@ -4,6 +4,26 @@ import { ScanLine, CheckCircle, XCircle, RefreshCw, FileSpreadsheet } from 'luci
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 
+const toDate = (log) => {
+  const value = log?.timestamp || log?.created_at || null;
+  if (!value) return null;
+  const dt = new Date(value);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+};
+
+const isToday = (date) => {
+  if (!date) return false;
+  const now = new Date();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
+};
+
+const dailyOnly = (items) =>
+  (items || []).filter((log) => isToday(toDate(log)));
+
 export default function AccessLogsPage() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -12,15 +32,25 @@ export default function AccessLogsPage() {
     loadData();
     const cleanup = connectWebSocket((msg) => {
       if (msg.type === 'access') {
-        setLogs(prev => [msg.data, ...prev].slice(0, 100));
+        setLogs((prev) => dailyOnly([msg.data, ...prev]).slice(0, 100));
       }
     });
-    return cleanup;
+    const keepTodayOnly = setInterval(() => {
+      setLogs((prev) => dailyOnly(prev));
+    }, 60 * 1000);
+
+    return () => {
+      cleanup();
+      clearInterval(keepTodayOnly);
+    };
   }, []);
 
   const loadData = async () => {
     setLoading(true);
-    try { setLogs(await api.listAccessLogs(100)); } catch {}
+    try {
+      const data = await api.listAccessLogs(300);
+      setLogs(dailyOnly(data).slice(0, 100));
+    } catch {}
     setLoading(false);
   };
 
@@ -29,7 +59,7 @@ export default function AccessLogsPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Registro de Acessos</h1>
-          <p className="text-zinc-400 mt-1">Historico de acessos pela catraca - tempo real</p>
+          <p className="text-zinc-400 mt-1">Somente acessos de hoje - atualizacao em tempo real</p>
         </div>
         <div className="flex gap-2">
           <button data-testid="export-access-excel-btn" onClick={() => { api.exportAccessExcel(); toast.success('Exportando...'); }}
