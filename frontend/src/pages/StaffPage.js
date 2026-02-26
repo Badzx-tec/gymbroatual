@@ -7,6 +7,7 @@ import CredentialPanel from '../components/CredentialPanel';
 const emptyEmployeeForm = {
   name: '',
   email: '',
+  password: '',
   role: 'RECEPTION',
   matricula: '',
   tag_rfid: '',
@@ -69,7 +70,10 @@ export default function StaffPage() {
         fields.push({ label: 'Login (e-mail)', value: result.email });
       }
       if (result.temp_password) {
-        fields.push({ label: 'Senha temporaria', value: result.temp_password });
+        fields.push({
+          label: form.password ? 'Senha inicial' : 'Senha temporaria',
+          value: result.temp_password,
+        });
       }
       if (result.matricula) {
         fields.push({ label: 'Matricula', value: result.matricula });
@@ -77,7 +81,7 @@ export default function StaffPage() {
       if (fields.length) {
         setCredentialPanel({
           title: `Credenciais de ${result.name || form.name}`,
-          description: 'Copie e guarde agora. A senha temporaria nao sera exibida novamente.',
+          description: 'Copie e guarde agora. A senha inicial/temporaria nao sera exibida novamente.',
           fields,
         });
       }
@@ -281,6 +285,13 @@ export default function StaffPage() {
           <h2 className="font-semibold uppercase text-sm tracking-wide">Criar funcionario</h2>
           <input placeholder="Nome" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" required />
           <input placeholder="Email (opcional)" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
+          <input
+            placeholder="Senha inicial (opcional)"
+            type="text"
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3"
+          />
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3">
             <option value="MANAGER">MANAGER</option>
             <option value="RECEPTION">RECEPTION</option>
@@ -294,6 +305,9 @@ export default function StaffPage() {
           </div>
           <p className="text-xs text-zinc-500">
             Matricula e um codigo interno. Pode informar manualmente ou deixar em branco para gerar automaticamente (ex.: FUNC0001).
+          </p>
+          <p className="text-xs text-zinc-500">
+            Para o funcionario fazer login, informe e-mail. Se a senha ficar em branco, o sistema gera automaticamente.
           </p>
           <label className="flex items-center gap-2 text-xs text-zinc-300">
             <input
