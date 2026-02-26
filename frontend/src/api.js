@@ -47,6 +47,29 @@ async function parseError(res) {
   };
 }
 
+function shouldLogoutOnUnauthorized(path, detail, code) {
+  if (path.includes('/auth/login') || path.includes('/auth/register')) return false;
+  const normalizedCode = String(code || '').trim().toUpperCase();
+  if (normalizedCode === 'AUTH_INVALID_SESSION' || normalizedCode === 'AUTH_INVALID_TOKEN') {
+    return true;
+  }
+
+  const normalizedDetail = String(detail || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const invalidSessionSignals = [
+    'sessao expirada',
+    'token invalido',
+    'nao autenticado',
+    'usuario nao encontrado',
+    'funcionario nao encontrado',
+    'aluno nao encontrado',
+    'super admin invalido',
+  ];
+  return invalidSessionSignals.some((signal) => normalizedDetail.includes(signal));
+}
+
 async function request(path, options = {}) {
   const token = localStorage.getItem('gymbro_token');
   const headers = { ...(options.headers || {}) };
@@ -61,14 +84,13 @@ async function request(path, options = {}) {
     credentials: 'include',
   });
 
-  if (res.status === 401) {
-    localStorage.removeItem('gymbro_token');
-    localStorage.removeItem('gymbro_user');
-    if (!path.includes('/auth/')) window.location.href = '/login';
-  }
-
   if (!res.ok) {
     const err = await parseError(res);
+    if (err.status === 401 && shouldLogoutOnUnauthorized(path, err.detail, err.code)) {
+      localStorage.removeItem('gymbro_token');
+      localStorage.removeItem('gymbro_user');
+      if (!path.includes('/auth/')) window.location.href = '/login';
+    }
     const e = new Error(err.detail);
     e.status = err.status;
     e.code = err.code;
