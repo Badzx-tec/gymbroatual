@@ -257,7 +257,7 @@ async def membership(actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
 
 @router.get("/invoices", response_model=list[InvoiceOut])
 async def invoices(
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=500),
     actor: dict = Depends(require_roles("OWNER", "MANAGER")),
 ):
     db = get_db()
@@ -271,7 +271,7 @@ async def invoices(
 
 @router.get("/payment-attempts", response_model=list[PaymentAttemptOut])
 async def payment_attempts(
-    limit: int = 100,
+    limit: int = Query(default=100, ge=1, le=1000),
     actor: dict = Depends(require_roles("OWNER", "MANAGER")),
 ):
     db = get_db()
@@ -285,7 +285,7 @@ async def payment_attempts(
 
 @router.get("/events", response_model=list[SubscriptionEventOut])
 async def subscription_events(
-    limit: int = 100,
+    limit: int = Query(default=100, ge=1, le=1000),
     actor: dict = Depends(require_roles("OWNER", "MANAGER")),
 ):
     db = get_db()

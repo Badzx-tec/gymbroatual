@@ -65,23 +65,32 @@ function AppRouter() {
 
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('gymbro_token');
-  const [checking, setChecking] = React.useState(!token);
-  const [ok, setOk] = React.useState(!!token);
+  const [checking, setChecking] = React.useState(true);
+  const [ok, setOk] = React.useState(false);
 
   React.useEffect(() => {
-    if (token) return;
-    const checkCookie = async () => {
+    const checkSession = async () => {
       try {
-        const res = await fetch(apiUrl('/api/auth/me'), { credentials: 'include' });
+        const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+        const res = await fetch(apiUrl('/api/auth/me'), { credentials: 'include', headers });
         if (res.ok) {
           const data = await res.json();
           localStorage.setItem('gymbro_user', JSON.stringify(data));
+          if (!token && data?.token) {
+            localStorage.setItem('gymbro_token', data.token);
+          }
           setOk(true);
-        } else { setOk(false); }
-      } catch { setOk(false); }
+        } else {
+          localStorage.removeItem('gymbro_token');
+          localStorage.removeItem('gymbro_user');
+          setOk(false);
+        }
+      } catch {
+        setOk(false);
+      }
       setChecking(false);
     };
-    checkCookie();
+    checkSession();
   }, [token]);
 
   if (checking) return (
@@ -95,7 +104,8 @@ function ProtectedRoute({ children }) {
 
 function RoleRoute({ children, roles }) {
   const user = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
-  const role = String(user.role || 'OWNER').toUpperCase();
+  const role = String(user.role || '').toUpperCase();
+  if (!role) return <Navigate to="/login" replace />;
   if (!roles.includes(role)) return <Navigate to={role === 'STUDENT' ? '/aluno' : '/admin'} replace />;
   return children;
 }

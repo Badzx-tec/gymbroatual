@@ -4,7 +4,9 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.db.mongo import init_indexes
@@ -84,6 +86,13 @@ async def request_observability_middleware(request: Request, call_next):
 
     elapsed_ms = (time.perf_counter() - started_at) * 1000
     response.headers["X-Request-ID"] = request_id
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+    )
     record_request(path=request.url.path, status_code=response.status_code, latency_ms=elapsed_ms)
     log_event(
         "http_request",
@@ -104,6 +113,45 @@ async def health() -> dict:
 @app.get("/api/health")
 async def api_health() -> dict:
     return {"status": "ok", "service": settings.app_name, "version": "3.0.0"}
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    request_id = getattr(request.state, "request_id", uuid.uuid4().hex)
+    log_event(
+        "validation_error",
+        request_id=request_id,
+        path=request.url.path,
+        method=request.method,
+        errors=exc.errors(),
+    )
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Dados de entrada invalidos",
+            "errors": exc.errors(),
+            "request_id": request_id,
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    request_id = getattr(request.state, "request_id", uuid.uuid4().hex)
+    log_event(
+        "unhandled_exception",
+        request_id=request_id,
+        path=request.url.path,
+        method=request.method,
+        error=str(exc),
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Erro interno do servidor",
+            "request_id": request_id,
+        },
+    )
 
 
 app.include_router(api_router, prefix=settings.api_prefix)

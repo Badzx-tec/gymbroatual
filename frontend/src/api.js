@@ -33,14 +33,17 @@ async function parseError(res) {
   const body = await res.json().catch(() => fallback);
   const headerCode = res.headers.get('X-Error-Code');
   const checkoutUrl = res.headers.get('X-Checkout-Url');
+  const requestId = body.request_id || res.headers.get('X-Request-ID') || null;
   const rawDetail = body.detail ?? fallback.detail;
   const detail = stringifyDetail(rawDetail) || fallback.detail;
+  const normalizedDetail = requestId ? `${detail} (Ref: ${requestId})` : detail;
 
   return {
     status: res.status,
     code: body.code || headerCode || null,
-    detail: detail || fallback.detail,
+    detail: normalizedDetail || fallback.detail,
     checkout_url: body.checkout_url || checkoutUrl || null,
+    request_id: requestId,
   };
 }
 
@@ -70,6 +73,7 @@ async function request(path, options = {}) {
     e.status = err.status;
     e.code = err.code;
     e.checkout_url = err.checkout_url;
+    e.request_id = err.request_id;
     throw e;
   }
 

@@ -1,7 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.deps import require_admin_actor
 from app.core.time import UTC
@@ -88,7 +88,7 @@ async def list_gyms(owner: dict = Depends(require_admin_actor())):
 async def dashboard(owner: dict = Depends(require_admin_actor())):
     db = get_db()
     owner_id = owner["owner_id"]
-    base = {"owner_id": owner["owner_id"]}
+    base = {"owner_id": owner["owner_id"], "is_employee_shadow": {"$ne": True}}
     total_alunos = await db.students.count_documents(base)
     alunos_ativos = await db.students.count_documents({**base, "status": "ativo"})
     alunos_inativos = await db.students.count_documents({**base, "status": "inativo"})
@@ -100,9 +100,7 @@ async def dashboard(owner: dict = Depends(require_admin_actor())):
             "$or": [{"timestamp": {"$gte": day_start}}, {"created_at": {"$gte": day_start}}],
         }
     )
-    sem_treino = await db.students.count_documents(
-        {**base, "$or": [{"treino": {"$exists": False}}, {"treino": ""}]}
-    )
+    sem_treino = await db.students.count_documents({**base, "$or": [{"treino": {"$exists": False}}, {"treino": ""}]})
 
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     paid_charges = await db.student_charges.find(
@@ -249,7 +247,10 @@ async def dashboard_charts(owner: dict) -> dict:
 
 
 @router.get("/access-logs")
-async def access_logs(limit: int = 100, owner: dict = Depends(require_admin_actor())):
+async def access_logs(
+    limit: int = Query(default=100, ge=1, le=1000),
+    owner: dict = Depends(require_admin_actor()),
+):
     db = get_db()
     return (
         await db.access_logs.find({"owner_id": owner["owner_id"]}, {"_id": 0})
@@ -262,7 +263,7 @@ async def access_logs(limit: int = 100, owner: dict = Depends(require_admin_acto
 @router.get("/plans")
 async def list_plans(owner: dict = Depends(require_admin_actor())):
     db = get_db()
-    return await db.plans.find({"owner_id": owner["owner_id"]}, {"_id": 0}).to_list(50)
+    return await db.plans.find({"owner_id": owner["owner_id"]}, {"_id": 0}).to_list(200)
 
 
 @router.get("/plans/public")

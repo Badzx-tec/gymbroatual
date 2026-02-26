@@ -14,6 +14,7 @@ from app.services.internal_codes import (
     generate_unique_internal_code,
     normalize_internal_code,
 )
+from app.services.query_safety import safe_contains_regex
 
 router = APIRouter()
 STUDENT_MATRICULA_PREFIX = "ALU"
@@ -131,14 +132,15 @@ async def list_students(
     }
     if status:
         query["status"] = status
-    if search:
+    safe_search = safe_contains_regex(search)
+    if safe_search:
         query["$or"] = [
-            {"nome": {"$regex": search, "$options": "i"}},
-            {"email": {"$regex": search, "$options": "i"}},
-            {"telefone": {"$regex": search, "$options": "i"}},
-            {"matricula": {"$regex": search, "$options": "i"}},
-            {"cpf": {"$regex": search, "$options": "i"}},
-            {"tag_rfid": {"$regex": search, "$options": "i"}},
+            {"nome": {"$regex": safe_search, "$options": "i"}},
+            {"email": {"$regex": safe_search, "$options": "i"}},
+            {"telefone": {"$regex": safe_search, "$options": "i"}},
+            {"matricula": {"$regex": safe_search, "$options": "i"}},
+            {"cpf": {"$regex": safe_search, "$options": "i"}},
+            {"tag_rfid": {"$regex": safe_search, "$options": "i"}},
         ]
 
     docs = await db.students.find(query, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)

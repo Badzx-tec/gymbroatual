@@ -6,6 +6,12 @@ import { Dumbbell, Shield, Zap, Users, ChevronRight, Check, Mail, Phone, MapPin 
 
 export default function LandingPage() {
   const [plans, setPlans] = useState([]);
+  const registerUrl = '/login?mode=register';
+  const contactItems = [
+    { icon: Mail, label: 'Email', text: 'juannicarosa@gmail.com', href: 'mailto:juannicarosa@gmail.com' },
+    { icon: Phone, label: 'Telefone', text: '(33) 98851-5895', href: 'tel:+5533988515895' },
+    { icon: MapPin, label: 'Endereco', text: 'Machacalis/MG', href: null },
+  ];
 
   useEffect(() => {
     fetch(apiUrl('/api/plans/public')).then(r => r.json()).then(setPlans).catch(() => {});
@@ -50,9 +56,13 @@ export default function LandingPage() {
               Controle de alunos, assinaturas, catracas e pagamentos em uma unica plataforma. Simples, rapido e seguro.
             </p>
             <div className="flex flex-wrap gap-4">
-              <a href="#planos" data-testid="hero-cta-btn" className="inline-flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-8 py-3.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-1 shadow-[0_0_20px_rgba(204,255,0,0.25)]">
-                Comecar Agora <ChevronRight className="w-4 h-4" />
-              </a>
+              <Link
+                to={registerUrl}
+                data-testid="hero-cta-btn"
+                className="inline-flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-8 py-3.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-1 shadow-[0_0_20px_rgba(204,255,0,0.25)]"
+              >
+                Assinar e criar conta <ChevronRight className="w-4 h-4" />
+              </Link>
               <Link to="/login" className="inline-flex items-center gap-2 border-2 border-zinc-700 text-white font-semibold uppercase tracking-wide text-sm px-8 py-3.5 rounded-sm hover:border-[#ccff00] hover:text-[#ccff00] transition-all">
                 Acessar Painel
               </Link>
@@ -112,9 +122,12 @@ export default function LandingPage() {
                     </li>
                   ))}
                 </ul>
-                <button className={`w-full font-bold uppercase tracking-wider text-sm py-3 rounded-sm transition-all ${i === 1 ? 'bg-[#ccff00] text-black hover:bg-[#b3e600]' : 'bg-zinc-800 text-white hover:bg-zinc-700'}`}>
+                <Link
+                  to={`${registerUrl}${plan.plan_id ? `&plan=${encodeURIComponent(plan.plan_id)}` : ''}`}
+                  className={`w-full inline-flex items-center justify-center font-bold uppercase tracking-wider text-sm py-3 rounded-sm transition-all ${i === 1 ? 'bg-[#ccff00] text-black hover:bg-[#b3e600]' : 'bg-zinc-800 text-white hover:bg-zinc-700'}`}
+                >
                   Assinar
-                </button>
+                </Link>
               </motion.div>
             )) : (
               [
@@ -131,9 +144,12 @@ export default function LandingPage() {
                     <span className="text-4xl font-bold">R$ {plan.valor.toFixed(2).replace('.', ',')}</span>
                     <span className="text-zinc-500 text-sm ml-1">/{plan.dias} dias</span>
                   </div>
-                  <button className={`w-full font-bold uppercase tracking-wider text-sm py-3 rounded-sm ${i === 1 ? 'bg-[#ccff00] text-black' : 'bg-zinc-800 text-white'}`}>
+                  <Link
+                    to={registerUrl}
+                    className={`w-full inline-flex items-center justify-center font-bold uppercase tracking-wider text-sm py-3 rounded-sm ${i === 1 ? 'bg-[#ccff00] text-black' : 'bg-zinc-800 text-white'}`}
+                  >
                     Assinar
-                  </button>
+                  </Link>
                 </motion.div>
               ))
             )}
@@ -147,18 +163,29 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-16">
             <motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}>
               <h2 className="font-heading text-3xl md:text-5xl font-bold tracking-tight uppercase mb-6">Entre em<br /><span className="text-[#ccff00]">contato</span></h2>
-              <p className="text-zinc-400 text-lg mb-8 leading-relaxed">Fale conosco e descubra como o GymBro pode transformar a gestao da sua academia.</p>
+              <p className="text-zinc-400 text-lg mb-8 leading-relaxed">Canal direto para contratacao e suporte comercial da plataforma.</p>
               <div className="space-y-4">
-                {[
-                  { icon: Mail, text: 'contato@gymbro.com.br' },
-                  { icon: Phone, text: '(11) 99999-9999' },
-                  { icon: MapPin, text: 'Sao Paulo, SP - Brasil' },
-                ].map((item, i) => (
+                {contactItems.map((item, i) => (
                   <div key={i} className="flex items-center gap-3 text-zinc-300">
                     <item.icon className="w-5 h-5 text-[#ccff00]" />
-                    <span>{item.text}</span>
+                    <div className="flex flex-col">
+                      <span className="text-[11px] uppercase tracking-wide text-zinc-500">{item.label}</span>
+                      {item.href ? (
+                        <a href={item.href} className="hover:text-white transition-colors">{item.text}</a>
+                      ) : (
+                        <span>{item.text}</span>
+                      )}
+                    </div>
                   </div>
                 ))}
+              </div>
+              <div className="mt-8">
+                <Link
+                  to={registerUrl}
+                  className="inline-flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-6 py-3 rounded-sm hover:bg-[#b3e600] transition-all"
+                >
+                  Assinar agora <ChevronRight className="w-4 h-4" />
+                </Link>
               </div>
             </motion.div>
             <motion.form initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
@@ -176,12 +203,15 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="border-t border-zinc-800 py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
           <div className="flex items-center gap-2">
             <Dumbbell className="w-5 h-5 text-[#ccff00]" />
             <span className="font-heading text-lg font-bold uppercase">GymBro</span>
           </div>
-          <p className="text-zinc-500 text-sm">&copy; 2026 GymBro. Todos os direitos reservados.</p>
+          <div className="text-sm text-zinc-400">
+            <p>Contato: juannicarosa@gmail.com | (33) 98851-5895 | Machacalis/MG</p>
+            <p className="text-zinc-500">&copy; 2026 GymBro. Todos os direitos reservados.</p>
+          </div>
         </div>
       </footer>
     </div>

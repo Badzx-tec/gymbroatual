@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Dumbbell, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -7,6 +7,7 @@ import { api } from '../api';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const isPlatformSubdomain = /^admin\./i.test(window.location.hostname);
   const [mode, setMode] = useState('login');
   const [name, setName] = useState('');
@@ -21,6 +22,18 @@ export default function LoginPage() {
   const [showRegisterConfirmPw, setShowRegisterConfirmPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [paymentRequired, setPaymentRequired] = useState(null);
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const requestedMode = params.get('mode');
+    if (requestedMode === 'register' && !isPlatformSubdomain) {
+      setMode('register');
+      return;
+    }
+    if (requestedMode === 'verify' && !isPlatformSubdomain) {
+      setMode('verify');
+    }
+  }, [location.search, isPlatformSubdomain]);
 
   const handleRegister = async (e) => {
     e.preventDefault();

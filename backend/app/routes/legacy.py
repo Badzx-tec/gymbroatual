@@ -7,6 +7,7 @@ from fastapi import (
     Depends,
     Header,
     HTTPException,
+    Query,
     Request,
     WebSocket,
     WebSocketDisconnect,
@@ -134,7 +135,10 @@ async def dashboard_charts(actor: dict = Depends(require_admin_actor())) -> dict
 
 
 @router.get("/access-logs")
-async def access_logs(limit: int = 100, actor: dict = Depends(require_admin_actor())):
+async def access_logs(
+    limit: int = Query(default=100, ge=1, le=1000),
+    actor: dict = Depends(require_admin_actor()),
+):
     return await gym_routes.access_logs(limit=limit, owner=actor)
 
 
@@ -217,7 +221,10 @@ async def academy_checkout(_: dict, actor: dict = Depends(require_roles("OWNER",
 
 
 @router.get("/notifications")
-async def notifications(limit: int = 50, actor: dict = Depends(require_admin_actor())):
+async def notifications(
+    limit: int = Query(default=50, ge=1, le=300),
+    actor: dict = Depends(require_admin_actor()),
+):
     db = get_db()
     return (
         await db.notifications.find({"owner_id": actor["owner_id"]}, {"_id": 0})
@@ -297,10 +304,13 @@ async def catraca_commands(actor: dict = Depends(require_admin_actor())):
 
 
 @router.get("/webhook-logs")
-async def webhook_logs(limit: int = 50, actor: dict = Depends(require_admin_actor())):
+async def webhook_logs(
+    limit: int = Query(default=50, ge=1, le=300),
+    actor: dict = Depends(require_admin_actor()),
+):
     db = get_db()
     return (
-        await db.billing_events.find({}, {"_id": 0})
+        await db.billing_events.find({"owner_id": actor["owner_id"]}, {"_id": 0})
         .sort("received_at", -1)
         .limit(limit)
         .to_list(limit)
@@ -471,7 +481,9 @@ async def student_progress(
 
 @router.get("/students/{student_id}/progress")
 async def student_progress_list(
-    student_id: str, actor: dict = Depends(require_admin_actor()), limit: int = 50
+    student_id: str,
+    actor: dict = Depends(require_admin_actor()),
+    limit: int = Query(default=50, ge=1, le=300),
 ):
     db = get_db()
     records = (
