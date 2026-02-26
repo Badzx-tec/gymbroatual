@@ -38,6 +38,8 @@ class OwnerOut(BaseModel):
     email: EmailStr
     email_verified: bool
     gym_id: str
+    role: str = "OWNER"
+    actor_type: str = "owner"
 
 
 class LoginOut(BaseModel):

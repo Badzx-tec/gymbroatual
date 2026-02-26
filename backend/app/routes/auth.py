@@ -49,6 +49,8 @@ def _owner_out(owner: dict) -> OwnerOut:
         email=owner["email"],
         email_verified=owner.get("email_verified", False),
         gym_id=owner["gym_id"],
+        role=str(owner.get("role") or "OWNER").upper(),
+        actor_type="owner",
     )
 
 
