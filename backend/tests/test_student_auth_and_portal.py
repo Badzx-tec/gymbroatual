@@ -156,8 +156,22 @@ class FakeDb:
         )
         self.access_logs = FakeCollection(
             [
-                {"log_id": "log_1", "owner_id": "own_1", "student_id": "std_1", "created_at": now},
-                {"log_id": "log_2", "owner_id": "own_1", "student_id": "std_2", "created_at": now},
+                {
+                    "log_id": "log_1",
+                    "owner_id": "own_1",
+                    "gym_id": "gym_1",
+                    "student_id": "std_1",
+                    "credential": "123456",
+                    "created_at": now,
+                },
+                {
+                    "log_id": "log_2",
+                    "owner_id": "own_1",
+                    "gym_id": "gym_1",
+                    "student_id": "std_2",
+                    "credential": "987654",
+                    "created_at": now,
+                },
             ]
         )
         self.notifications = FakeCollection(
@@ -219,6 +233,9 @@ async def test_student_portal_returns_only_own_data(monkeypatch):
     assert response["student"]["student_id"] == "std_1"
     assert all(item["student_id"] == "std_1" for item in response["recent_access_logs"])
     assert all(item["student_id"] == "std_1" for item in response["notifications"])
+    assert all("credential" not in item for item in response["recent_access_logs"])
+    assert all("owner_id" not in item for item in response["recent_access_logs"])
+    assert response["recent_access_logs"][0]["credential_masked"] == "**3456"
     assert "access_context" in response
 
 
@@ -253,3 +270,19 @@ async def test_student_portal_billing_returns_only_own_contract_data(monkeypatch
     assert all(item["contract_id"] == "ctr_1" for item in response["events"])
     assert all("internal_notes" not in item for item in response["contracts"])
     assert all("actor_id" not in item for item in response["events"])
+
+
+@pytest.mark.asyncio
+async def test_student_portal_access_logs_sanitized(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_portal, "get_db", lambda: db)
+
+    actor = {"owner_id": "own_1", "student_id": "std_1", "actor_type": "student", "role": "STUDENT"}
+    response = await student_portal.student_access_logs(limit=50, actor=actor)
+
+    assert len(response) == 1
+    assert response[0]["student_id"] == "std_1"
+    assert "owner_id" not in response[0]
+    assert "gym_id" not in response[0]
+    assert "credential" not in response[0]
+    assert response[0]["credential_masked"] == "**3456"

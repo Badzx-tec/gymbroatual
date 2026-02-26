@@ -647,3 +647,71 @@ async def test_list_reconcile_runs_is_owner_scoped_and_sorted(monkeypatch):
     assert result[0]["run_id"] == "sbr_new"
     assert result[1]["run_id"] == "sbr_old"
     assert all(item["owner_id"] == "own_1" for item in result)
+
+
+@pytest.mark.asyncio
+async def test_contract_detail_redacts_internal_fields_for_reception(monkeypatch):
+    db = FakeDb()
+    now = datetime.now(timezone.utc)
+    db.student_contracts.docs.append(
+        {
+            "contract_id": "ctr_detail",
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "student_id": "std_1",
+            "student_name": "Aluno Teste",
+            "plan_id": "pln_1",
+            "plan_name": "Mensal",
+            "amount": 149.9,
+            "currency": "BRL",
+            "duration_days": 30,
+            "billing_cycle": "monthly",
+            "billing_day": 1,
+            "manual_end_override": False,
+            "current_period_start": now - timedelta(days=5),
+            "current_period_end": now + timedelta(days=25),
+            "next_billing_at": now + timedelta(days=25),
+            "contract_status": "active",
+            "financial_status": "pending",
+            "access_status": "allowed",
+            "status": "active",
+            "auto_renew": True,
+            "notes": "visivel",
+            "internal_notes": "segredo interno",
+            "manual_overrides": [{"field": "amount", "before": 100, "after": 149.9}],
+            "scheduled_actions": [],
+            "freeze_periods": [],
+            "created_at": now - timedelta(days=5),
+            "updated_at": now - timedelta(days=1),
+        }
+    )
+    db.student_billing_events.docs.append(
+        {
+            "event_id": "evt_detail_1",
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "contract_id": "ctr_detail",
+            "event_type": "contract_updated",
+            "actor_id": "emp_secret",
+            "created_at": now,
+        }
+    )
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+
+    reception_actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "RECEPTION"}
+    reception_detail = await student_billing.get_contract_detail(
+        contract_id="ctr_detail",
+        actor=reception_actor,
+    )
+
+    assert "internal_notes" not in reception_detail["contract"]
+    assert "manual_overrides" not in reception_detail["contract"]
+    assert "actor_id" not in reception_detail["events"][0]
+
+    manager_actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "MANAGER"}
+    manager_detail = await student_billing.get_contract_detail(
+        contract_id="ctr_detail",
+        actor=manager_actor,
+    )
+    assert manager_detail["contract"]["internal_notes"] == "segredo interno"
+    assert manager_detail["events"][0]["actor_id"] == "emp_secret"

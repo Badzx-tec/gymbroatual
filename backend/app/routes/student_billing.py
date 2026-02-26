@@ -1,5 +1,6 @@
-import secrets
 import logging
+import re
+import secrets
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -33,8 +34,8 @@ from app.services.student_contracts import (
     ensure_transition,
     infer_access_status,
     legacy_status,
-    refresh_contract_state,
     period_end,
+    refresh_contract_state,
     utc_now,
 )
 
@@ -260,6 +261,21 @@ def _matches_status_filters(
     return True
 
 
+def _sanitize_contract_for_role(contract: dict, *, role: str) -> dict:
+    safe = clean_doc(contract) or {}
+    if role not in {"OWNER", "MANAGER"}:
+        safe.pop("internal_notes", None)
+        safe.pop("manual_overrides", None)
+    return safe
+
+
+def _sanitize_event_for_role(event: dict, *, role: str) -> dict:
+    safe = clean_doc(event) or {}
+    if role not in {"OWNER", "MANAGER"}:
+        safe.pop("actor_id", None)
+    return safe
+
+
 # Endpoints are defined below.
 
 
@@ -365,15 +381,34 @@ async def list_contracts(
     actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION")),
 ):
     db = get_db()
-    query = {"owner_id": actor["owner_id"]}
+    query: dict = {"owner_id": actor["owner_id"]}
     if student_id:
         query["student_id"] = student_id
+    if status:
+        query["status"] = str(status).strip().lower()
+    if contract_status:
+        query["contract_status"] = str(contract_status).strip().lower()
+    if financial_status:
+        query["financial_status"] = str(financial_status).strip().lower()
+    if access_status:
+        query["access_status"] = str(access_status).strip().lower()
+    if plan_id:
+        query["plan_id"] = plan_id
+    if q.strip():
+        term = re.escape(q.strip())
+        query["$or"] = [
+            {"contract_id": {"$regex": term, "$options": "i"}},
+            {"student_name": {"$regex": term, "$options": "i"}},
+            {"student_id": {"$regex": term, "$options": "i"}},
+            {"plan_name": {"$regex": term, "$options": "i"}},
+            {"plan_id": {"$regex": term, "$options": "i"}},
+        ]
 
     docs = (
         await db.student_contracts.find(query, {"_id": 0})
         .sort("created_at", -1)
-        .limit(limit * 2)
-        .to_list(limit * 2)
+        .limit(limit)
+        .to_list(limit)
     )
     output: list[dict] = []
     for item in docs:
@@ -410,6 +445,7 @@ async def get_contract_detail(
     actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION")),
 ):
     db = get_db()
+    role = str(actor.get("role") or "").upper()
     contract = await _load_contract_for_owner(contract_id, actor)
     charges = (
         await db.student_charges.find(
@@ -430,9 +466,9 @@ async def get_contract_detail(
         .to_list(200)
     )
     return {
-        "contract": clean_doc(contract),
+        "contract": _sanitize_contract_for_role(contract, role=role),
         "charges": charges,
-        "events": events,
+        "events": [_sanitize_event_for_role(item, role=role) for item in events],
     }
 
 

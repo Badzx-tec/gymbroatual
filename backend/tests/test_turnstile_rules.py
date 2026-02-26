@@ -254,6 +254,7 @@ async def test_turnstile_access_logs_accepts_filters(monkeypatch):
                 "subject_type": "student",
                 "reason": "ok",
                 "device_id": "dev_1",
+                "credential": "1234567890",
                 "created_at": now - timedelta(minutes=10),
             },
             {
@@ -263,6 +264,7 @@ async def test_turnstile_access_logs_accepts_filters(monkeypatch):
                 "subject_type": "student",
                 "reason": "contract_access_blocked",
                 "device_id": "dev_1",
+                "credential": "555544443333",
                 "created_at": now - timedelta(minutes=5),
             },
             {
@@ -272,6 +274,7 @@ async def test_turnstile_access_logs_accepts_filters(monkeypatch):
                 "subject_type": "employee",
                 "reason": "employee_inactive",
                 "device_id": "dev_2",
+                "credential": "9988",
                 "created_at": now - timedelta(minutes=2),
             },
         ]
@@ -290,6 +293,8 @@ async def test_turnstile_access_logs_accepts_filters(monkeypatch):
 
     assert len(result) == 1
     assert result[0]["access_id"] == "acc_2"
+    assert "credential" not in result[0]
+    assert result[0]["credential_masked"] == "********3333"
 
 
 @pytest.mark.asyncio

@@ -293,6 +293,12 @@ Endpoints:
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
+### Deploy com script (recomendado)
+```bash
+cd /opt/gymbroatual
+bash scripts/deploy_droplet.sh
+```
+
 ### Ajustes low-memory
 - backend com 1 worker
 - apenas serviços essenciais

@@ -41,6 +41,24 @@ def _sanitize_event_for_student(event: dict) -> dict:
     return cleaned
 
 
+def _mask_credential(raw_value: str | None) -> str | None:
+    value = str(raw_value or "").strip()
+    if not value:
+        return None
+    if len(value) <= 4:
+        return "*" * len(value)
+    return f"{'*' * max(0, len(value) - 4)}{value[-4:]}"
+
+
+def _sanitize_access_log_for_student(log: dict) -> dict:
+    cleaned = _sanitize_doc(log) or {}
+    cleaned.pop("owner_id", None)
+    cleaned.pop("gym_id", None)
+    cleaned.pop("credential", None)
+    cleaned["credential_masked"] = _mask_credential(log.get("credential"))
+    return cleaned
+
+
 async def _load_student(actor: dict) -> dict:
     db = get_db()
     student = await db.students.find_one(
@@ -171,7 +189,7 @@ async def student_dashboard(actor: dict = Depends(require_student_actor)):
         "access_status": status,
         "access_context": access_context,
         "upcoming_charges": [_sanitize_charge_for_student(item) for item in upcoming_charges],
-        "recent_access_logs": access_logs,
+        "recent_access_logs": [_sanitize_access_log_for_student(item) for item in access_logs],
         "notifications": notifications,
     }
 
@@ -255,7 +273,7 @@ async def student_access_logs(
     actor: dict = Depends(require_student_actor),
 ):
     db = get_db()
-    return (
+    logs = (
         await db.access_logs.find(
             {"owner_id": actor["owner_id"], "student_id": actor["student_id"]},
             {"_id": 0},
@@ -264,6 +282,7 @@ async def student_access_logs(
         .limit(limit)
         .to_list(limit)
     )
+    return [_sanitize_access_log_for_student(item) for item in logs]
 
 
 @router.get("/billing")

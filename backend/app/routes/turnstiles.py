@@ -135,6 +135,24 @@ def _is_inside_time_window(current: time, start: time, end: time) -> bool:
     return current >= start or current <= end
 
 
+def _mask_credential(raw_value: str | None) -> str | None:
+    value = str(raw_value or "").strip()
+    if not value:
+        return None
+    if len(value) <= 4:
+        return "*" * len(value)
+    visible = value[-4:]
+    return f"{'*' * max(0, len(value) - 4)}{visible}"
+
+
+def _sanitize_access_log_output(entry: dict) -> dict:
+    safe = dict(entry)
+    safe.pop("_id", None)
+    safe["credential_masked"] = _mask_credential(safe.get("credential"))
+    safe.pop("credential", None)
+    return safe
+
+
 def _evaluate_student_access(student: dict | None, now: datetime) -> tuple[bool, str, dict]:
     if not student:
         return False, "student_not_found", {"rule": "student_exists"}
@@ -754,12 +772,13 @@ async def list_access_logs(
     if since_minutes > 0:
         query["created_at"] = {"$gte": datetime.now(UTC) - timedelta(minutes=since_minutes)}
 
-    return (
+    rows = (
         await db.access_logs.find(query, {"_id": 0})
         .sort("created_at", -1)
         .limit(limit)
         .to_list(limit)
     )
+    return [_sanitize_access_log_output(item) for item in rows]
 
 
 @router.get("/access-summary")
