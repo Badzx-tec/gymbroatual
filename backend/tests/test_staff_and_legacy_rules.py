@@ -103,3 +103,32 @@ async def test_create_employee_rejects_duplicate_manual_matricula(monkeypatch):
 
     assert exc.value.status_code == 409
     assert exc.value.detail == "Matricula ja cadastrada"
+
+
+@pytest.mark.asyncio
+async def test_create_employee_auto_matricula_skips_legacy_sequence(monkeypatch):
+    employees = []
+    for sequence in range(1, 56):
+        employees.append(
+            {
+                "employee_id": f"emp_{sequence}",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "name": f"Existente {sequence}",
+                "role": "RECEPTION",
+                "matricula": f"FUNC{sequence:04d}",
+                "password_hash": "hash",
+                "is_active": True,
+            }
+        )
+
+    db = FakeDb(employees=employees)
+    monkeypatch.setattr(staff, "get_db", lambda: db)
+
+    result = await staff.create_employee(
+        payload={"name": "Novo", "role": "MANAGER", "sync_shadow_student": False},
+        actor={"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER"},
+    )
+
+    assert result["matricula"] == "FUNC0056"
+    assert result["matricula_auto_generated"] is True

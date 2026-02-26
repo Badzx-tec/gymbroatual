@@ -16,6 +16,42 @@ def format_internal_code(prefix: str, sequence: int, *, width: int = 4) -> str:
     return f"{prefix.upper()}{int(sequence):0{width}d}"
 
 
+def _extract_sequence(value, prefix: str) -> int | None:
+    if value is None:
+        return None
+    code = str(value).strip().upper()
+    normalized_prefix = prefix.upper()
+    if not code.startswith(normalized_prefix):
+        return None
+    suffix = code[len(normalized_prefix) :]
+    if not suffix.isdigit():
+        return None
+    return int(suffix)
+
+
+async def _find_max_sequence(
+    db,
+    *,
+    owner_id: str,
+    collection_name: str,
+    prefix: str,
+    field_name: str,
+) -> int:
+    collection = getattr(db, collection_name)
+    max_sequence = 0
+
+    if hasattr(collection, "find"):
+        docs = await collection.find({"owner_id": owner_id}, {"_id": 0, field_name: 1}).to_list(10000)
+    else:
+        docs = getattr(collection, "docs", [])
+
+    for item in docs:
+        sequence = _extract_sequence(item.get(field_name), prefix)
+        if sequence is not None and sequence > max_sequence:
+            max_sequence = sequence
+    return max_sequence
+
+
 async def ensure_unique_internal_code(
     db,
     *,
@@ -57,13 +93,20 @@ async def generate_unique_internal_code(
     counter_key: str,
     field_name: str = "matricula",
     width: int = 4,
-    max_attempts: int = 50,
+    max_attempts: int = 500,
 ) -> str:
     now = datetime.now(UTC)
     counters = getattr(db, "counters", None)
     if counters is None or not hasattr(counters, "find_one_and_update"):
+        max_sequence = await _find_max_sequence(
+            db,
+            owner_id=owner_id,
+            collection_name=collection_name,
+            prefix=prefix,
+            field_name=field_name,
+        )
         collection = getattr(db, collection_name)
-        for sequence in range(1, max_attempts + 1):
+        for sequence in range(max_sequence + 1, max_sequence + max_attempts + 1):
             candidate = format_internal_code(prefix, sequence, width=width)
             if hasattr(collection, "find_one"):
                 exists = await collection.find_one(
@@ -79,6 +122,32 @@ async def generate_unique_internal_code(
             if not exists:
                 return candidate
         raise RuntimeError("Nao foi possivel gerar codigo interno unico")
+
+    # Se o contador ainda nao existe, semeia usando o maior codigo atual para evitar
+    # colisoes em bases legadas com muitas matriculas ja cadastradas.
+    counter = await counters.find_one({"owner_id": owner_id, "key": counter_key}, {"_id": 0, "value": 1})
+    if not counter:
+        seed_value = await _find_max_sequence(
+            db,
+            owner_id=owner_id,
+            collection_name=collection_name,
+            prefix=prefix,
+            field_name=field_name,
+        )
+        await counters.find_one_and_update(
+            {"owner_id": owner_id, "key": counter_key},
+            {
+                "$setOnInsert": {
+                    "owner_id": owner_id,
+                    "key": counter_key,
+                    "value": int(seed_value),
+                    "created_at": now,
+                },
+                "$set": {"updated_at": now},
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
 
     for _ in range(max_attempts):
         counter = await counters.find_one_and_update(
