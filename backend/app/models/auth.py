@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class RegisterIn(BaseModel):
@@ -21,8 +21,15 @@ class VerifyConfirmIn(BaseModel):
 
 
 class LoginIn(BaseModel):
-    email: EmailStr
+    email: EmailStr | None = None
+    identifier: str | None = None
     password: str
+
+    @model_validator(mode="after")
+    def validate_identifier(self):
+        if self.email is None and not str(self.identifier or "").strip():
+            raise ValueError("Informe email ou identifier")
+        return self
 
 
 class OwnerOut(BaseModel):

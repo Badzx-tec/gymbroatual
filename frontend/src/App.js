@@ -17,7 +17,9 @@ import StaffPage from './pages/StaffPage';
 import ProfilePage from './pages/ProfilePage';
 import PlatformAdminPage from './pages/PlatformAdminPage';
 import AdminLayout from './components/AdminLayout';
+import StudentLayout from './components/StudentLayout';
 import StudentContractsPage from './pages/StudentContractsPage';
+import StudentDashboardPage from './pages/StudentDashboardPage';
 
 function AppRouter() {
   const location = useLocation();
@@ -41,6 +43,10 @@ function AppRouter() {
         <Route path="perfil" element={<ProfilePage />} />
         <Route path="assinatura" element={<RoleRoute roles={['OWNER', 'MANAGER']}><SubscriptionPage /></RoleRoute>} />
         <Route path="cobranca" element={<RoleRoute roles={['OWNER', 'MANAGER']}><BillingCenterPage /></RoleRoute>} />
+      </Route>
+      <Route path="/aluno" element={<ProtectedRoute><StudentPortalRoute><StudentLayout /></StudentPortalRoute></ProtectedRoute>}>
+        <Route index element={<StudentDashboardPage />} />
+        <Route path="perfil" element={<ProfilePage />} />
       </Route>
       <Route
         path="/platform"
@@ -90,7 +96,7 @@ function ProtectedRoute({ children }) {
 function RoleRoute({ children, roles }) {
   const user = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
   const role = String(user.role || 'OWNER').toUpperCase();
-  if (!roles.includes(role)) return <Navigate to="/admin" replace />;
+  if (!roles.includes(role)) return <Navigate to={role === 'STUDENT' ? '/aluno' : '/admin'} replace />;
   return children;
 }
 
@@ -98,13 +104,22 @@ function AdminPortalRoute({ children }) {
   const user = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
   const role = String(user.role || '').toUpperCase();
   if (role === 'SUPER_ADMIN') return <Navigate to="/platform" replace />;
+  if (role === 'STUDENT') return <Navigate to="/aluno" replace />;
   return children;
 }
 
 function SuperAdminRoute({ children }) {
   const user = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
   const role = String(user.role || '').toUpperCase();
-  if (role !== 'SUPER_ADMIN') return <Navigate to="/admin" replace />;
+  if (role !== 'SUPER_ADMIN') return <Navigate to={role === 'STUDENT' ? '/aluno' : '/admin'} replace />;
+  return children;
+}
+
+function StudentPortalRoute({ children }) {
+  const user = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
+  const role = String(user.role || '').toUpperCase();
+  if (role === 'SUPER_ADMIN') return <Navigate to="/platform" replace />;
+  if (role !== 'STUDENT') return <Navigate to="/admin" replace />;
   return children;
 }
 

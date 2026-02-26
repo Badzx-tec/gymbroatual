@@ -9,12 +9,18 @@ from app.core.deps import require_roles
 from app.core.security import hash_password
 from app.core.time import UTC
 from app.db.mongo import get_db
+from app.services.internal_codes import (
+    ensure_unique_internal_code,
+    generate_unique_internal_code,
+    normalize_internal_code,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 ALLOWED_ROLES = {"OWNER", "MANAGER", "RECEPTION", "TRAINER"}
 TURNSTILE_FIELDS = ("tag_rfid", "biometria_id", "keypad_code", "matricula")
+EMPLOYEE_MATRICULA_PREFIX = "FUNC"
 
 
 def _clean_optional(value):
@@ -25,7 +31,9 @@ def _clean_optional(value):
 
 
 def _extract_turnstile_fields(payload: dict) -> dict:
-    return {field: _clean_optional(payload.get(field)) for field in TURNSTILE_FIELDS}
+    fields = {field: _clean_optional(payload.get(field)) for field in TURNSTILE_FIELDS}
+    fields["matricula"] = normalize_internal_code(payload.get("matricula"))
+    return fields
 
 
 def _normalize_optional_email(value) -> str | None:
@@ -168,6 +176,34 @@ async def create_employee(payload: dict, actor: dict = Depends(require_roles("OW
         raise HTTPException(status_code=400, detail="Email ja cadastrado")
 
     raw_password = payload.get("password") or secrets.token_urlsafe(8)
+    turnstile_fields = _extract_turnstile_fields(payload)
+    matricula_auto_generated = False
+    generated_matricula = None
+
+    if turnstile_fields.get("matricula"):
+        try:
+            await ensure_unique_internal_code(
+                db,
+                collection_name="employees",
+                owner_id=actor["owner_id"],
+                code=turnstile_fields["matricula"],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail="Matricula ja cadastrada") from exc
+    else:
+        try:
+            generated_matricula = await generate_unique_internal_code(
+                db,
+                owner_id=actor["owner_id"],
+                collection_name="employees",
+                prefix=EMPLOYEE_MATRICULA_PREFIX,
+                counter_key="employee_matricula",
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=500, detail="Falha ao gerar matricula") from exc
+        turnstile_fields["matricula"] = generated_matricula
+        matricula_auto_generated = True
+
     employee = {
         "employee_id": f"emp_{secrets.token_hex(6)}",
         "gym_id": actor["gym_id"],
@@ -177,7 +213,7 @@ async def create_employee(payload: dict, actor: dict = Depends(require_roles("OW
         "password_hash": hash_password(raw_password),
         "role": role,
         "is_active": True,
-        **_extract_turnstile_fields(payload),
+        **turnstile_fields,
         "created_at": datetime.now(UTC),
         "updated_at": datetime.now(UTC),
     }
@@ -193,6 +229,9 @@ async def create_employee(payload: dict, actor: dict = Depends(require_roles("OW
             result["shadow_student_id"] = shadow_student_id
         if shadow_sync_warning:
             result["shadow_sync_warning"] = shadow_sync_warning
+    if matricula_auto_generated:
+        result["matricula_auto_generated"] = True
+        result["generated_matricula"] = generated_matricula
     result["temp_password"] = raw_password
     return result
 
@@ -230,6 +269,19 @@ async def update_employee(
     for field in TURNSTILE_FIELDS:
         if field in payload:
             update_fields[field] = turnstile_fields[field]
+
+    if "matricula" in payload and turnstile_fields.get("matricula"):
+        try:
+            await ensure_unique_internal_code(
+                db,
+                collection_name="employees",
+                owner_id=actor["owner_id"],
+                code=turnstile_fields["matricula"],
+                exclude_id_field="employee_id",
+                exclude_id_value=employee_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail="Matricula ja cadastrada") from exc
 
     try:
         result = await db.employees.update_one(
@@ -340,6 +392,19 @@ async def update_employee_credentials(
         **_extract_turnstile_fields(payload),
         "updated_at": datetime.now(UTC),
     }
+    matricula = update_fields.get("matricula")
+    if matricula:
+        try:
+            await ensure_unique_internal_code(
+                db,
+                collection_name="employees",
+                owner_id=actor["owner_id"],
+                code=matricula,
+                exclude_id_field="employee_id",
+                exclude_id_value=employee_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail="Matricula ja cadastrada") from exc
     result = await db.employees.update_one(
         {"employee_id": employee_id, "owner_id": actor["owner_id"]},
         {"$set": update_fields},

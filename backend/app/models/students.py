@@ -24,6 +24,7 @@ class StudentIn(BaseModel):
     dias_frequencia: int | None = None
     tag_rfid: str | None = None
     biometria_id: str | None = None
+    auth_login_enabled: bool = True
     status: Literal["ativo", "inativo"] = "ativo"
 
     @field_validator(
@@ -51,7 +52,9 @@ class StudentIn(BaseModel):
         if value is None:
             return None
         cleaned = str(value).strip()
-        return cleaned or None
+        if not cleaned:
+            return None
+        return cleaned.lower()
 
     @field_validator("cpf", mode="before")
     @classmethod
@@ -91,6 +94,27 @@ class StudentIn(BaseModel):
         if value < 0:
             raise ValueError("dias_frequencia deve ser maior ou igual a zero")
         return value
+
+    @field_validator("matricula")
+    @classmethod
+    def normalize_matricula(cls, value: str | None):
+        if value is None:
+            return None
+        return value.upper()
+
+
+class StudentCreateIn(StudentIn):
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+    auto_generate_password: bool = False
+    force_password_reset: bool = False
+
+    @field_validator("password", mode="before")
+    @classmethod
+    def empty_password_to_none(cls, value):
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
 
 
 class StudentOut(StudentIn):

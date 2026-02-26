@@ -17,7 +17,7 @@ from openpyxl.utils import get_column_letter
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
-from app.core.deps import get_current_actor, require_active_subscription, require_roles
+from app.core.deps import require_admin_actor, require_roles
 from app.core.time import UTC
 from app.db.mongo import get_db
 
@@ -124,22 +124,22 @@ async def logout() -> dict:
 
 
 @router.get("/dashboard")
-async def dashboard(actor: dict = Depends(require_active_subscription)):
+async def dashboard(actor: dict = Depends(require_admin_actor())):
     return await gym_routes.dashboard(actor)
 
 
 @router.get("/dashboard/charts")
-async def dashboard_charts(actor: dict = Depends(require_active_subscription)) -> dict:
+async def dashboard_charts(actor: dict = Depends(require_admin_actor())) -> dict:
     return await gym_routes.dashboard_charts(actor)
 
 
 @router.get("/access-logs")
-async def access_logs(limit: int = 100, actor: dict = Depends(require_active_subscription)):
+async def access_logs(limit: int = 100, actor: dict = Depends(require_admin_actor())):
     return await gym_routes.access_logs(limit=limit, owner=actor)
 
 
 @router.get("/plans")
-async def plans(actor: dict = Depends(require_active_subscription)):
+async def plans(actor: dict = Depends(require_admin_actor())):
     return await gym_routes.list_plans(actor)
 
 
@@ -149,46 +149,46 @@ async def plans_public():
 
 
 @router.post("/plans")
-async def create_plan(payload: dict, actor: dict = Depends(require_active_subscription)):
+async def create_plan(payload: dict, actor: dict = Depends(require_admin_actor())):
     return await gym_routes.create_plan(payload, actor)
 
 
 @router.put("/plans/{plan_id}")
 async def update_plan(
-    plan_id: str, payload: dict, actor: dict = Depends(require_active_subscription)
+    plan_id: str, payload: dict, actor: dict = Depends(require_admin_actor())
 ):
     return await gym_routes.update_plan(plan_id, payload, actor)
 
 
 @router.delete("/plans/{plan_id}")
-async def delete_plan(plan_id: str, actor: dict = Depends(require_active_subscription)):
+async def delete_plan(plan_id: str, actor: dict = Depends(require_admin_actor())):
     return await gym_routes.delete_plan(plan_id, actor)
 
 
 @router.get("/academies")
-async def list_academies(actor: dict = Depends(require_active_subscription)):
+async def list_academies(actor: dict = Depends(require_admin_actor())):
     return await gym_routes.list_gyms(actor)
 
 
 @router.post("/academies")
-async def create_academy(payload: dict, actor: dict = Depends(require_active_subscription)):
+async def create_academy(payload: dict, actor: dict = Depends(require_admin_actor())):
     raise HTTPException(status_code=403, detail="Gestao de franquias desabilitada")
 
 
 @router.put("/academies/{academy_id}")
 async def update_academy(
-    academy_id: str, payload: dict, actor: dict = Depends(require_active_subscription)
+    academy_id: str, payload: dict, actor: dict = Depends(require_admin_actor())
 ):
     raise HTTPException(status_code=403, detail="Gestao de franquias desabilitada")
 
 
 @router.delete("/academies/{academy_id}")
-async def delete_academy(academy_id: str, actor: dict = Depends(require_active_subscription)):
+async def delete_academy(academy_id: str, actor: dict = Depends(require_admin_actor())):
     raise HTTPException(status_code=403, detail="Gestao de franquias desabilitada")
 
 
 @router.get("/academies/{academy_id}/stats")
-async def academy_stats(academy_id: str, actor: dict = Depends(require_active_subscription)):
+async def academy_stats(academy_id: str, actor: dict = Depends(require_admin_actor())):
     db = get_db()
     q = {"owner_id": actor["owner_id"], "gym_id": academy_id}
     total = await db.students.count_documents(q)
@@ -217,7 +217,7 @@ async def academy_checkout(_: dict, actor: dict = Depends(require_roles("OWNER",
 
 
 @router.get("/notifications")
-async def notifications(limit: int = 50, actor: dict = Depends(require_active_subscription)):
+async def notifications(limit: int = 50, actor: dict = Depends(require_admin_actor())):
     db = get_db()
     return (
         await db.notifications.find({"owner_id": actor["owner_id"]}, {"_id": 0})
@@ -228,7 +228,7 @@ async def notifications(limit: int = 50, actor: dict = Depends(require_active_su
 
 
 @router.post("/notifications/check-expiring")
-async def notifications_check(actor: dict = Depends(require_active_subscription)):
+async def notifications_check(actor: dict = Depends(require_admin_actor())):
     db = get_db()
     count = 0
     for student in await db.students.find(
@@ -255,7 +255,7 @@ async def notifications_check(actor: dict = Depends(require_active_subscription)
 
 
 @router.put("/notifications/{notif_id}/read")
-async def notification_read(notif_id: str, actor: dict = Depends(require_active_subscription)):
+async def notification_read(notif_id: str, actor: dict = Depends(require_admin_actor())):
     db = get_db()
     await db.notifications.update_one(
         {"notif_id": notif_id, "owner_id": actor["owner_id"]}, {"$set": {"lida": True}}
@@ -264,14 +264,14 @@ async def notification_read(notif_id: str, actor: dict = Depends(require_active_
 
 
 @router.delete("/notifications/{notif_id}")
-async def notification_delete(notif_id: str, actor: dict = Depends(require_active_subscription)):
+async def notification_delete(notif_id: str, actor: dict = Depends(require_admin_actor())):
     db = get_db()
     await db.notifications.delete_one({"notif_id": notif_id, "owner_id": actor["owner_id"]})
     return {"message": "ok"}
 
 
 @router.post("/catraca/command")
-async def catraca_command(payload: dict, actor: dict = Depends(require_active_subscription)):
+async def catraca_command(payload: dict, actor: dict = Depends(require_admin_actor())):
     db = get_db()
     doc = {
         "cmd_id": f"cmd_{secrets.token_hex(6)}",
@@ -286,7 +286,7 @@ async def catraca_command(payload: dict, actor: dict = Depends(require_active_su
 
 
 @router.get("/catraca/commands")
-async def catraca_commands(actor: dict = Depends(require_active_subscription)):
+async def catraca_commands(actor: dict = Depends(require_admin_actor())):
     db = get_db()
     return (
         await db.catraca_commands.find({"owner_id": actor["owner_id"]}, {"_id": 0})
@@ -297,7 +297,7 @@ async def catraca_commands(actor: dict = Depends(require_active_subscription)):
 
 
 @router.get("/webhook-logs")
-async def webhook_logs(limit: int = 50, actor: dict = Depends(require_active_subscription)):
+async def webhook_logs(limit: int = 50, actor: dict = Depends(require_admin_actor())):
     db = get_db()
     return (
         await db.billing_events.find({}, {"_id": 0})
@@ -308,7 +308,7 @@ async def webhook_logs(limit: int = 50, actor: dict = Depends(require_active_sub
 
 
 @router.get("/reports/students/excel")
-async def export_students_excel(actor: dict = Depends(require_active_subscription)):
+async def export_students_excel(actor: dict = Depends(require_admin_actor())):
     db = get_db()
     students = (
         await db.students.find({"owner_id": actor["owner_id"]}, {"_id": 0})
@@ -344,7 +344,7 @@ async def export_students_excel(actor: dict = Depends(require_active_subscriptio
 
 
 @router.get("/reports/students/pdf")
-async def export_students_pdf(actor: dict = Depends(require_active_subscription)):
+async def export_students_pdf(actor: dict = Depends(require_admin_actor())):
     db = get_db()
     students = (
         await db.students.find({"owner_id": actor["owner_id"]}, {"_id": 0})
@@ -368,7 +368,7 @@ async def export_students_pdf(actor: dict = Depends(require_active_subscription)
 
 
 @router.get("/reports/access-logs/excel")
-async def export_access_excel(actor: dict = Depends(require_active_subscription)):
+async def export_access_excel(actor: dict = Depends(require_admin_actor())):
     db = get_db()
     logs = (
         await db.access_logs.find({"owner_id": actor["owner_id"]}, {"_id": 0})
@@ -443,7 +443,7 @@ async def export_financial_excel(actor: dict = Depends(require_roles("OWNER", "M
 
 @router.post("/students/{student_id}/biometria")
 async def students_biometria(
-    student_id: str, payload: dict, actor: dict = Depends(require_active_subscription)
+    student_id: str, payload: dict, actor: dict = Depends(require_admin_actor())
 ):
     db = get_db()
     await db.students.update_one(
@@ -455,7 +455,7 @@ async def students_biometria(
 
 @router.post("/students/{student_id}/progress")
 async def student_progress(
-    student_id: str, payload: dict, actor: dict = Depends(require_active_subscription)
+    student_id: str, payload: dict, actor: dict = Depends(require_admin_actor())
 ):
     db = get_db()
     doc = {
@@ -471,7 +471,7 @@ async def student_progress(
 
 @router.get("/students/{student_id}/progress")
 async def student_progress_list(
-    student_id: str, actor: dict = Depends(require_active_subscription), limit: int = 50
+    student_id: str, actor: dict = Depends(require_admin_actor()), limit: int = 50
 ):
     db = get_db()
     records = (
@@ -487,7 +487,7 @@ async def student_progress_list(
 
 @router.post("/students/{student_id}/passkey/register")
 async def register_passkey(
-    student_id: str, _: dict, actor: dict = Depends(require_active_subscription)
+    student_id: str, _: dict, actor: dict = Depends(require_admin_actor())
 ):
     return {
         "message": "Passkey placeholder",
@@ -497,7 +497,7 @@ async def register_passkey(
 
 
 @router.post("/students/{student_id}/passkey/register/options")
-async def passkey_opts(student_id: str, actor: dict = Depends(require_active_subscription)):
+async def passkey_opts(student_id: str, actor: dict = Depends(require_admin_actor())):
     return {
         "state_id": f"st_{student_id}",
         "publicKey": {"challenge": "", "user": {"id": ""}, "excludeCredentials": []},
@@ -506,18 +506,18 @@ async def passkey_opts(student_id: str, actor: dict = Depends(require_active_sub
 
 @router.post("/students/{student_id}/passkey/register/verify")
 async def passkey_verify(
-    student_id: str, _: dict, actor: dict = Depends(require_active_subscription)
+    student_id: str, _: dict, actor: dict = Depends(require_admin_actor())
 ):
     return {"message": "ok", "student_id": student_id, "owner_id": actor["owner_id"]}
 
 
 @router.get("/students/{student_id}/passkeys")
-async def list_passkeys(student_id: str, actor: dict = Depends(require_active_subscription)):
+async def list_passkeys(student_id: str, actor: dict = Depends(require_admin_actor())):
     return {"student_id": student_id, "webauthn_credentials": []}
 
 
 @router.post("/seed")
-async def seed(actor: dict = Depends(get_current_actor)):
+async def seed(actor: dict = Depends(require_admin_actor())):
     db = get_db()
     now = datetime.now(UTC)
     plans = await db.plans.count_documents({"owner_id": actor["owner_id"]})
@@ -582,3 +582,4 @@ async def turnstile_events_alias(
         request=request,
         x_device_token=x_device_token,
     )
+

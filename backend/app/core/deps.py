@@ -69,6 +69,29 @@ async def get_current_actor(authorization: str | None = Header(default=None)) ->
         actor["role"] = actor.get("role") or payload.get("role", "RECEPTION")
         return actor
 
+    if actor_type == "student":
+        actor = await db.students.find_one(
+            {
+                "student_id": payload.get("sub"),
+                "is_employee_shadow": {"$ne": True},
+                "auth_login_enabled": {"$ne": False},
+            },
+            {"_id": 0, "password_hash": 0},
+        )
+        if not actor:
+            raise HTTPException(status_code=401, detail="Aluno nao encontrado")
+        actor["actor_type"] = "student"
+        actor["student_id"] = actor.get("student_id") or payload.get("sub")
+        actor["owner_id"] = actor.get("owner_id") or payload.get("owner_id")
+        actor["gym_id"] = actor.get("gym_id") or payload.get("gym_id")
+        if not actor["gym_id"] and actor.get("owner_id"):
+            gym = await db.gyms.find_one({"owner_id": actor["owner_id"]}, {"_id": 0, "gym_id": 1})
+            actor["gym_id"] = (gym or {}).get("gym_id")
+        if not actor["owner_id"]:
+            raise HTTPException(status_code=409, detail="Academia nao vinculada ao aluno")
+        actor["role"] = "STUDENT"
+        return actor
+
     owner = await db.owners.find_one({"owner_id": payload.get("sub")}, {"_id": 0})
     if not owner:
         raise HTTPException(status_code=401, detail="Usuario nao encontrado")
@@ -104,3 +127,25 @@ def require_roles(*allowed_roles: str) -> Callable:
         return actor
 
     return dependency
+
+
+def require_admin_actor() -> Callable:
+    async def dependency(actor: dict = Depends(require_active_subscription)) -> dict:
+        actor_type = str(actor.get("actor_type") or "").lower()
+        if actor_type == "student":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Area administrativa restrita"
+            )
+        if actor_type == "super_admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Use o painel da plataforma"
+            )
+        return actor
+
+    return dependency
+
+
+async def require_student_actor(actor: dict = Depends(require_active_subscription)) -> dict:
+    if str(actor.get("actor_type") or "").lower() != "student":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Area do aluno restrita")
+    return actor

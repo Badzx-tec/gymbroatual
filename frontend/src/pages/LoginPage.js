@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [name, setName] = useState('');
   const [gymName, setGymName] = useState('');
   const [email, setEmail] = useState('');
+  const [loginIdentifier, setLoginIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [code, setCode] = useState('');
@@ -64,7 +65,7 @@ export default function LoginPage() {
     setLoading(true);
     setPaymentRequired(null);
     try {
-      const result = await api.login({ email, password });
+      const result = await api.login({ identifier: loginIdentifier, password });
       localStorage.setItem('gymbro_token', result.token);
       localStorage.setItem('gymbro_user', JSON.stringify(result.user));
       const role = String(result?.user?.role || '').toUpperCase();
@@ -72,6 +73,11 @@ export default function LoginPage() {
       if (role === 'SUPER_ADMIN') {
         toast.success('Login administrativo realizado.');
         navigate('/platform');
+        return;
+      }
+      if (role === 'STUDENT') {
+        toast.success('Login do aluno realizado.');
+        navigate('/aluno');
         return;
       }
 
@@ -86,9 +92,14 @@ export default function LoginPage() {
       navigate('/admin');
     } catch (err) {
       if (err.code === 'NEED_EMAIL_VERIFICATION') {
-        await api.verifyStart(email);
-        toast.error('Verifique seu e-mail para liberar o login.');
-        setMode('verify');
+        if (loginIdentifier.includes('@')) {
+          await api.verifyStart(loginIdentifier);
+          setEmail(loginIdentifier);
+          toast.error('Verifique seu e-mail para liberar o login.');
+          setMode('verify');
+        } else {
+          toast.error('Conta pendente de verificacao por e-mail.');
+        }
       } else if (err.code === 'PAYMENT_REQUIRED') {
         setPaymentRequired({
           checkoutUrl: err.checkout_url || '',
@@ -138,8 +149,8 @@ export default function LoginPage() {
 
           {mode === 'login' && (
             <form onSubmit={handleLogin} className="space-y-4">
-              <label className="text-sm font-medium text-zinc-400 mb-1 block">E-mail</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
+              <label className="text-sm font-medium text-zinc-400 mb-1 block">Login (e-mail, CPF ou matricula)</label>
+              <input value={loginIdentifier} onChange={(e) => setLoginIdentifier(e.target.value)} required placeholder="ex.: aluno@email.com, 000.000.000-00 ou ALU0001" className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
               <label className="text-sm font-medium text-zinc-400 mb-1 block">Senha</label>
               <div className="relative">
                 <input type={showLoginPw ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 pr-12" />

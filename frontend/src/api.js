@@ -97,6 +97,11 @@ export const api = {
   updateProfile: (data) => request('/api/auth/profile', { method: 'PUT', body: JSON.stringify(data) }),
   changeMyPassword: (data) => request('/api/auth/profile/password', { method: 'POST', body: JSON.stringify(data) }),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
+  studentPortalDashboard: () => request('/api/student/dashboard'),
+  studentPortalProfile: () => request('/api/student/profile'),
+  updateStudentPortalProfile: (data) => request('/api/student/profile', { method: 'PUT', body: JSON.stringify(data) }),
+  studentPortalContracts: (limit = 20) => request(`/api/student/contracts?limit=${limit}`),
+  studentPortalAccessLogs: (limit = 50) => request(`/api/student/access-logs?limit=${limit}`),
 
   dashboard: () => request('/api/dashboard'),
   dashboardCharts: () => request('/api/dashboard/charts'),

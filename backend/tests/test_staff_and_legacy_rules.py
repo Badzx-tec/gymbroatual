@@ -19,11 +19,28 @@ class FakeCollection:
     async def insert_one(self, doc: dict):
         self.docs.append(dict(doc))
 
+    async def find_one_and_update(self, query: dict, update: dict, upsert: bool = False, **_kwargs):
+        target = await self.find_one(query)
+        if not target:
+            if not upsert:
+                return None
+            target = dict(query)
+            self.docs.append(target)
+            for key, value in update.get("$setOnInsert", {}).items():
+                target[key] = value
+
+        for key, value in update.get("$inc", {}).items():
+            target[key] = int(target.get(key, 0)) + int(value)
+        for key, value in update.get("$set", {}).items():
+            target[key] = value
+        return target
+
 
 class FakeDb:
     def __init__(self, gyms=None, employees=None):
         self.gyms = FakeCollection(gyms)
         self.employees = FakeCollection(employees)
+        self.counters = FakeCollection([])
 
 
 @pytest.mark.asyncio
@@ -50,4 +67,39 @@ async def test_create_employee_accepts_missing_email(monkeypatch):
 
     assert result["name"] == "Atendente"
     assert result["email"] is None
+    assert result["matricula"] == "FUNC0001"
+    assert result["matricula_auto_generated"] is True
     assert "temp_password" in result
+
+
+@pytest.mark.asyncio
+async def test_create_employee_rejects_duplicate_manual_matricula(monkeypatch):
+    db = FakeDb(
+        employees=[
+            {
+                "employee_id": "emp_1",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "name": "Existente",
+                "role": "RECEPTION",
+                "matricula": "FUNC0099",
+                "password_hash": "hash",
+                "is_active": True,
+            }
+        ]
+    )
+    monkeypatch.setattr(staff, "get_db", lambda: db)
+
+    with pytest.raises(HTTPException) as exc:
+        await staff.create_employee(
+            payload={
+                "name": "Novo",
+                "role": "RECEPTION",
+                "matricula": "func0099",
+                "sync_shadow_student": False,
+            },
+            actor={"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER"},
+        )
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "Matricula ja cadastrada"

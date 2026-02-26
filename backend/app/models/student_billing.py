@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 ContractStatus = Literal["active", "past_due", "canceled", "expired"]
 ChargeStatus = Literal["open", "paid", "overdue", "canceled"]
-PaymentMethod = Literal["pix", "card", "cash", "boleto", "other"]
+PaymentMethod = Literal["pix", "card", "cash", "boleto", "transfer", "other"]
 ChargeCleanupScope = Literal["pending", "overdue"]
 
 
@@ -15,6 +15,7 @@ class ContractCreateIn(BaseModel):
     amount: float | None = Field(default=None, gt=0)
     duration_days: int | None = Field(default=None, ge=1, le=3650)
     start_at: datetime | None = None
+    end_at: datetime | None = None
     auto_renew: bool = False
     notes: str | None = None
     create_initial_charge: bool = True
@@ -30,7 +31,8 @@ class ContractOut(BaseModel):
     plan_name: str | None = None
     amount: float
     currency: str = "BRL"
-    duration_days: int
+    duration_days: int | None = None
+    manual_end_override: bool = False
     current_period_start: datetime
     current_period_end: datetime
     status: ContractStatus

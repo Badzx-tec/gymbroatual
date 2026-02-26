@@ -9,6 +9,7 @@ from . import (
     platform_admin,
     staff,
     student_billing,
+    student_portal,
     students,
     tolletus,
     turnstiles,
@@ -24,6 +25,7 @@ api_router.include_router(staff.router, prefix="/staff", tags=["staff"])
 api_router.include_router(
     student_billing.router, prefix="/student-billing", tags=["student-billing"]
 )
+api_router.include_router(student_portal.router, prefix="/student", tags=["student"])
 api_router.include_router(turnstiles.router, prefix="/turnstiles", tags=["turnstiles"])
 api_router.include_router(ops.router, prefix="/ops", tags=["ops"])
 api_router.include_router(platform_admin.router, prefix="/platform", tags=["platform"])

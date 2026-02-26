@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -43,7 +43,11 @@ def _coerce_datetime_utc(value) -> datetime | None:
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
-            return None
+            try:
+                parsed_date = date.fromisoformat(value)
+            except ValueError:
+                return None
+            parsed = datetime.combine(parsed_date, datetime.min.time())
         if parsed.tzinfo is None:
             return parsed.replace(tzinfo=UTC)
         return parsed.astimezone(UTC)
@@ -273,13 +277,23 @@ async def create_contract(
             status_code=400,
             detail="Informe amount ou use um plan_id com valor configurado",
         )
+    start_at = _coerce_datetime_utc(payload.start_at) or now
+    duration_from_plan = (plan_doc or {}).get("duracao_dias")
     duration_days = (
         int(payload.duration_days)
         if payload.duration_days is not None
-        else int((plan_doc or {}).get("duracao_dias") or 30)
+        else (int(duration_from_plan) if duration_from_plan is not None else None)
     )
-    start_at = _coerce_datetime_utc(payload.start_at) or now
-    period_end = _period_end(start_at, duration_days)
+    auto_period_end = _period_end(start_at, duration_days) if duration_days else None
+    manual_period_end = _coerce_datetime_utc(payload.end_at)
+    period_end = manual_period_end or auto_period_end
+    if not period_end:
+        raise HTTPException(
+            status_code=400,
+            detail="Informe end_at manual ou use plano/duration_days com duracao definida",
+        )
+    if period_end <= start_at:
+        raise HTTPException(status_code=400, detail="Vencimento deve ser maior que a data de inicio")
 
     contract_id = f"ctr_{secrets.token_hex(8)}"
     contract = {
@@ -293,6 +307,7 @@ async def create_contract(
         "amount": float(amount),
         "currency": "BRL",
         "duration_days": duration_days,
+        "manual_end_override": bool(manual_period_end),
         "current_period_start": start_at,
         "current_period_end": period_end,
         "status": "active",
@@ -342,6 +357,7 @@ async def create_contract(
             "student_id": student["student_id"],
             "plan_id": payload.plan_id,
             "duration_days": duration_days,
+            "manual_end_override": bool(manual_period_end),
             "amount": float(amount),
             "initial_charge_id": initial_charge["charge_id"] if initial_charge else None,
         },

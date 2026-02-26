@@ -22,6 +22,8 @@ const emptyContractForm = {
   amount: '',
   duration_days: '30',
   start_at: '',
+  end_at: '',
+  manual_end_override: false,
   auto_renew: false,
   notes: '',
   create_initial_charge: true,
@@ -69,7 +71,16 @@ function statusLabel(status) {
 
 function toIsoDateStart(value) {
   if (!value) return undefined;
-  return `${value}T00:00:00Z`;
+  return value;
+}
+
+function addDaysToDateString(dateString, days) {
+  if (!dateString || !days) return '';
+  const [year, month, day] = String(dateString).split('-').map((item) => Number(item));
+  if (!year || !month || !day) return '';
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + Math.max(1, Number(days)));
+  return date.toISOString().slice(0, 10);
 }
 
 function eventLabel(value) {
@@ -197,6 +208,11 @@ export default function StudentContractsPage() {
     return selectedContract.student_name || students.find((s) => s.student_id === selectedContract.student_id)?.nome || '-';
   }, [selectedContract, students]);
 
+  const selectedPlanForForm = useMemo(
+    () => plans.find((plan) => plan.plan_id === contractForm.plan_id) || null,
+    [plans, contractForm.plan_id],
+  );
+
   const visibleContracts = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     if (!term) return contracts;
@@ -216,6 +232,28 @@ export default function StudentContractsPage() {
     });
     return summary;
   }, [charges]);
+
+  useEffect(() => {
+    if (!contractModalOpen) return;
+    if (contractForm.manual_end_override) return;
+    const durationDays = Number(contractForm.duration_days || selectedPlanForForm?.duracao_dias || 0);
+    if (!contractForm.start_at || !durationDays) {
+      if (contractForm.end_at) {
+        setContractForm((prev) => ({ ...prev, end_at: '' }));
+      }
+      return;
+    }
+    const nextEnd = addDaysToDateString(contractForm.start_at, durationDays);
+    if (nextEnd && contractForm.end_at !== nextEnd) {
+      setContractForm((prev) => ({ ...prev, end_at: nextEnd }));
+    }
+  }, [
+    contractModalOpen,
+    contractForm.manual_end_override,
+    contractForm.start_at,
+    contractForm.duration_days,
+    selectedPlanForForm?.duracao_dias,
+  ]);
 
   const openCreateModal = () => {
     setContractForm(emptyContractForm);
@@ -237,6 +275,7 @@ export default function StudentContractsPage() {
         amount: contractForm.amount ? Number(contractForm.amount) : undefined,
         duration_days: contractForm.duration_days ? Number(contractForm.duration_days) : undefined,
         start_at: toIsoDateStart(contractForm.start_at),
+        end_at: toIsoDateStart(contractForm.end_at),
         auto_renew: !!contractForm.auto_renew,
         notes: contractForm.notes || undefined,
         create_initial_charge: !!contractForm.create_initial_charge,
@@ -674,7 +713,17 @@ export default function StudentContractsPage() {
                 </div>
                 <div>
                   <label className="text-xs uppercase tracking-wider text-zinc-500">Plano</label>
-                  <select value={contractForm.plan_id} onChange={(event) => setContractForm({ ...contractForm, plan_id: event.target.value })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm">
+                  <select value={contractForm.plan_id} onChange={(event) => {
+                    const nextPlanId = event.target.value;
+                    const plan = plans.find((item) => item.plan_id === nextPlanId);
+                    setContractForm((prev) => ({
+                      ...prev,
+                      plan_id: nextPlanId,
+                      amount: prev.amount || (plan?.valor ? String(plan.valor) : ''),
+                      duration_days: plan?.duracao_dias ? String(plan.duracao_dias) : prev.duration_days,
+                      manual_end_override: false,
+                    }));
+                  }} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm">
                     <option value="">Sem plano</option>
                     {plans.map((plan) => (
                       <option key={plan.plan_id} value={plan.plan_id}>{plan.nome}</option>
@@ -683,7 +732,7 @@ export default function StudentContractsPage() {
                 </div>
                 <div>
                   <label className="text-xs uppercase tracking-wider text-zinc-500">Inicio</label>
-                  <input type="date" value={contractForm.start_at} onChange={(event) => setContractForm({ ...contractForm, start_at: event.target.value })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm" />
+                  <input type="date" value={contractForm.start_at} onChange={(event) => setContractForm({ ...contractForm, start_at: event.target.value, manual_end_override: false })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm" />
                 </div>
                 <div>
                   <label className="text-xs uppercase tracking-wider text-zinc-500">Valor (BRL)</label>
@@ -691,7 +740,21 @@ export default function StudentContractsPage() {
                 </div>
                 <div>
                   <label className="text-xs uppercase tracking-wider text-zinc-500">Duracao (dias)</label>
-                  <input type="number" min="1" value={contractForm.duration_days} onChange={(event) => setContractForm({ ...contractForm, duration_days: event.target.value })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm" />
+                  <input type="number" min="1" value={contractForm.duration_days} onChange={(event) => setContractForm({ ...contractForm, duration_days: event.target.value, manual_end_override: false })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-zinc-500">Vencimento</label>
+                  <input type="date" value={contractForm.end_at} onChange={(event) => setContractForm({ ...contractForm, end_at: event.target.value, manual_end_override: true })} className="mt-1 w-full h-10 px-3 rounded-sm bg-zinc-950 border border-zinc-800 text-sm" />
+                </div>
+                <div className="md:col-span-2 border border-zinc-800 rounded-sm p-3 bg-zinc-950/40 text-xs text-zinc-400">
+                  O vencimento e calculado automaticamente com base no plano e na data de inicio, mas pode ser alterado manualmente em casos excepcionais.
+                  <button
+                    type="button"
+                    onClick={() => setContractForm((prev) => ({ ...prev, manual_end_override: false }))}
+                    className="ml-2 underline text-[#ccff00]"
+                  >
+                    Recalcular automatico
+                  </button>
                 </div>
                 <div className="md:col-span-2">
                   <label className="text-xs uppercase tracking-wider text-zinc-500">Observacao</label>

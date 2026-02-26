@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.deps import require_active_subscription
+from app.core.deps import require_admin_actor
 from app.core.time import UTC
 from app.db.mongo import get_db
 
@@ -78,14 +78,14 @@ def _month_label(value: datetime) -> str:
 
 
 @router.get("")
-async def list_gyms(owner: dict = Depends(require_active_subscription)):
+async def list_gyms(owner: dict = Depends(require_admin_actor())):
     db = get_db()
     gyms = await db.gyms.find({"owner_id": owner["owner_id"]}, {"_id": 0}).to_list(20)
     return gyms
 
 
 @router.get("/dashboard")
-async def dashboard(owner: dict = Depends(require_active_subscription)):
+async def dashboard(owner: dict = Depends(require_admin_actor())):
     db = get_db()
     owner_id = owner["owner_id"]
     base = {"owner_id": owner["owner_id"]}
@@ -249,7 +249,7 @@ async def dashboard_charts(owner: dict) -> dict:
 
 
 @router.get("/access-logs")
-async def access_logs(limit: int = 100, owner: dict = Depends(require_active_subscription)):
+async def access_logs(limit: int = 100, owner: dict = Depends(require_admin_actor())):
     db = get_db()
     return (
         await db.access_logs.find({"owner_id": owner["owner_id"]}, {"_id": 0})
@@ -260,7 +260,7 @@ async def access_logs(limit: int = 100, owner: dict = Depends(require_active_sub
 
 
 @router.get("/plans")
-async def list_plans(owner: dict = Depends(require_active_subscription)):
+async def list_plans(owner: dict = Depends(require_admin_actor())):
     db = get_db()
     return await db.plans.find({"owner_id": owner["owner_id"]}, {"_id": 0}).to_list(50)
 
@@ -283,7 +283,7 @@ async def list_plans_public():
 
 
 @router.post("/plans")
-async def create_plan(payload: dict, owner: dict = Depends(require_active_subscription)):
+async def create_plan(payload: dict, owner: dict = Depends(require_admin_actor())):
     db = get_db()
     doc = {
         "plan_id": payload.get("plan_id") or f"pln_{datetime.now(UTC).timestamp():.0f}",
@@ -296,7 +296,7 @@ async def create_plan(payload: dict, owner: dict = Depends(require_active_subscr
 
 @router.put("/plans/{plan_id}")
 async def update_plan(
-    plan_id: str, payload: dict, owner: dict = Depends(require_active_subscription)
+    plan_id: str, payload: dict, owner: dict = Depends(require_admin_actor())
 ):
     db = get_db()
     result = await db.plans.update_one(
@@ -308,7 +308,7 @@ async def update_plan(
 
 
 @router.delete("/plans/{plan_id}")
-async def delete_plan(plan_id: str, owner: dict = Depends(require_active_subscription)):
+async def delete_plan(plan_id: str, owner: dict = Depends(require_admin_actor())):
     db = get_db()
     result = await db.plans.delete_one({"plan_id": plan_id, "owner_id": owner["owner_id"]})
     if not result.deleted_count:

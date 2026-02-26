@@ -62,6 +62,9 @@ export default function StaffPage() {
     try {
       const result = await api.createEmployee(form);
       toast.success(`Funcionario criado. Senha temporaria: ${result.temp_password}`);
+      if (result.matricula_auto_generated && result.generated_matricula) {
+        toast.success(`Matricula gerada automaticamente: ${result.generated_matricula}`);
+      }
       if (result.shadow_student_id) {
         toast.success(`Compatibilidade ativada. Aluno tecnico: ${result.shadow_student_id}`);
       }
@@ -233,11 +236,14 @@ export default function StaffPage() {
             <option value="TRAINER">TRAINER</option>
           </select>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            <input placeholder="Matricula (catraca)" value={form.matricula} onChange={(e) => setForm({ ...form, matricula: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
+            <input placeholder="Matricula (opcional)" value={form.matricula} onChange={(e) => setForm({ ...form, matricula: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
             <input placeholder="Tag RFID" value={form.tag_rfid} onChange={(e) => setForm({ ...form, tag_rfid: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
             <input placeholder="ID Biometria" value={form.biometria_id} onChange={(e) => setForm({ ...form, biometria_id: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
             <input placeholder="Codigo teclado" value={form.keypad_code} onChange={(e) => setForm({ ...form, keypad_code: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
           </div>
+          <p className="text-xs text-zinc-500">
+            Matricula e um codigo interno. Pode informar manualmente ou deixar em branco para gerar automaticamente (ex.: FUNC0001).
+          </p>
           <label className="flex items-center gap-2 text-xs text-zinc-300">
             <input
               type="checkbox"
@@ -334,6 +340,9 @@ export default function StaffPage() {
                 <input placeholder="ID Biometria" value={editForm.biometria_id} onChange={(e) => setEditForm({ ...editForm, biometria_id: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
                 <input placeholder="Codigo teclado" value={editForm.keypad_code} onChange={(e) => setEditForm({ ...editForm, keypad_code: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
               </div>
+              <p className="text-xs text-zinc-500">
+                Matricula e um codigo interno unico por academia (ex.: FUNC0001).
+              </p>
               <label className="flex items-center gap-2 text-xs text-zinc-300">
                 <input type="checkbox" checked={editForm.is_active} onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })} />
                 Funcionario ativo

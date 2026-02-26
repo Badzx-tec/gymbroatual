@@ -29,6 +29,7 @@ from .student_billing import (
 from .students import (
     AttendanceIn,
     MeasurementIn,
+    StudentCreateIn,
     StudentIn,
     StudentOut,
     TolletusEnrollConfirmIn,
@@ -59,6 +60,7 @@ __all__ = [
     "PaymentAttemptOut",
     "RegisterIn",
     "StudentIn",
+    "StudentCreateIn",
     "StudentOut",
     "SubscriptionEventOut",
     "SubscriptionStatusOut",

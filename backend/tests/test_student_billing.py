@@ -170,7 +170,8 @@ async def test_create_contract_with_plan_creates_initial_charge_and_updates_stud
     monkeypatch.setattr(student_billing, "get_db", lambda: db)
 
     actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER"}
-    payload = ContractCreateIn(student_id="std_1", plan_id="pln_1")
+    start_at = datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc)
+    payload = ContractCreateIn(student_id="std_1", plan_id="pln_1", start_at=start_at)
 
     result = await student_billing.create_contract(payload=payload, actor=actor)
     contract = result["contract"]
@@ -179,9 +180,33 @@ async def test_create_contract_with_plan_creates_initial_charge_and_updates_stud
 
     assert contract["plan_name"] == "Mensal"
     assert contract["status"] == "active"
+    assert contract["manual_end_override"] is False
+    assert contract["current_period_end"] == start_at + timedelta(days=30)
     assert charge["status"] == "open"
     assert updated_student["plano_id"] == "pln_1"
     assert updated_student["plan_expires_at"] == contract["current_period_end"]
+
+
+@pytest.mark.asyncio
+async def test_create_contract_respects_manual_period_end_override(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+
+    actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER"}
+    start_at = datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc)
+    manual_end = datetime(2026, 5, 20, 0, 0, tzinfo=timezone.utc)
+    payload = ContractCreateIn(
+        student_id="std_1",
+        plan_id="pln_1",
+        start_at=start_at,
+        end_at=manual_end,
+    )
+
+    result = await student_billing.create_contract(payload=payload, actor=actor)
+    contract = result["contract"]
+
+    assert contract["manual_end_override"] is True
+    assert contract["current_period_end"] == manual_end
 
 
 @pytest.mark.asyncio

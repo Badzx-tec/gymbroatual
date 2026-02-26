@@ -1,4 +1,5 @@
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from pymongo.errors import DuplicateKeyError
 
 from app.core.config import get_settings
 
@@ -35,6 +36,29 @@ async def _ensure_employee_email_unique_index(db: AsyncIOMotorDatabase) -> None:
     )
 
 
+async def _ensure_matricula_unique_index(
+    collection, *, owner_field: str = "owner_id", matricula_field: str = "matricula"
+) -> None:
+    index_name = f"{owner_field}_1_{matricula_field}_1"
+    indexes = await collection.index_information()
+    current = indexes.get(index_name)
+
+    expected_partial = {matricula_field: {"$type": "string"}}
+    if current:
+        if not current.get("unique") or current.get("partialFilterExpression") != expected_partial:
+            await collection.drop_index(index_name)
+
+    try:
+        await collection.create_index(
+            [(owner_field, 1), (matricula_field, 1)],
+            unique=True,
+            partialFilterExpression=expected_partial,
+        )
+    except DuplicateKeyError:
+        # Compatibilidade: bases legadas com duplicidade nao devem impedir bootstrap.
+        await collection.create_index([(owner_field, 1), (matricula_field, 1)])
+
+
 async def init_indexes() -> None:
     db = get_db()
     await db.owners.create_index("email", unique=True)
@@ -51,11 +75,14 @@ async def init_indexes() -> None:
     await db.student_charges.create_index([("owner_id", 1), ("contract_id", 1), ("due_at", -1)])
     await db.student_billing_events.create_index([("owner_id", 1), ("created_at", -1)])
     await db.students.create_index([("owner_id", 1), ("student_id", 1)], unique=True)
-    await db.students.create_index([("owner_id", 1), ("matricula", 1)])
+    await _ensure_matricula_unique_index(db.students)
     await db.students.create_index([("owner_id", 1), ("tag_rfid", 1)])
     await db.students.create_index([("owner_id", 1), ("biometria_id", 1)])
+    await db.students.create_index([("email", 1)])
+    await db.students.create_index([("cpf", 1)])
+    await db.students.create_index([("auth_login_enabled", 1)])
     await _ensure_employee_email_unique_index(db)
-    await db.employees.create_index([("owner_id", 1), ("matricula", 1)])
+    await _ensure_matricula_unique_index(db.employees)
     await db.employees.create_index([("owner_id", 1), ("tag_rfid", 1)])
     await db.employees.create_index([("owner_id", 1), ("biometria_id", 1)])
     await db.employees.create_index([("owner_id", 1), ("keypad_code", 1)])

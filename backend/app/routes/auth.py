@@ -85,6 +85,23 @@ def _normalize_name(value, *, required: bool = False) -> str | None:
     return name
 
 
+def _try_normalize_email(value) -> str | None:
+    try:
+        return _normalize_email(value)
+    except HTTPException:
+        return None
+
+
+def _normalize_cpf(value) -> str | None:
+    cleaned = _clean_optional(value)
+    if not cleaned:
+        return None
+    digits = "".join(ch for ch in str(cleaned) if ch.isdigit())
+    if len(digits) != 11:
+        return None
+    return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+
+
 def _normalize_theme_key(value, *, strict: bool = False) -> str:
     key = (_clean_optional(value) or "lime").lower()
     if key not in ALLOWED_THEME_KEYS:
@@ -138,6 +155,31 @@ async def _employee_profile_payload(employee: dict) -> dict:
         "email": employee.get("email") or "",
         "phone": employee.get("phone"),
         "gym_name": (gym or {}).get("name"),
+        "branding": {
+            "theme_key": _normalize_theme_key(branding.get("theme_key")),
+            "logo_data_url": branding.get("logo_data_url"),
+        },
+    }
+
+
+async def _student_profile_payload(student: dict) -> dict:
+    db = get_db()
+    gym = await db.gyms.find_one({"owner_id": student["owner_id"]}, {"_id": 0, "name": 1})
+    owner = await db.owners.find_one({"owner_id": student["owner_id"]}, {"_id": 0, "branding": 1})
+    branding = (owner or {}).get("branding") or {}
+    return {
+        "actor_type": "student",
+        "role": "STUDENT",
+        "student_id": student["student_id"],
+        "owner_id": student["owner_id"],
+        "gym_id": student.get("gym_id"),
+        "name": student.get("nome") or "",
+        "email": student.get("email") or "",
+        "phone": student.get("telefone"),
+        "gym_name": (gym or {}).get("name"),
+        "plan_id": student.get("plano_id"),
+        "plan_expires_at": student.get("plan_expires_at") or student.get("data_vencimento"),
+        "auth_login_enabled": bool(student.get("auth_login_enabled", True)),
         "branding": {
             "theme_key": _normalize_theme_key(branding.get("theme_key")),
             "logo_data_url": branding.get("logo_data_url"),
@@ -440,6 +482,100 @@ async def _login_employee(email: str, password: str) -> dict | None:
     }
 
 
+async def _login_student(identifier: str, password: str) -> dict | None:
+    db = get_db()
+    cleaned_identifier = str(identifier or "").strip()
+    if not cleaned_identifier:
+        return None
+
+    normalized_email = _try_normalize_email(cleaned_identifier)
+    normalized_cpf = _normalize_cpf(cleaned_identifier)
+    normalized_matricula = _clean_optional(cleaned_identifier)
+    normalized_matricula = normalized_matricula.upper() if normalized_matricula else None
+
+    clauses: list[dict] = []
+    if normalized_email:
+        clauses.append({"email": normalized_email})
+    if normalized_cpf:
+        clauses.append({"cpf": normalized_cpf})
+    if normalized_matricula:
+        clauses.append({"matricula": normalized_matricula})
+
+    if not clauses:
+        return None
+
+    query: dict = {
+        "is_employee_shadow": {"$ne": True},
+        "auth_login_enabled": {"$ne": False},
+    }
+    if len(clauses) == 1:
+        query.update(clauses[0])
+    else:
+        query["$or"] = clauses
+
+    candidates = await db.students.find(query, {"_id": 0}).limit(25).to_list(25)
+    if not candidates:
+        return None
+
+    valid_students: list[dict] = []
+    for student in candidates:
+        password_hash = student.get("password_hash")
+        if not password_hash:
+            continue
+        if verify_password(password, password_hash):
+            valid_students.append(student)
+
+    if not valid_students:
+        return None
+
+    if len(valid_students) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Identificador ambiguo. Entre em contato com a academia.",
+        )
+
+    student = valid_students[0]
+    if str(student.get("status") or "ativo").lower() != "ativo":
+        raise HTTPException(status_code=403, detail="Aluno inativo")
+
+    owner_id = student.get("owner_id")
+    if not owner_id:
+        raise HTTPException(status_code=409, detail="Aluno sem academia vinculada")
+
+    subscription = await db.subscriptions.find_one({"owner_id": owner_id}, {"_id": 0})
+    if not subscription_allows_login(subscription):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Assinatura da academia inativa",
+            headers={"X-Error-Code": "PAYMENT_REQUIRED"},
+        )
+
+    token = create_access_token(
+        student["student_id"],
+        extra={
+            "actor_type": "student",
+            "role": "STUDENT",
+            "owner_id": owner_id,
+            "gym_id": student.get("gym_id"),
+            "student_id": student["student_id"],
+        },
+    )
+    return {
+        "token": token,
+        "user": {
+            "owner_id": owner_id,
+            "student_id": student["student_id"],
+            "name": student.get("nome") or "Aluno",
+            "email": student.get("email") or "",
+            "email_verified": True,
+            "gym_id": student.get("gym_id"),
+            "role": "STUDENT",
+            "actor_type": "student",
+            "must_change_password": bool(student.get("must_change_password", False)),
+        },
+    }
+
+
 async def _login_super_admin(email: str, password: str) -> dict | None:
     settings = get_settings()
     configured_email = (settings.super_admin_email or "").strip().lower()
@@ -476,24 +612,30 @@ async def _login_super_admin(email: str, password: str) -> dict | None:
 @router.post("/login")
 async def login(payload: LoginIn, request: Request):
     settings = get_settings()
-    email = payload.email.lower().strip()
+    identifier = str(payload.identifier or payload.email or "").strip()
+    normalized_email = _try_normalize_email(identifier)
     await _enforce_auth_rate_limit(
         request,
-        email,
+        normalized_email or identifier.lower(),
         scope="auth.login",
         limit=settings.auth_login_rate_limit,
         window_seconds=settings.auth_login_window_seconds,
     )
 
-    result = await _login_super_admin(email, payload.password)
-    if result:
-        return result
+    if normalized_email:
+        result = await _login_super_admin(normalized_email, payload.password)
+        if result:
+            return result
 
-    result = await _login_owner(email, payload.password)
-    if result:
-        return result
+        result = await _login_owner(normalized_email, payload.password)
+        if result:
+            return result
 
-    result = await _login_employee(email, payload.password)
+        result = await _login_employee(normalized_email, payload.password)
+        if result:
+            return result
+
+    result = await _login_student(identifier, payload.password)
     if result:
         return result
 
@@ -524,6 +666,18 @@ async def me(actor: dict = Depends(get_current_actor)):
             "email_verified": True,
         }
 
+    if actor.get("actor_type") == "student":
+        return {
+            "owner_id": actor["owner_id"],
+            "student_id": actor["student_id"],
+            "name": actor.get("nome") or "Aluno",
+            "email": actor.get("email") or "",
+            "gym_id": actor.get("gym_id"),
+            "role": "STUDENT",
+            "actor_type": "student",
+            "email_verified": True,
+        }
+
     return _owner_out(actor).model_dump()
 
 
@@ -541,6 +695,19 @@ async def profile(actor: dict = Depends(get_current_actor)):
         if not employee:
             raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
         return await _employee_profile_payload(employee)
+
+    if actor.get("actor_type") == "student":
+        student = await db.students.find_one(
+            {
+                "student_id": actor["student_id"],
+                "owner_id": actor["owner_id"],
+                "is_employee_shadow": {"$ne": True},
+            },
+            {"_id": 0, "password_hash": 0},
+        )
+        if not student:
+            raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+        return await _student_profile_payload(student)
 
     owner = await db.owners.find_one({"owner_id": actor["owner_id"]}, {"_id": 0})
     if not owner:
@@ -607,6 +774,41 @@ async def update_profile(payload: dict, actor: dict = Depends(get_current_actor)
         if not updated_employee:
             raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
         return await _employee_profile_payload(updated_employee)
+
+    if actor.get("actor_type") == "student":
+        student = await db.students.find_one(
+            {
+                "student_id": actor["student_id"],
+                "owner_id": actor["owner_id"],
+                "is_employee_shadow": {"$ne": True},
+            },
+            {"_id": 0},
+        )
+        if not student:
+            raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+
+        update_fields: dict = {"updated_at": now}
+        if "name" in payload:
+            update_fields["nome"] = _normalize_name(payload.get("name"), required=True)
+        if "email" in payload:
+            update_fields["email"] = _normalize_email(payload.get("email"), required=False)
+        if "phone" in payload:
+            update_fields["telefone"] = _clean_optional(payload.get("phone"))
+
+        result = await db.students.update_one(
+            {"student_id": student["student_id"], "owner_id": student["owner_id"]},
+            {"$set": update_fields},
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+
+        updated_student = await db.students.find_one(
+            {"student_id": student["student_id"], "owner_id": student["owner_id"]},
+            {"_id": 0, "password_hash": 0},
+        )
+        if not updated_student:
+            raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+        return await _student_profile_payload(updated_student)
 
     owner = await db.owners.find_one({"owner_id": actor["owner_id"]}, {"_id": 0})
     if not owner:
@@ -701,6 +903,34 @@ async def change_profile_password(payload: dict, actor: dict = Depends(get_curre
             {
                 "$set": {
                     "password_hash": hash_password(new_password),
+                    "updated_at": now,
+                }
+            },
+        )
+        return {"message": "Senha atualizada com sucesso"}
+
+    if actor.get("actor_type") == "student":
+        student = await db.students.find_one(
+            {
+                "student_id": actor["student_id"],
+                "owner_id": actor["owner_id"],
+                "is_employee_shadow": {"$ne": True},
+            },
+            {"_id": 0, "password_hash": 1, "owner_id": 1, "student_id": 1},
+        )
+        if not student:
+            raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+        if not student.get("password_hash") or not verify_password(
+            current_password, student["password_hash"]
+        ):
+            raise HTTPException(status_code=401, detail="Senha atual incorreta")
+
+        await db.students.update_one(
+            {"student_id": student["student_id"], "owner_id": student["owner_id"]},
+            {
+                "$set": {
+                    "password_hash": hash_password(new_password),
+                    "must_change_password": False,
                     "updated_at": now,
                 }
             },

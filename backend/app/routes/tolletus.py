@@ -2,7 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.deps import require_active_subscription
+from app.core.deps import require_admin_actor
 from app.core.time import UTC
 from app.db.mongo import get_db
 from app.integrations.tolletus.client import get_tolletus_client
@@ -28,7 +28,7 @@ def _resolve_client():
 
 @router.post("/enroll/start")
 async def enroll_start(
-    payload: TolletusEnrollStartIn, owner: dict = Depends(require_active_subscription)
+    payload: TolletusEnrollStartIn, owner: dict = Depends(require_admin_actor())
 ):
     db = get_db()
     student = await db.students.find_one(
@@ -53,7 +53,7 @@ async def enroll_start(
 
 @router.post("/enroll/confirm")
 async def enroll_confirm(
-    payload: TolletusEnrollConfirmIn, owner: dict = Depends(require_active_subscription)
+    payload: TolletusEnrollConfirmIn, owner: dict = Depends(require_admin_actor())
 ):
     db = get_db()
     student = await db.students.find_one(
@@ -94,7 +94,7 @@ async def enroll_confirm(
 
 @router.get("/students/{student_id}/status", response_model=TolletusStatusOut)
 async def student_biometric_status(
-    student_id: str, owner: dict = Depends(require_active_subscription)
+    student_id: str, owner: dict = Depends(require_admin_actor())
 ):
     db = get_db()
     biometric = await db.biometrics.find_one(
@@ -120,7 +120,7 @@ async def student_biometric_status(
 @router.post("/employees/enroll/start")
 async def employee_enroll_start(
     payload: TolletusEmployeeEnrollStartIn,
-    owner: dict = Depends(require_active_subscription),
+    owner: dict = Depends(require_admin_actor()),
 ):
     db = get_db()
     employee = await db.employees.find_one(
@@ -147,7 +147,7 @@ async def employee_enroll_start(
 @router.post("/employees/enroll/confirm")
 async def employee_enroll_confirm(
     payload: TolletusEmployeeEnrollConfirmIn,
-    owner: dict = Depends(require_active_subscription),
+    owner: dict = Depends(require_admin_actor()),
 ):
     db = get_db()
     employee = await db.employees.find_one(
@@ -200,7 +200,7 @@ async def employee_enroll_confirm(
 
 @router.get("/employees/{employee_id}/status", response_model=TolletusEmployeeStatusOut)
 async def employee_biometric_status(
-    employee_id: str, owner: dict = Depends(require_active_subscription)
+    employee_id: str, owner: dict = Depends(require_admin_actor())
 ):
     db = get_db()
     biometric = await db.biometrics.find_one(

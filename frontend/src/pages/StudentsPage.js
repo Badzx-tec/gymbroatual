@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Plus, Search, Edit2, Trash2, X, User, FileSpreadsheet, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const emptyStudent = { nome: '', email: '', cpf: '', telefone: '', plano_id: '', tag_rfid: '', biometria_id: '', status: 'ativo', data_vencimento: '', peso_kg: '', idade: '', altura_cm: '', treino: '', dias_frequencia: 0 };
+const emptyStudent = { nome: '', email: '', cpf: '', telefone: '', plano_id: '', matricula: '', tag_rfid: '', biometria_id: '', status: 'ativo', data_vencimento: '', peso_kg: '', idade: '', altura_cm: '', treino: '', dias_frequencia: 0, auth_login_enabled: true, password: '', auto_generate_password: false, force_password_reset: false };
 
 const normalizeCpfInput = (value) => {
   const digits = String(value || '').replace(/\D/g, '').slice(0, 11);
@@ -48,7 +48,7 @@ export default function StudentsPage() {
 
   const openCreate = () => { setForm(emptyStudent); setEditId(''); setModal('create'); };
   const openEdit = (s) => {
-    setForm({ nome: s.nome, email: s.email, cpf: s.cpf, telefone: s.telefone || '', plano_id: s.plano_id || '', tag_rfid: s.tag_rfid || '', biometria_id: s.biometria_id || '', status: s.status, data_vencimento: s.data_vencimento ? s.data_vencimento.split('T')[0] : '', peso_kg: s.peso_kg ?? '', idade: s.idade ?? '', altura_cm: s.altura_cm ?? '', treino: s.treino || '', dias_frequencia: s.dias_frequencia ?? 0 });
+    setForm({ nome: s.nome, email: s.email, cpf: s.cpf, telefone: s.telefone || '', plano_id: s.plano_id || '', matricula: s.matricula || '', tag_rfid: s.tag_rfid || '', biometria_id: s.biometria_id || '', status: s.status, data_vencimento: s.data_vencimento ? s.data_vencimento.split('T')[0] : '', peso_kg: s.peso_kg ?? '', idade: s.idade ?? '', altura_cm: s.altura_cm ?? '', treino: s.treino || '', dias_frequencia: s.dias_frequencia ?? 0, auth_login_enabled: s.auth_login_enabled !== false, password: '', auto_generate_password: false, force_password_reset: false });
     setEditId(s.student_id);
     setModal('edit');
   };
@@ -87,12 +87,19 @@ export default function StudentsPage() {
     e.preventDefault();
     setSaving(true);
     try {
+      let result;
       if (modal === 'create') {
-        await api.createStudent(form);
+        result = await api.createStudent(form);
         toast.success('Aluno cadastrado!');
       } else {
-        await api.updateStudent(editId, form);
+        result = await api.updateStudent(editId, form);
         toast.success('Aluno atualizado!');
+      }
+      if (result?.matricula_auto_generated && result?.generated_matricula) {
+        toast.success(`Matricula gerada automaticamente: ${result.generated_matricula}`);
+      }
+      if (result?.temp_password) {
+        toast.success(`Senha temporaria do aluno: ${result.temp_password}`);
       }
       setModal(null);
       loadData();
@@ -357,6 +364,12 @@ export default function StudentsPage() {
                     </select>
                   </div>
                   <div>
+                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Matricula</label>
+                    <input value={form.matricula} onChange={e => setForm({ ...form, matricula: e.target.value })}
+                      placeholder="Opcional - ex.: ALU0001"
+                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
+                  </div>
+                  <div>
                     <label className="text-sm font-medium text-zinc-400 mb-1 block">Tag RFID</label>
                     <input data-testid="student-rfid-input" value={form.tag_rfid} onChange={e => setForm({ ...form, tag_rfid: e.target.value })}
                       className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
@@ -404,6 +417,36 @@ export default function StudentsPage() {
                     <label className="text-sm font-medium text-zinc-400 mb-1 block">Vencimento</label>
                     <input data-testid="student-vencimento-input" type="date" value={form.data_vencimento} onChange={e => setForm({ ...form, data_vencimento: e.target.value })}
                       className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
+                  </div>
+                  <div className="md:col-span-2 border border-zinc-800 rounded-sm p-3 bg-zinc-950/40">
+                    <p className="text-xs text-zinc-400 mb-2">
+                      Matricula e um codigo interno de identificacao. Voce pode informar manualmente ou deixar em branco para geracao automatica.
+                    </p>
+                    <p className="text-xs text-zinc-500 mb-2">
+                      Login do aluno: defina senha inicial ou deixe em branco para gerar senha temporaria segura.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-sm font-medium text-zinc-400 mb-1 block">Senha inicial do aluno</label>
+                        <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
+                          placeholder={modal === 'create' ? 'Minimo 8 caracteres (opcional)' : 'Preencha para redefinir'}
+                          className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
+                      </div>
+                      <div className="flex flex-col justify-center gap-2 text-xs text-zinc-300">
+                        <label className="flex items-center gap-2">
+                          <input type="checkbox" checked={form.auth_login_enabled} onChange={e => setForm({ ...form, auth_login_enabled: e.target.checked })} />
+                          Permitir login do aluno
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input type="checkbox" checked={form.auto_generate_password} onChange={e => setForm({ ...form, auto_generate_password: e.target.checked })} />
+                          Gerar senha temporaria automaticamente
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input type="checkbox" checked={form.force_password_reset} onChange={e => setForm({ ...form, force_password_reset: e.target.checked })} />
+                          Exigir troca de senha no primeiro acesso
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="flex gap-3 pt-2">
