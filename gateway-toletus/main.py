@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from protocol import encode_notify_user, encode_release_entry, parse_event
+from protocol import PACKET_SIZE, encode_notify_user, encode_release_entry, parse_event
 
 TOLETUS_HOST = os.getenv("TOLETUS_HOST", "127.0.0.1")
 TOLETUS_PORT = int(os.getenv("TOLETUS_PORT", "7878"))
@@ -16,6 +16,8 @@ SAAS_URL = os.getenv("SAAS_URL", "http://localhost:8000")
 DEVICE_ID = os.getenv("DEVICE_ID") or os.getenv("GATEWAY_DEVICE_ID", "dev_local_1")
 DEVICE_TOKEN = os.getenv("DEVICE_TOKEN") or os.getenv("GATEWAY_DEVICE_TOKEN", "")
 SIMULATOR = os.getenv("TOLETUS_SIMULATOR", "true").lower() == "true"
+TOLETUS_READ_TIMEOUT = int(os.getenv("TOLETUS_READ_TIMEOUT", "60"))
+TOLETUS_RECONNECT_DELAY = int(os.getenv("TOLETUS_RECONNECT_DELAY", "3"))
 
 
 def sign_payload(method: str, credential: str, timestamp: str, nonce: str) -> str:
@@ -84,24 +86,60 @@ async def run_simulator() -> None:
 
 
 async def run_tcp() -> None:
-    print(f"[gateway] connecting to Toletus at {TOLETUS_HOST}:{TOLETUS_PORT}")
-    reader, writer = await asyncio.open_connection(TOLETUS_HOST, TOLETUS_PORT)
-    try:
-        while True:
-            packet = await reader.readexactly(20)
-            event = parse_event(packet)
-            if event["method"] == "unknown":
-                continue
-            decision = await request_decision(event)
-            if decision.get("allow"):
-                message = (decision.get("message") or "LIBERADO")[:16]
-                writer.write(encode_release_entry(message))
-            else:
-                writer.write(encode_notify_user(code=2, duration=2, led=2))
-            await writer.drain()
-    finally:
-        writer.close()
-        await writer.wait_closed()
+    while True:
+        reader = None
+        writer = None
+        try:
+            print(f"[gateway] connecting to Toletus at {TOLETUS_HOST}:{TOLETUS_PORT}")
+            reader, writer = await asyncio.open_connection(TOLETUS_HOST, TOLETUS_PORT)
+            while True:
+                try:
+                    if TOLETUS_READ_TIMEOUT > 0:
+                        packet = await asyncio.wait_for(
+                            reader.readexactly(PACKET_SIZE), timeout=TOLETUS_READ_TIMEOUT
+                        )
+                    else:
+                        packet = await reader.readexactly(PACKET_SIZE)
+                except asyncio.TimeoutError:
+                    print(
+                        f"[gateway] read timeout ({TOLETUS_READ_TIMEOUT}s); waiting next packet"
+                    )
+                    continue
+                except asyncio.IncompleteReadError:
+                    print("[gateway] socket closed by Toletus; reconnecting")
+                    break
+
+                try:
+                    event = parse_event(packet)
+                except Exception as exc:
+                    print("[gateway] invalid packet:", str(exc))
+                    continue
+
+                if event["method"] == "unknown":
+                    continue
+
+                try:
+                    decision = await request_decision(event)
+                except Exception as exc:
+                    print("[gateway] decision error:", str(exc))
+                    continue
+
+                if decision.get("allow"):
+                    message = (decision.get("message") or "LIBERADO")[:16]
+                    writer.write(encode_release_entry(message))
+                else:
+                    writer.write(encode_notify_user(code=2, duration=2, led=2))
+                await writer.drain()
+        except Exception as exc:
+            print("[gateway] tcp loop error:", str(exc))
+        finally:
+            if writer is not None:
+                writer.close()
+                await writer.wait_closed()
+
+        wait_seconds = max(1, TOLETUS_RECONNECT_DELAY)
+        print(f"[gateway] reconnecting in {wait_seconds}s")
+        await asyncio.sleep(wait_seconds)
 
 
 async def main() -> None:
