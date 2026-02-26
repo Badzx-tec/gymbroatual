@@ -352,9 +352,10 @@ async def deactivate_employee(
     employee_id: str, actor: dict = Depends(require_roles("OWNER", "MANAGER"))
 ):
     db = get_db()
+    now = datetime.now(UTC)
     await db.employees.update_one(
         {"employee_id": employee_id, "owner_id": actor["owner_id"]},
-        {"$set": {"is_active": False, "updated_at": datetime.now(UTC)}},
+        {"$set": {"is_active": False, "session_revoked_at": now, "updated_at": now}},
     )
     return {"message": "Funcionario desativado"}
 
@@ -366,13 +367,15 @@ async def reset_password(
     actor: dict = Depends(require_roles("OWNER", "MANAGER")),
 ):
     db = get_db()
+    now = datetime.now(UTC)
     new_password = (payload or {}).get("new_password") or secrets.token_urlsafe(8)
     result = await db.employees.update_one(
         {"employee_id": employee_id, "owner_id": actor["owner_id"]},
         {
             "$set": {
                 "password_hash": hash_password(new_password),
-                "updated_at": datetime.now(UTC),
+                "session_revoked_at": now,
+                "updated_at": now,
             }
         },
     )

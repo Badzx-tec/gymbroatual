@@ -273,6 +273,7 @@ async def update_student(
             raise HTTPException(status_code=409, detail="Matricula ja cadastrada") from exc
 
     temp_password = None
+    password_changed = False
     password_value = payload.get("password")
     if password_value is not None:
         cleaned_password = str(password_value or "").strip()
@@ -283,14 +284,20 @@ async def update_student(
                 )
             update_fields["password_hash"] = hash_password(cleaned_password)
             update_fields["must_change_password"] = bool(payload.get("force_password_reset", False))
+            password_changed = True
         elif bool(payload.get("auto_generate_password")):
             temp_password = _generated_temp_password()
             update_fields["password_hash"] = hash_password(temp_password)
             update_fields["must_change_password"] = True
+            password_changed = True
     elif bool(payload.get("auto_generate_password")):
         temp_password = _generated_temp_password()
         update_fields["password_hash"] = hash_password(temp_password)
         update_fields["must_change_password"] = True
+        password_changed = True
+
+    if password_changed:
+        update_fields["session_revoked_at"] = now
 
     if "auth_login_enabled" in payload:
         update_fields["auth_login_enabled"] = bool(payload.get("auth_login_enabled"))

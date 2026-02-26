@@ -903,6 +903,7 @@ async def change_profile_password(payload: dict, actor: dict = Depends(get_curre
             {
                 "$set": {
                     "password_hash": hash_password(new_password),
+                    "session_revoked_at": now,
                     "updated_at": now,
                 }
             },
@@ -931,6 +932,7 @@ async def change_profile_password(payload: dict, actor: dict = Depends(get_curre
                 "$set": {
                     "password_hash": hash_password(new_password),
                     "must_change_password": False,
+                    "session_revoked_at": now,
                     "updated_at": now,
                 }
             },
@@ -951,6 +953,7 @@ async def change_profile_password(payload: dict, actor: dict = Depends(get_curre
         {
             "$set": {
                 "password_hash": hash_password(new_password),
+                "session_revoked_at": now,
                 "updated_at": now,
             }
         },

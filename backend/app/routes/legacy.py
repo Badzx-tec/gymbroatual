@@ -1,6 +1,5 @@
 import secrets
 from datetime import datetime
-from io import BytesIO
 
 from fastapi import (
     APIRouter,
@@ -12,15 +11,11 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from fastapi.responses import StreamingResponse
-from openpyxl import Workbook
-from openpyxl.utils import get_column_letter
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 
 from app.core.deps import require_admin_actor, require_roles
 from app.core.time import UTC
 from app.db.mongo import get_db
+from app.services.report_exports import as_text, students_pdf_response, xlsx_response
 
 from . import billing as billing_routes
 from . import gyms as gym_routes
@@ -33,90 +28,6 @@ def _clean_doc(doc: dict) -> dict:
     sanitized = dict(doc)
     sanitized.pop("_id", None)
     return sanitized
-
-
-def _as_text(value) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, datetime):
-        if value.tzinfo:
-            value = value.astimezone(UTC)
-        return value.strftime("%d/%m/%Y %H:%M")
-    if isinstance(value, bool):
-        return "Sim" if value else "Nao"
-    return str(value)
-
-
-def _xlsx_response(filename: str, sheet_name: str, headers: list[str], rows: list[list[str]]):
-    workbook = Workbook()
-    worksheet = workbook.active
-    worksheet.title = sheet_name
-    worksheet.append(headers)
-    for row in rows:
-        worksheet.append(row)
-    for index, header in enumerate(headers, start=1):
-        worksheet.column_dimensions[get_column_letter(index)].width = max(14, len(header) + 2)
-
-    output = BytesIO()
-    workbook.save(output)
-    output.seek(0)
-    return StreamingResponse(
-        output,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-def _students_pdf_response(filename: str, rows: list[list[str]]):
-    output = BytesIO()
-    pdf = canvas.Canvas(output, pagesize=A4)
-    width, height = A4
-    y = height - 36
-
-    pdf.setFont("Helvetica-Bold", 13)
-    pdf.drawString(32, y, "Relatorio de Alunos - GymBro")
-    y -= 18
-    pdf.setFont("Helvetica", 9)
-    pdf.drawString(32, y, f"Gerado em: {datetime.now(UTC).strftime('%d/%m/%Y %H:%M UTC')}")
-    y -= 20
-
-    pdf.setFont("Helvetica-Bold", 8)
-    pdf.drawString(32, y, "Nome")
-    pdf.drawString(210, y, "Email")
-    pdf.drawString(390, y, "CPF")
-    pdf.drawString(480, y, "Status")
-    y -= 12
-    pdf.setFont("Helvetica", 8)
-
-    for row in rows:
-        if y < 48:
-            pdf.showPage()
-            y = height - 36
-            pdf.setFont("Helvetica-Bold", 8)
-            pdf.drawString(32, y, "Nome")
-            pdf.drawString(210, y, "Email")
-            pdf.drawString(390, y, "CPF")
-            pdf.drawString(480, y, "Status")
-            y -= 12
-            pdf.setFont("Helvetica", 8)
-
-        nome = (row[1] or "")[:38]
-        email = (row[2] or "")[:33]
-        cpf = (row[3] or "")[:18]
-        status = (row[6] or "")[:10]
-        pdf.drawString(32, y, nome)
-        pdf.drawString(210, y, email)
-        pdf.drawString(390, y, cpf)
-        pdf.drawString(480, y, status)
-        y -= 12
-
-    pdf.save()
-    output.seek(0)
-    return StreamingResponse(
-        output,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
 
 
 @router.post("/auth/logout")
@@ -338,19 +249,19 @@ async def export_students_excel(actor: dict = Depends(require_admin_actor())):
     ]
     rows = [
         [
-            _as_text(student.get("student_id")),
-            _as_text(student.get("nome")),
-            _as_text(student.get("email")),
-            _as_text(student.get("cpf")),
-            _as_text(student.get("telefone")),
-            _as_text(student.get("plano_id")),
-            _as_text(student.get("status")),
-            _as_text(student.get("data_vencimento")),
-            _as_text(student.get("created_at")),
+            as_text(student.get("student_id")),
+            as_text(student.get("nome")),
+            as_text(student.get("email")),
+            as_text(student.get("cpf")),
+            as_text(student.get("telefone")),
+            as_text(student.get("plano_id")),
+            as_text(student.get("status")),
+            as_text(student.get("data_vencimento")),
+            as_text(student.get("created_at")),
         ]
         for student in students
     ]
-    return _xlsx_response("alunos_gymbro.xlsx", "Alunos", headers, rows)
+    return xlsx_response("alunos_gymbro.xlsx", "Alunos", headers, rows)
 
 
 @router.get("/reports/students/pdf")
@@ -363,18 +274,18 @@ async def export_students_pdf(actor: dict = Depends(require_admin_actor())):
     )
     rows = [
         [
-            _as_text(student.get("student_id")),
-            _as_text(student.get("nome")),
-            _as_text(student.get("email")),
-            _as_text(student.get("cpf")),
-            _as_text(student.get("telefone")),
-            _as_text(student.get("plano_id")),
-            _as_text(student.get("status")),
-            _as_text(student.get("created_at")),
+            as_text(student.get("student_id")),
+            as_text(student.get("nome")),
+            as_text(student.get("email")),
+            as_text(student.get("cpf")),
+            as_text(student.get("telefone")),
+            as_text(student.get("plano_id")),
+            as_text(student.get("status")),
+            as_text(student.get("created_at")),
         ]
         for student in students
     ]
-    return _students_pdf_response("alunos_gymbro.pdf", rows)
+    return students_pdf_response("alunos_gymbro.pdf", rows)
 
 
 @router.get("/reports/access-logs/excel")
@@ -396,17 +307,17 @@ async def export_access_excel(actor: dict = Depends(require_admin_actor())):
     ]
     rows = [
         [
-            _as_text(log.get("timestamp") or log.get("created_at")),
-            _as_text(log.get("subject_type") or log.get("tipo")),
-            _as_text(log.get("student_name")),
-            _as_text(log.get("employee_name")),
-            _as_text(log.get("method")),
-            _as_text(log.get("autorizado")),
-            _as_text(log.get("motivo") or log.get("reason")),
+            as_text(log.get("timestamp") or log.get("created_at")),
+            as_text(log.get("subject_type") or log.get("tipo")),
+            as_text(log.get("student_name")),
+            as_text(log.get("employee_name")),
+            as_text(log.get("method")),
+            as_text(log.get("autorizado")),
+            as_text(log.get("motivo") or log.get("reason")),
         ]
         for log in logs
     ]
-    return _xlsx_response("acessos_gymbro.xlsx", "Acessos", headers, rows)
+    return xlsx_response("acessos_gymbro.xlsx", "Acessos", headers, rows)
 
 
 @router.get("/reports/financial/excel")
@@ -428,11 +339,11 @@ async def export_financial_excel(actor: dict = Depends(require_roles("OWNER", "M
         rows.append(
             [
                 "Assinatura SaaS",
-                _as_text(invoice.get("period_label") or invoice.get("invoice_id")),
-                _as_text(invoice.get("status")),
-                _as_text(invoice.get("amount")),
-                _as_text(invoice.get("due_at") or invoice.get("created_at")),
-                _as_text(invoice.get("paid_at")),
+                as_text(invoice.get("period_label") or invoice.get("invoice_id")),
+                as_text(invoice.get("status")),
+                as_text(invoice.get("amount")),
+                as_text(invoice.get("due_at") or invoice.get("created_at")),
+                as_text(invoice.get("paid_at")),
                 "billing.invoices",
             ]
         )
@@ -440,15 +351,15 @@ async def export_financial_excel(actor: dict = Depends(require_roles("OWNER", "M
         rows.append(
             [
                 "Contrato Aluno",
-                _as_text(charge.get("charge_id")),
-                _as_text(charge.get("status")),
-                _as_text(charge.get("amount")),
-                _as_text(charge.get("due_at")),
-                _as_text(charge.get("paid_at")),
+                as_text(charge.get("charge_id")),
+                as_text(charge.get("status")),
+                as_text(charge.get("amount")),
+                as_text(charge.get("due_at")),
+                as_text(charge.get("paid_at")),
                 "student_charges",
             ]
         )
-    return _xlsx_response("financeiro_gymbro.xlsx", "Financeiro", headers, rows)
+    return xlsx_response("financeiro_gymbro.xlsx", "Financeiro", headers, rows)
 
 
 @router.post("/students/{student_id}/biometria")

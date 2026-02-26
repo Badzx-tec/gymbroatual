@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 from fastapi import HTTPException
 
@@ -65,3 +67,36 @@ async def test_get_current_actor_raises_when_owner_has_no_gym(monkeypatch):
 
     assert exc.value.status_code == 409
     assert exc.value.detail == "Academia nao vinculada ao usuario"
+
+
+@pytest.mark.asyncio
+async def test_get_current_actor_rejects_revoked_session(monkeypatch):
+    revoked_at = datetime(2026, 2, 26, 10, 0, tzinfo=timezone.utc)
+    db = FakeDb(
+        owners=[
+            {
+                "owner_id": "own_1",
+                "name": "Owner",
+                "email": "owner@gymbro.com",
+                "gym_id": "gym_1",
+                "session_revoked_at": revoked_at,
+            }
+        ],
+        gyms=[{"owner_id": "own_1", "gym_id": "gym_1"}],
+    )
+    monkeypatch.setattr(deps, "get_db", lambda: db)
+    monkeypatch.setattr(
+        deps,
+        "safe_jwt_decode",
+        lambda _token: {
+            "sub": "own_1",
+            "actor_type": "owner",
+            "iat": int(datetime(2026, 2, 26, 9, 0, tzinfo=timezone.utc).timestamp()),
+        },
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await deps.get_current_actor(authorization="Bearer fake-token")
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Sessao expirada. Faca login novamente."

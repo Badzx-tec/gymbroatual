@@ -2,10 +2,12 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import ValidationError
 
 from app.core.deps import require_admin_actor
 from app.core.time import UTC
 from app.db.mongo import get_db
+from app.models.plans import PlanCreateIn, PlanUpdateIn
 
 router = APIRouter()
 
@@ -286,10 +288,16 @@ async def list_plans_public():
 @router.post("/plans")
 async def create_plan(payload: dict, owner: dict = Depends(require_admin_actor())):
     db = get_db()
+    try:
+        normalized = PlanCreateIn.model_validate(payload)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
+    plan_id = normalized.plan_id or f"pln_{datetime.now(UTC).timestamp():.0f}"
     doc = {
-        "plan_id": payload.get("plan_id") or f"pln_{datetime.now(UTC).timestamp():.0f}",
+        "plan_id": plan_id,
         "owner_id": owner["owner_id"],
-        **payload,
+        **normalized.model_dump(exclude={"plan_id"}),
     }
     await db.plans.insert_one(doc)
     return _clean_doc(doc)
@@ -300,8 +308,17 @@ async def update_plan(
     plan_id: str, payload: dict, owner: dict = Depends(require_admin_actor())
 ):
     db = get_db()
+    try:
+        normalized = PlanUpdateIn.model_validate(payload).model_dump(
+            exclude_none=True, exclude={"updated_at"}
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Nenhum campo valido para atualizar")
+
     result = await db.plans.update_one(
-        {"plan_id": plan_id, "owner_id": owner["owner_id"]}, {"$set": payload}
+        {"plan_id": plan_id, "owner_id": owner["owner_id"]}, {"$set": normalized}
     )
     if not result.matched_count:
         raise HTTPException(status_code=404, detail="Plano nao encontrado")

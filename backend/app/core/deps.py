@@ -1,9 +1,11 @@
 from collections.abc import Callable
+from datetime import datetime
 
 from fastapi import Depends, Header, HTTPException, status
 
 from app.core.config import get_settings
 from app.core.security import safe_jwt_decode
+from app.core.time import UTC
 from app.db.mongo import get_db
 from app.services.subscription import subscription_allows_login
 
@@ -24,6 +26,31 @@ async def _resolve_owner_gym_id(db, owner: dict) -> str | None:
         {"$set": {"gym_id": resolved}},
     )
     return resolved
+
+
+def _coerce_datetime_utc(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+    return None
+
+
+def _ensure_session_not_revoked(payload: dict, actor: dict) -> None:
+    revoked_at = _coerce_datetime_utc(actor.get("session_revoked_at"))
+    if revoked_at is None:
+        return
+    iat = payload.get("iat")
+    if not isinstance(iat, (int, float)):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalido")
+    issued_at = datetime.fromtimestamp(float(iat), tz=UTC)
+    if issued_at <= revoked_at:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessao expirada. Faca login novamente.",
+        )
 
 
 async def get_current_actor(authorization: str | None = Header(default=None)) -> dict:
@@ -58,6 +85,7 @@ async def get_current_actor(authorization: str | None = Header(default=None)) ->
         )
         if not actor:
             raise HTTPException(status_code=401, detail="Funcionario nao encontrado")
+        _ensure_session_not_revoked(payload, actor)
         actor["actor_type"] = "employee"
         actor["owner_id"] = actor.get("owner_id") or payload.get("owner_id")
         actor["gym_id"] = actor.get("gym_id") or payload.get("gym_id")
@@ -80,6 +108,7 @@ async def get_current_actor(authorization: str | None = Header(default=None)) ->
         )
         if not actor:
             raise HTTPException(status_code=401, detail="Aluno nao encontrado")
+        _ensure_session_not_revoked(payload, actor)
         actor["actor_type"] = "student"
         actor["student_id"] = actor.get("student_id") or payload.get("sub")
         actor["owner_id"] = actor.get("owner_id") or payload.get("owner_id")
@@ -95,6 +124,7 @@ async def get_current_actor(authorization: str | None = Header(default=None)) ->
     owner = await db.owners.find_one({"owner_id": payload.get("sub")}, {"_id": 0})
     if not owner:
         raise HTTPException(status_code=401, detail="Usuario nao encontrado")
+    _ensure_session_not_revoked(payload, owner)
     if not await _resolve_owner_gym_id(db, owner):
         raise HTTPException(status_code=409, detail="Academia nao vinculada ao usuario")
     owner["actor_type"] = "owner"
