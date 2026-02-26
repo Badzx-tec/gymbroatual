@@ -19,6 +19,21 @@ class FakeCollection:
     async def insert_one(self, doc: dict):
         self.docs.append(dict(doc))
 
+    async def update_one(self, query: dict, update: dict, upsert: bool = False):
+        target = await self.find_one(query)
+        matched_count = 1 if target else 0
+        if not target and upsert:
+            target = dict(query)
+            self.docs.append(target)
+
+        if target:
+            for key, value in update.get("$setOnInsert", {}).items():
+                target.setdefault(key, value)
+            for key, value in update.get("$set", {}).items():
+                target[key] = value
+
+        return type("UpdateResult", (), {"matched_count": matched_count})
+
     async def find_one_and_update(self, query: dict, update: dict, upsert: bool = False, **_kwargs):
         target = await self.find_one(query)
         if not target:
@@ -37,9 +52,10 @@ class FakeCollection:
 
 
 class FakeDb:
-    def __init__(self, gyms=None, employees=None):
+    def __init__(self, gyms=None, employees=None, students=None):
         self.gyms = FakeCollection(gyms)
         self.employees = FakeCollection(employees)
+        self.students = FakeCollection(students)
         self.counters = FakeCollection([])
 
 
@@ -132,3 +148,29 @@ async def test_create_employee_auto_matricula_skips_legacy_sequence(monkeypatch)
 
     assert result["matricula"] == "FUNC0056"
     assert result["matricula_auto_generated"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_employee_blank_matricula_with_shadow_sync(monkeypatch):
+    db = FakeDb(students=[])
+    monkeypatch.setattr(staff, "get_db", lambda: db)
+
+    result = await staff.create_employee(
+        payload={
+            "name": "Rafaela",
+            "email": "rafae@gmail.com",
+            "role": "MANAGER",
+            "matricula": "",
+            "tag_rfid": "",
+            "biometria_id": "",
+            "keypad_code": "159",
+            "sync_shadow_student": True,
+        },
+        actor={"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER"},
+    )
+
+    assert result["name"] == "Rafaela"
+    assert result["matricula"].startswith("FUNC")
+    assert result["matricula_auto_generated"] is True
+    assert result["shadow_student_id"].startswith("empstd_")
+    assert "shadow_sync_warning" not in result

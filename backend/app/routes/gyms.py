@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import ValidationError
 
-from app.core.deps import require_admin_actor
+from app.core.deps import require_roles
 from app.core.time import UTC
 from app.db.mongo import get_db
 from app.models.plans import PlanCreateIn, PlanUpdateIn
@@ -80,14 +80,18 @@ def _month_label(value: datetime) -> str:
 
 
 @router.get("")
-async def list_gyms(owner: dict = Depends(require_admin_actor())):
+async def list_gyms(
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER"))
+):
     db = get_db()
     gyms = await db.gyms.find({"owner_id": owner["owner_id"]}, {"_id": 0}).to_list(20)
     return gyms
 
 
 @router.get("/dashboard")
-async def dashboard(owner: dict = Depends(require_admin_actor())):
+async def dashboard(
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER"))
+):
     db = get_db()
     owner_id = owner["owner_id"]
     base = {"owner_id": owner["owner_id"], "is_employee_shadow": {"$ne": True}}
@@ -175,7 +179,13 @@ async def dashboard_charts(owner: dict) -> dict:
     now = datetime.now(UTC)
 
     contracts = await db.student_contracts.find(
-        {"owner_id": owner_id, "status": {"$in": ["active", "past_due"]}},
+        {
+            "owner_id": owner_id,
+            "$or": [
+                {"status": {"$in": ["active", "past_due"]}},
+                {"contract_status": {"$in": ["active", "pending_activation", "frozen", "scheduled_cancel", "scheduled_freeze"]}},
+            ],
+        },
         {"_id": 0, "plan_name": 1, "plan_id": 1, "amount": 1},
     ).to_list(3000)
     plan_totals: dict[str, float] = defaultdict(float)
@@ -251,7 +261,7 @@ async def dashboard_charts(owner: dict) -> dict:
 @router.get("/access-logs")
 async def access_logs(
     limit: int = Query(default=100, ge=1, le=1000),
-    owner: dict = Depends(require_admin_actor()),
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER")),
 ):
     db = get_db()
     return (
@@ -263,7 +273,9 @@ async def access_logs(
 
 
 @router.get("/plans")
-async def list_plans(owner: dict = Depends(require_admin_actor())):
+async def list_plans(
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER"))
+):
     db = get_db()
     return await db.plans.find({"owner_id": owner["owner_id"]}, {"_id": 0}).to_list(200)
 
@@ -286,7 +298,7 @@ async def list_plans_public():
 
 
 @router.post("/plans")
-async def create_plan(payload: dict, owner: dict = Depends(require_admin_actor())):
+async def create_plan(payload: dict, owner: dict = Depends(require_roles("OWNER", "MANAGER"))):
     db = get_db()
     try:
         normalized = PlanCreateIn.model_validate(payload)
@@ -305,7 +317,9 @@ async def create_plan(payload: dict, owner: dict = Depends(require_admin_actor()
 
 @router.put("/plans/{plan_id}")
 async def update_plan(
-    plan_id: str, payload: dict, owner: dict = Depends(require_admin_actor())
+    plan_id: str,
+    payload: dict,
+    owner: dict = Depends(require_roles("OWNER", "MANAGER")),
 ):
     db = get_db()
     try:
@@ -326,7 +340,7 @@ async def update_plan(
 
 
 @router.delete("/plans/{plan_id}")
-async def delete_plan(plan_id: str, owner: dict = Depends(require_admin_actor())):
+async def delete_plan(plan_id: str, owner: dict = Depends(require_roles("OWNER", "MANAGER"))):
     db = get_db()
     result = await db.plans.delete_one({"plan_id": plan_id, "owner_id": owner["owner_id"]})
     if not result.deleted_count:

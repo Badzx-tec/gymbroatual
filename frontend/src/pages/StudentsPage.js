@@ -4,8 +4,14 @@ import { toast } from 'sonner';
 import { Plus, Search, Edit2, Trash2, X, User, FileSpreadsheet, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CredentialPanel from '../components/CredentialPanel';
+import {
+  clearCredentialHistory,
+  loadCredentialHistory,
+  pushCredentialHistory,
+} from '../utils/credentialHistory';
 
 const emptyStudent = { nome: '', email: '', cpf: '', telefone: '', plano_id: '', matricula: '', tag_rfid: '', biometria_id: '', status: 'ativo', data_vencimento: '', peso_kg: '', idade: '', altura_cm: '', treino: '', dias_frequencia: 0, auth_login_enabled: true, password: '', auto_generate_password: false, force_password_reset: false };
+const STUDENT_CREDENTIAL_HISTORY_KEY = 'gymbro_student_credentials_history';
 
 const normalizeCpfInput = (value) => {
   const digits = String(value || '').replace(/\D/g, '').slice(0, 11);
@@ -29,6 +35,12 @@ export default function StudentsPage() {
   const [editId, setEditId] = useState('');
   const [saving, setSaving] = useState(false);
   const [credentialPanel, setCredentialPanel] = useState(null);
+  const [credentialHistory, setCredentialHistory] = useState(() =>
+    loadCredentialHistory(STUDENT_CREDENTIAL_HISTORY_KEY)
+  );
+  const user = React.useMemo(() => JSON.parse(localStorage.getItem('gymbro_user') || '{}'), []);
+  const role = String(user.role || '').toUpperCase();
+  const canManageStudents = ['OWNER', 'MANAGER', 'RECEPTION'].includes(role);
 
   useEffect(() => { loadData(); }, []);
 
@@ -48,8 +60,37 @@ export default function StudentsPage() {
     return () => clearTimeout(timeout);
   }, [search, filterStatus]);
 
-  const openCreate = () => { setForm(emptyStudent); setEditId(''); setModal('create'); };
+  const openCredentialPanel = (payload) => {
+    if (!payload?.fields?.length) return;
+    const entry = {
+      ...payload,
+      id: `student_cred_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      created_at: new Date().toISOString(),
+    };
+    setCredentialPanel(entry);
+    setCredentialHistory(pushCredentialHistory(STUDENT_CREDENTIAL_HISTORY_KEY, entry, 12));
+  };
+
+  const clearStudentCredentialHistory = () => {
+    clearCredentialHistory(STUDENT_CREDENTIAL_HISTORY_KEY);
+    setCredentialHistory([]);
+    toast.success('Historico de credenciais de aluno limpo.');
+  };
+
+  const openCreate = () => {
+    if (!canManageStudents) {
+      toast.error('Sem permissao para cadastrar aluno.');
+      return;
+    }
+    setForm(emptyStudent);
+    setEditId('');
+    setModal('create');
+  };
   const openEdit = (s) => {
+    if (!canManageStudents) {
+      toast.error('Sem permissao para editar aluno.');
+      return;
+    }
     setForm({ nome: s.nome, email: s.email, cpf: s.cpf, telefone: s.telefone || '', plano_id: s.plano_id || '', matricula: s.matricula || '', tag_rfid: s.tag_rfid || '', biometria_id: s.biometria_id || '', status: s.status, data_vencimento: s.data_vencimento ? s.data_vencimento.split('T')[0] : '', peso_kg: s.peso_kg ?? '', idade: s.idade ?? '', altura_cm: s.altura_cm ?? '', treino: s.treino || '', dias_frequencia: s.dias_frequencia ?? 0, auth_login_enabled: s.auth_login_enabled !== false, password: '', auto_generate_password: false, force_password_reset: false });
     setEditId(s.student_id);
     setModal('edit');
@@ -87,6 +128,10 @@ export default function StudentsPage() {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (!canManageStudents) {
+      toast.error('Sem permissao para salvar aluno.');
+      return;
+    }
     setSaving(true);
     try {
       let result;
@@ -116,7 +161,7 @@ export default function StudentsPage() {
           });
         }
         fields.push({ label: 'Senha temporaria', value: result.temp_password });
-        setCredentialPanel({
+        openCredentialPanel({
           title: `Credenciais do aluno ${result?.nome || form.nome}`,
           description: 'Copie agora e entregue ao aluno. Ele pode entrar com e-mail, CPF ou matricula.',
           fields,
@@ -129,6 +174,10 @@ export default function StudentsPage() {
   };
 
   const handleDelete = async (id, nome) => {
+    if (!canManageStudents) {
+      toast.error('Sem permissao para remover aluno.');
+      return;
+    }
     if (!window.confirm(`Remover aluno ${nome}?`)) return;
     try {
       await api.deleteStudent(id);
@@ -168,10 +217,12 @@ export default function StudentsPage() {
             className="flex items-center gap-2 bg-zinc-800 text-white text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-sm hover:bg-zinc-700">
             <FileText className="w-4 h-4 text-red-400" /> PDF
           </button>
-          <button data-testid="add-student-btn" onClick={openCreate}
-            className="flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-6 py-2.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-0.5">
-            <Plus className="w-4 h-4" /> Novo Aluno
-          </button>
+          {canManageStudents && (
+            <button data-testid="add-student-btn" onClick={openCreate}
+              className="flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-6 py-2.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-0.5">
+              <Plus className="w-4 h-4" /> Novo Aluno
+            </button>
+          )}
         </div>
       </div>
 
@@ -182,6 +233,48 @@ export default function StudentsPage() {
           fields={credentialPanel.fields}
           onClose={() => setCredentialPanel(null)}
         />
+      )}
+
+      {credentialHistory.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold uppercase text-sm tracking-wide">Historico de credenciais de alunos</h3>
+              <p className="text-xs text-zinc-500 mt-1">
+                Reabra para copiar login e senha sem depender do popup inicial.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={clearStudentCredentialHistory}
+              className="text-xs uppercase tracking-wide px-3 py-2 rounded-sm bg-zinc-800 hover:bg-zinc-700"
+            >
+              Limpar
+            </button>
+          </div>
+          <ul className="space-y-2">
+            {credentialHistory.map((item) => (
+              <li
+                key={item.id}
+                className="border border-zinc-800 rounded-sm px-3 py-2 flex items-center justify-between gap-3"
+              >
+                <div>
+                  <p className="text-sm font-medium">{item.title}</p>
+                  <p className="text-xs text-zinc-500">
+                    {item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : '-'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCredentialPanel(item)}
+                  className="text-xs uppercase tracking-wide px-3 py-2 rounded-sm bg-zinc-800 hover:bg-zinc-700"
+                >
+                  Abrir
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {/* Filters */}
@@ -240,14 +333,16 @@ export default function StudentsPage() {
                   {s.data_vencimento ? new Date(s.data_vencimento).toLocaleDateString('pt-BR') : '-'}
                 </td>
                 <td className="px-5 py-3 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <button data-testid={`edit-student-${s.student_id}`} onClick={() => openEdit(s)} className="p-2 hover:bg-zinc-800 rounded-sm transition-colors text-zinc-400 hover:text-white">
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button data-testid={`delete-student-${s.student_id}`} onClick={() => handleDelete(s.student_id, s.nome)} className="p-2 hover:bg-red-500/10 rounded-sm transition-colors text-zinc-400 hover:text-red-500">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  {canManageStudents && (
+                    <div className="flex items-center justify-end gap-1">
+                      <button data-testid={`edit-student-${s.student_id}`} onClick={() => openEdit(s)} className="p-2 hover:bg-zinc-800 rounded-sm transition-colors text-zinc-400 hover:text-white">
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button data-testid={`delete-student-${s.student_id}`} onClick={() => handleDelete(s.student_id, s.nome)} className="p-2 hover:bg-red-500/10 rounded-sm transition-colors text-zinc-400 hover:text-red-500">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </td>
               </motion.tr>
             ))}

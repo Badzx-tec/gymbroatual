@@ -20,6 +20,7 @@ import AdminLayout from './components/AdminLayout';
 import StudentLayout from './components/StudentLayout';
 import StudentContractsPage from './pages/StudentContractsPage';
 import StudentDashboardPage from './pages/StudentDashboardPage';
+import StudentBillingPage from './pages/StudentBillingPage';
 
 function AppRouter() {
   const location = useLocation();
@@ -30,6 +31,7 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
+      <Route path="/signup" element={<SignupRedirect />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/admin" element={<ProtectedRoute><AdminPortalRoute><AdminLayout /></AdminPortalRoute></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
@@ -38,7 +40,7 @@ function AppRouter() {
         <Route path="planos" element={<PlansPage />} />
         <Route path="acessos" element={<AccessLogsPage />} />
         <Route path="notificacoes" element={<NotificationsPage />} />
-        <Route path="catraca" element={<CatracaPage />} />
+        <Route path="catraca" element={<RoleRoute roles={['OWNER', 'MANAGER', 'RECEPTION']}><CatracaPage /></RoleRoute>} />
         <Route path="funcionarios" element={<RoleRoute roles={['OWNER', 'MANAGER']}><StaffPage /></RoleRoute>} />
         <Route path="perfil" element={<ProfilePage />} />
         <Route path="assinatura" element={<RoleRoute roles={['OWNER', 'MANAGER']}><SubscriptionPage /></RoleRoute>} />
@@ -46,6 +48,7 @@ function AppRouter() {
       </Route>
       <Route path="/aluno" element={<ProtectedRoute><StudentPortalRoute><StudentLayout /></StudentPortalRoute></ProtectedRoute>}>
         <Route index element={<StudentDashboardPage />} />
+        <Route path="financeiro" element={<StudentBillingPage />} />
         <Route path="perfil" element={<ProfilePage />} />
       </Route>
       <Route
@@ -61,6 +64,13 @@ function AppRouter() {
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
+}
+
+function SignupRedirect() {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search || '');
+  params.set('mode', 'register');
+  return <Navigate to={`/login?${params.toString()}`} replace />;
 }
 
 function ProtectedRoute({ children }) {

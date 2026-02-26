@@ -1,12 +1,13 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LogOut, User, LayoutDashboard, Dumbbell } from 'lucide-react';
+import { LogOut, User, LayoutDashboard, Dumbbell, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { api } from '../api';
 
 const navItems = [
   { to: '/aluno', label: 'Meu Painel', icon: LayoutDashboard, end: true },
+  { to: '/aluno/financeiro', label: 'Financeiro', icon: CreditCard },
   { to: '/aluno/perfil', label: 'Meu Perfil', icon: User },
 ];
 
@@ -45,8 +46,9 @@ export default function StudentLayout() {
         <div className="mb-5">
           <p className="text-xs uppercase tracking-wide text-zinc-500">Bem-vindo</p>
           <h1 className="font-heading text-2xl uppercase">{user.name || 'Aluno'}</h1>
+          <p className="text-xs text-zinc-500 mt-1">Voce visualiza apenas seus proprios dados e contratos.</p>
         </div>
-        <nav className="flex gap-2 mb-6">
+        <nav className="flex flex-wrap gap-2 mb-6">
           {navItems.map((item) => (
             <NavLink
               key={item.to}

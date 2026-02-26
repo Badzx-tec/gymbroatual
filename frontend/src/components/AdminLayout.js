@@ -43,11 +43,13 @@ export default function AdminLayout() {
   const canSeeBilling = ['OWNER', 'MANAGER'].includes(role);
   const canSeeStaff = ['OWNER', 'MANAGER'].includes(role);
   const canSeeContracts = ['OWNER', 'MANAGER', 'RECEPTION'].includes(role);
+  const canSeeTurnstile = ['OWNER', 'MANAGER', 'RECEPTION'].includes(role);
   const visibleNavItems = navItems.filter((item) => {
     if (item.to === '/admin/assinatura') return canSeeBilling;
     if (item.to === '/admin/cobranca') return canSeeBilling;
     if (item.to === '/admin/funcionarios') return canSeeStaff;
     if (item.to === '/admin/contratos') return canSeeContracts;
+    if (item.to === '/admin/catraca') return canSeeTurnstile;
     return true;
   });
 

@@ -3,6 +3,11 @@ import { toast } from 'sonner';
 
 import { api } from '../api';
 import CredentialPanel from '../components/CredentialPanel';
+import {
+  clearCredentialHistory,
+  loadCredentialHistory,
+  pushCredentialHistory,
+} from '../utils/credentialHistory';
 
 const emptyEmployeeForm = {
   name: '',
@@ -15,6 +20,7 @@ const emptyEmployeeForm = {
   keypad_code: '',
   sync_shadow_student: true,
 };
+const STAFF_CREDENTIAL_HISTORY_KEY = 'gymbro_staff_credentials_history';
 
 export default function StaffPage() {
   const [employees, setEmployees] = useState([]);
@@ -29,6 +35,26 @@ export default function StaffPage() {
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const [credentialPanel, setCredentialPanel] = useState(null);
+  const [credentialHistory, setCredentialHistory] = useState(() =>
+    loadCredentialHistory(STAFF_CREDENTIAL_HISTORY_KEY)
+  );
+
+  const openCredentialPanel = (payload) => {
+    if (!payload?.fields?.length) return;
+    const entry = {
+      ...payload,
+      id: `cred_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      created_at: new Date().toISOString(),
+    };
+    setCredentialPanel(entry);
+    setCredentialHistory(pushCredentialHistory(STAFF_CREDENTIAL_HISTORY_KEY, entry, 12));
+  };
+
+  const clearCredentialPanels = () => {
+    clearCredentialHistory(STAFF_CREDENTIAL_HISTORY_KEY);
+    setCredentialHistory([]);
+    toast.success('Historico de credenciais limpo.');
+  };
 
   const load = async ({ silent = false } = {}) => {
     setLoading(true);
@@ -79,7 +105,7 @@ export default function StaffPage() {
         fields.push({ label: 'Matricula', value: result.matricula });
       }
       if (fields.length) {
-        setCredentialPanel({
+        openCredentialPanel({
           title: `Credenciais de ${result.name || form.name}`,
           description: 'Copie e guarde agora. A senha inicial/temporaria nao sera exibida novamente.',
           fields,
@@ -113,7 +139,7 @@ export default function StaffPage() {
         fields.push({ label: 'Nova senha temporaria', value: result.temp_password });
       }
       if (fields.length) {
-        setCredentialPanel({
+        openCredentialPanel({
           title: `Nova senha de ${employee.name}`,
           description: 'Copie e entregue ao funcionario. O acesso e feito pela tela de login.',
           fields,
@@ -278,6 +304,48 @@ export default function StaffPage() {
           fields={credentialPanel.fields}
           onClose={() => setCredentialPanel(null)}
         />
+      )}
+
+      {credentialHistory.length > 0 && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold uppercase text-sm tracking-wide">Historico de credenciais</h3>
+              <p className="text-xs text-zinc-500 mt-1">
+                Abra novamente para copiar senha/token sem pressa.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={clearCredentialPanels}
+              className="text-xs uppercase tracking-wide px-3 py-2 rounded-sm bg-zinc-800 hover:bg-zinc-700"
+            >
+              Limpar
+            </button>
+          </div>
+          <ul className="space-y-2">
+            {credentialHistory.map((item) => (
+              <li
+                key={item.id}
+                className="border border-zinc-800 rounded-sm px-3 py-2 flex items-center justify-between gap-3"
+              >
+                <div>
+                  <p className="text-sm font-medium">{item.title}</p>
+                  <p className="text-xs text-zinc-500">
+                    {item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : '-'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCredentialPanel(item)}
+                  className="text-xs uppercase tracking-wide px-3 py-2 rounded-sm bg-zinc-800 hover:bg-zinc-700"
+                >
+                  Abrir
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -5,16 +5,39 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.deps import require_student_actor
 from app.core.time import UTC
 from app.db.mongo import get_db
+from app.services.student_contracts import clean_doc, refresh_contract_state
 
 router = APIRouter()
 
 
-def _clean_doc(doc: dict | None) -> dict | None:
+def _sanitize_doc(doc: dict | None) -> dict | None:
     if doc is None:
         return None
-    cleaned = dict(doc)
-    cleaned.pop("_id", None)
+    cleaned = clean_doc(doc) or {}
     cleaned.pop("password_hash", None)
+    return cleaned
+
+
+def _sanitize_contract_for_student(contract: dict | None) -> dict | None:
+    cleaned = _sanitize_doc(contract)
+    if cleaned is None:
+        return None
+    cleaned.pop("internal_notes", None)
+    cleaned.pop("manual_overrides", None)
+    return cleaned
+
+
+def _sanitize_charge_for_student(charge: dict) -> dict:
+    cleaned = _sanitize_doc(charge) or {}
+    # Campos internos/operacionais que nao sao necessarios no portal do aluno.
+    cleaned.pop("failure_reason", None)
+    return cleaned
+
+
+def _sanitize_event_for_student(event: dict) -> dict:
+    cleaned = _sanitize_doc(event) or {}
+    # Remove metadados internos de actor para reduzir exposicao desnecessaria.
+    cleaned.pop("actor_id", None)
     return cleaned
 
 
@@ -38,6 +61,9 @@ def _access_status(student: dict, contract: dict | None, now: datetime) -> str:
         return "blocked"
     if bool(student.get("access_blocked", False)):
         return "blocked"
+    contract_access = str((contract or {}).get("access_status") or "").lower()
+    if contract_access in {"allowed", "blocked", "grace_period", "suspended"}:
+        return contract_access
     if contract and str(contract.get("status") or "").lower() in {"past_due", "expired", "canceled"}:
         return str(contract.get("status")).lower()
     plan_end = student.get("plan_expires_at") or student.get("data_vencimento")
@@ -46,6 +72,33 @@ def _access_status(student: dict, contract: dict | None, now: datetime) -> str:
         if compare < now:
             return "expired"
     return "active"
+
+
+def _access_context(student: dict, contract: dict | None, access_status: str) -> dict:
+    contract_doc = contract or {}
+    grace_until = contract_doc.get("grace_until")
+    next_retry_at = contract_doc.get("next_retry_at")
+    dunning_level = int(contract_doc.get("dunning_level") or 0)
+    blocked_reason = None
+    if bool(student.get("access_blocked", False)):
+        blocked_reason = "manual_block"
+    elif access_status in {"blocked", "suspended"}:
+        contract_status = str(contract_doc.get("contract_status") or "").lower()
+        financial_status = str(contract_doc.get("financial_status") or "").lower()
+        if financial_status in {"overdue", "failed"}:
+            blocked_reason = "financial_default_after_grace"
+        elif contract_status in {"frozen"}:
+            blocked_reason = "contract_frozen"
+        elif contract_status in {"canceled", "expired", "ended"}:
+            blocked_reason = "contract_ended"
+        else:
+            blocked_reason = "policy_restriction"
+    return {
+        "grace_until": grace_until,
+        "next_retry_at": next_retry_at,
+        "dunning_level": dunning_level,
+        "blocked_reason": blocked_reason,
+    }
 
 
 @router.get("/dashboard")
@@ -64,6 +117,22 @@ async def student_dashboard(actor: dict = Depends(require_student_actor)):
         .to_list(1)
     )
     active_contract = contract[0] if contract else None
+    if active_contract:
+        active_contract, _, _ = await refresh_contract_state(db, active_contract)
+
+    upcoming_charges = (
+        await db.student_charges.find(
+            {
+                "owner_id": actor["owner_id"],
+                "student_id": actor["student_id"],
+                "status": {"$in": ["open", "overdue", "partially_paid"]},
+            },
+            {"_id": 0},
+        )
+        .sort("due_at", 1)
+        .limit(8)
+        .to_list(8)
+    )
 
     access_logs = (
         await db.access_logs.find(
@@ -86,6 +155,7 @@ async def student_dashboard(actor: dict = Depends(require_student_actor)):
     )
 
     status = _access_status(student, active_contract, now)
+    access_context = _access_context(student, active_contract, status)
     return {
         "student": {
             "student_id": student["student_id"],
@@ -97,8 +167,10 @@ async def student_dashboard(actor: dict = Depends(require_student_actor)):
             "plan_id": student.get("plano_id"),
             "plan_expires_at": student.get("plan_expires_at") or student.get("data_vencimento"),
         },
-        "contract": _clean_doc(active_contract),
+        "contract": _sanitize_contract_for_student(active_contract),
         "access_status": status,
+        "access_context": access_context,
+        "upcoming_charges": [_sanitize_charge_for_student(item) for item in upcoming_charges],
         "recent_access_logs": access_logs,
         "notifications": notifications,
     }
@@ -159,7 +231,7 @@ async def student_contracts(
     actor: dict = Depends(require_student_actor),
 ):
     db = get_db()
-    return (
+    docs = (
         await db.student_contracts.find(
             {"owner_id": actor["owner_id"], "student_id": actor["student_id"]},
             {"_id": 0},
@@ -168,6 +240,13 @@ async def student_contracts(
         .limit(limit)
         .to_list(limit)
     )
+    refreshed: list[dict] = []
+    for item in docs:
+        contract, _, _ = await refresh_contract_state(db, item)
+        sanitized = _sanitize_contract_for_student(contract)
+        if sanitized:
+            refreshed.append(sanitized)
+    return refreshed
 
 
 @router.get("/access-logs")
@@ -185,3 +264,86 @@ async def student_access_logs(
         .limit(limit)
         .to_list(limit)
     )
+
+
+@router.get("/billing")
+async def student_billing(
+    limit_contracts: int = Query(default=20, ge=1, le=100),
+    limit_charges: int = Query(default=100, ge=1, le=300),
+    limit_events: int = Query(default=120, ge=1, le=300),
+    actor: dict = Depends(require_student_actor),
+):
+    db = get_db()
+    contracts_raw = (
+        await db.student_contracts.find(
+            {"owner_id": actor["owner_id"], "student_id": actor["student_id"]},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(limit_contracts)
+        .to_list(limit_contracts)
+    )
+
+    contracts: list[dict] = []
+    for item in contracts_raw:
+        refreshed, _, _ = await refresh_contract_state(db, item)
+        contracts.append(refreshed)
+    contract_ids = [item.get("contract_id") for item in contracts if item.get("contract_id")]
+
+    charges_query: dict = {
+        "owner_id": actor["owner_id"],
+        "student_id": actor["student_id"],
+    }
+    if contract_ids:
+        charges_query["contract_id"] = {"$in": contract_ids}
+    charges = (
+        await db.student_charges.find(charges_query, {"_id": 0})
+        .sort("due_at", -1)
+        .limit(limit_charges)
+        .to_list(limit_charges)
+    )
+
+    events: list[dict] = []
+    if contract_ids:
+        events = (
+            await db.student_billing_events.find(
+                {"owner_id": actor["owner_id"], "contract_id": {"$in": contract_ids}},
+                {"_id": 0},
+            )
+            .sort("created_at", -1)
+            .limit(limit_events)
+            .to_list(limit_events)
+        )
+
+    open_statuses = {"open", "overdue", "partially_paid", "failed"}
+    open_charges = [item for item in charges if str(item.get("status") or "").lower() in open_statuses]
+    paid_charges = [item for item in charges if str(item.get("status") or "").lower() == "paid"]
+    next_due = None
+    for charge in sorted(
+        open_charges,
+        key=lambda item: item.get("due_at") or datetime.max.replace(tzinfo=UTC),
+    ):
+        next_due = charge.get("due_at")
+        if next_due:
+            break
+
+    sanitized_contracts: list[dict] = []
+    for item in contracts:
+        sanitized = _sanitize_contract_for_student(item)
+        if sanitized:
+            sanitized_contracts.append(sanitized)
+
+    return {
+        "contracts": sanitized_contracts,
+        "charges": [_sanitize_charge_for_student(item) for item in charges],
+        "events": [_sanitize_event_for_student(item) for item in events],
+        "summary": {
+            "total_contracts": len(contracts),
+            "open_charges": len(open_charges),
+            "paid_charges": len(paid_charges),
+            "overdue_charges": len(
+                [item for item in charges if str(item.get("status") or "").lower() in {"overdue", "failed"}]
+            ),
+            "next_due_at": next_due,
+        },
+    }

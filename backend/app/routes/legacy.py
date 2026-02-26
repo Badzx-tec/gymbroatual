@@ -64,19 +64,21 @@ async def plans_public():
 
 
 @router.post("/plans")
-async def create_plan(payload: dict, actor: dict = Depends(require_admin_actor())):
+async def create_plan(payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     return await gym_routes.create_plan(payload, actor)
 
 
 @router.put("/plans/{plan_id}")
 async def update_plan(
-    plan_id: str, payload: dict, actor: dict = Depends(require_admin_actor())
+    plan_id: str,
+    payload: dict,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
 ):
     return await gym_routes.update_plan(plan_id, payload, actor)
 
 
 @router.delete("/plans/{plan_id}")
-async def delete_plan(plan_id: str, actor: dict = Depends(require_admin_actor())):
+async def delete_plan(plan_id: str, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     return await gym_routes.delete_plan(plan_id, actor)
 
 

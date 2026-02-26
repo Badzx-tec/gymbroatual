@@ -3,23 +3,72 @@ import { apiUrl } from '../config';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Dumbbell, Shield, Zap, Users, ChevronRight, Check, Mail, Phone, MapPin } from 'lucide-react';
+import { toast } from 'sonner';
+
+const CONTACT_EMAIL = 'juannicarosa@gmail.com';
+const CONTACT_PHONE = '(33) 98851-5895';
+const CONTACT_PHONE_LINK = '+5533988515895';
+const CONTACT_ADDRESS = 'Machacalis/MG';
+
+function buildSignupUrl(params = {}) {
+  const query = new URLSearchParams({ origin: 'landing', ...params });
+  return `/signup?${query.toString()}`;
+}
 
 export default function LandingPage() {
   const [plans, setPlans] = useState([]);
-  const registerUrl = '/login?mode=register';
+  const [contactName, setContactName] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactMessage, setContactMessage] = useState('');
+  const registerUrl = buildSignupUrl();
+
   const contactItems = [
-    { icon: Mail, label: 'Email', text: 'juannicarosa@gmail.com', href: 'mailto:juannicarosa@gmail.com' },
-    { icon: Phone, label: 'Telefone', text: '(33) 98851-5895', href: 'tel:+5533988515895' },
-    { icon: MapPin, label: 'Endereco', text: 'Machacalis/MG', href: null },
+    { icon: Mail, label: 'Email', text: CONTACT_EMAIL, href: `mailto:${CONTACT_EMAIL}` },
+    { icon: Phone, label: 'Telefone', text: CONTACT_PHONE, href: `tel:${CONTACT_PHONE_LINK}` },
+    { icon: MapPin, label: 'Endereco', text: CONTACT_ADDRESS, href: null },
+  ];
+
+  const faqItems = [
+    {
+      question: 'Como funciona o botao Assinar?',
+      answer:
+        'Ao clicar em Assinar voce vai direto para criar sua conta. Depois da validacao de e-mail, acessa o painel e segue para ativacao da assinatura.',
+    },
+    {
+      question: 'Preciso de cartao para testar?',
+      answer:
+        'Nao. Voce pode criar conta e configurar o sistema primeiro. A ativacao comercial e de assinatura acontece no fluxo de cobranca.',
+    },
+    {
+      question: 'O sistema integra com catraca?',
+      answer:
+        'Sim. O GymBro suporta operacao com gateway Toletus, logs de acesso e regras de bloqueio/liberacao por status do contrato.',
+    },
   ];
 
   useEffect(() => {
-    fetch(apiUrl('/api/plans/public')).then(r => r.json()).then(setPlans).catch(() => {});
+    fetch(apiUrl('/api/plans/public')).then((r) => r.json()).then(setPlans).catch(() => {});
   }, []);
+
+  const handleContactSubmit = (event) => {
+    event.preventDefault();
+    const name = contactName.trim();
+    const email = contactEmail.trim();
+    const message = contactMessage.trim();
+    if (!name || !email || !message) {
+      toast.error('Preencha nome, e-mail e mensagem para continuar.');
+      return;
+    }
+    const subject = encodeURIComponent('Contato comercial GymBro');
+    const body = encodeURIComponent(
+      `Nome: ${name}\nE-mail: ${email}\n\nMensagem:\n${message}`,
+    );
+    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`;
+    toast.success('Abrindo seu cliente de e-mail.');
+  };
 
   return (
     <div className="bg-[#09090b] text-white font-body min-h-screen">
-      {/* Nav */}
       <nav data-testid="landing-nav" className="fixed top-0 w-full z-50 bg-[#09090b]/80 backdrop-blur-md border-b border-zinc-800/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
           <div className="flex items-center gap-2">
@@ -29,15 +78,20 @@ export default function LandingPage() {
           <div className="hidden md:flex items-center gap-8 text-sm font-medium text-zinc-400">
             <a href="#inicio" className="hover:text-white transition-colors">Inicio</a>
             <a href="#planos" className="hover:text-white transition-colors">Planos</a>
+            <a href="#faq" className="hover:text-white transition-colors">FAQ</a>
             <a href="#contato" className="hover:text-white transition-colors">Contato</a>
           </div>
-          <Link to="/login" data-testid="nav-login-btn" className="bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-6 py-2.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-0.5">
-            Entrar
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link to="/login" data-testid="nav-login-btn" className="border border-zinc-700 text-white font-semibold uppercase tracking-wider text-xs px-4 py-2.5 rounded-sm hover:border-zinc-500 transition-all">
+              Entrar
+            </Link>
+            <Link to={registerUrl} data-testid="nav-signup-btn" className="bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-5 py-2.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-0.5">
+              Assinar
+            </Link>
+          </div>
         </div>
       </nav>
 
-      {/* Hero */}
       <section id="inicio" className="relative min-h-screen flex items-center pt-16">
         <div className="absolute inset-0 z-0">
           <img src="https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=1920&q=80" alt="" className="w-full h-full object-cover opacity-30" />
@@ -55,9 +109,9 @@ export default function LandingPage() {
             <p className="text-zinc-400 text-lg md:text-xl max-w-xl mb-10 leading-relaxed">
               Controle de alunos, assinaturas, catracas e pagamentos em uma unica plataforma. Simples, rapido e seguro.
             </p>
-            <div className="flex flex-wrap gap-4">
+            <div className="flex flex-wrap gap-4 mb-6">
               <Link
-                to={registerUrl}
+                to={buildSignupUrl({ origin: 'hero' })}
                 data-testid="hero-cta-btn"
                 className="inline-flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-8 py-3.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-1 shadow-[0_0_20px_rgba(204,255,0,0.25)]"
               >
@@ -67,11 +121,17 @@ export default function LandingPage() {
                 Acessar Painel
               </Link>
             </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-xs text-zinc-400 uppercase tracking-wide">
+              <span>1. Cria conta</span>
+              <span className="hidden sm:inline text-zinc-600">|</span>
+              <span>2. Verifica e-mail</span>
+              <span className="hidden sm:inline text-zinc-600">|</span>
+              <span>3. Ativa assinatura</span>
+            </div>
           </motion.div>
         </div>
       </section>
 
-      {/* Features */}
       <section className="py-24 md:py-32 relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-16">
@@ -97,7 +157,23 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Plans */}
+      <section className="py-16 md:py-20 bg-zinc-950/50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {[
+              { title: 'Cadastro em minutos', desc: 'Crie sua conta e confirme o e-mail para liberar o ambiente.' },
+              { title: 'Operacao organizada', desc: 'Contratos, cobrancas e acessos com status claros para reduzir erro operacional.' },
+              { title: 'Escala com seguranca', desc: 'RBAC, trilhas de eventos e regras de acesso no backend.' },
+            ].map((item) => (
+              <div key={item.title} className="border border-zinc-800 rounded-md p-5 bg-zinc-900/60">
+                <h3 className="font-heading text-lg uppercase mb-2">{item.title}</h3>
+                <p className="text-zinc-400 text-sm leading-relaxed">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section id="planos" className="py-24 md:py-32 bg-zinc-950/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-16">
@@ -111,19 +187,19 @@ export default function LandingPage() {
                 {i === 1 && <span className="text-[10px] font-bold uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 px-3 py-1 rounded-sm mb-4 inline-block">Popular</span>}
                 <h3 className="font-heading text-2xl font-bold uppercase mb-2">{plan.nome}</h3>
                 <div className="mb-4">
-                  <span className="text-4xl font-bold">R$ {plan.valor.toFixed(2).replace('.', ',')}</span>
+                  <span className="text-4xl font-bold">R$ {Number(plan.valor || 0).toFixed(2).replace('.', ',')}</span>
                   <span className="text-zinc-500 text-sm ml-1">/{plan.duracao_dias} dias</span>
                 </div>
                 <p className="text-zinc-400 text-sm mb-6">{plan.descricao}</p>
                 <ul className="space-y-3 mb-8">
-                  {['Acesso completo', 'Suporte prioritario', 'App mobile'].map((item, j) => (
-                    <li key={j} className="flex items-center gap-2 text-sm text-zinc-300">
+                  {['Acesso completo', 'Suporte prioritario', 'App mobile'].map((item) => (
+                    <li key={item} className="flex items-center gap-2 text-sm text-zinc-300">
                       <Check className="w-4 h-4 text-[#ccff00]" /> {item}
                     </li>
                   ))}
                 </ul>
                 <Link
-                  to={`${registerUrl}${plan.plan_id ? `&plan=${encodeURIComponent(plan.plan_id)}` : ''}`}
+                  to={buildSignupUrl({ origin: 'pricing', plan: plan.plan_id })}
                   className={`w-full inline-flex items-center justify-center font-bold uppercase tracking-wider text-sm py-3 rounded-sm transition-all ${i === 1 ? 'bg-[#ccff00] text-black hover:bg-[#b3e600]' : 'bg-zinc-800 text-white hover:bg-zinc-700'}`}
                 >
                   Assinar
@@ -131,12 +207,12 @@ export default function LandingPage() {
               </motion.div>
             )) : (
               [
-                { nome: 'Mensal', valor: 139.90, dias: 30 },
-                { nome: 'Trimestral', valor: 369.90, dias: 90 },
-                { nome: 'Semestral', valor: 669.90, dias: 180 },
-                { nome: 'Anual', valor: 1249.90, dias: 365 },
+                { nome: 'Mensal', valor: 139.90, dias: 30, planId: 'owner_monthly' },
+                { nome: 'Trimestral', valor: 369.90, dias: 90, planId: 'owner_quarterly' },
+                { nome: 'Semestral', valor: 669.90, dias: 180, planId: 'owner_semiannual' },
+                { nome: 'Anual', valor: 1249.90, dias: 365, planId: 'owner_annual' },
               ].map((plan, i) => (
-                <motion.div key={i} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
+                <motion.div key={plan.planId} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
                   className={`bg-zinc-900 border rounded-md p-6 md:p-8 ${i === 1 ? 'border-[#ccff00]' : 'border-zinc-800'}`}>
                   {i === 1 && <span className="text-[10px] font-bold uppercase tracking-widest text-[#ccff00] bg-[#ccff00]/10 px-3 py-1 rounded-sm mb-4 inline-block">Popular</span>}
                   <h3 className="font-heading text-2xl font-bold uppercase mb-2">{plan.nome}</h3>
@@ -145,7 +221,7 @@ export default function LandingPage() {
                     <span className="text-zinc-500 text-sm ml-1">/{plan.dias} dias</span>
                   </div>
                   <Link
-                    to={registerUrl}
+                    to={buildSignupUrl({ origin: 'pricing', plan: plan.planId })}
                     className={`w-full inline-flex items-center justify-center font-bold uppercase tracking-wider text-sm py-3 rounded-sm ${i === 1 ? 'bg-[#ccff00] text-black' : 'bg-zinc-800 text-white'}`}
                   >
                     Assinar
@@ -157,7 +233,21 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Contact */}
+      <section id="faq" className="py-20 md:py-24">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="font-heading text-3xl md:text-5xl font-bold tracking-tight uppercase mb-4 text-center">FAQ</h2>
+          <p className="text-zinc-400 text-center mb-10">Respostas rapidas para reduzir friccao no cadastro.</p>
+          <div className="space-y-3">
+            {faqItems.map((item) => (
+              <div key={item.question} className="bg-zinc-900 border border-zinc-800 rounded-md p-5">
+                <h3 className="font-heading text-lg uppercase mb-2">{item.question}</h3>
+                <p className="text-zinc-400 text-sm leading-relaxed">{item.answer}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section id="contato" className="py-24 md:py-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-16">
@@ -165,8 +255,8 @@ export default function LandingPage() {
               <h2 className="font-heading text-3xl md:text-5xl font-bold tracking-tight uppercase mb-6">Entre em<br /><span className="text-[#ccff00]">contato</span></h2>
               <p className="text-zinc-400 text-lg mb-8 leading-relaxed">Canal direto para contratacao e suporte comercial da plataforma.</p>
               <div className="space-y-4">
-                {contactItems.map((item, i) => (
-                  <div key={i} className="flex items-center gap-3 text-zinc-300">
+                {contactItems.map((item) => (
+                  <div key={item.label} className="flex items-center gap-3 text-zinc-300">
                     <item.icon className="w-5 h-5 text-[#ccff00]" />
                     <div className="flex flex-col">
                       <span className="text-[11px] uppercase tracking-wide text-zinc-500">{item.label}</span>
@@ -181,7 +271,7 @@ export default function LandingPage() {
               </div>
               <div className="mt-8">
                 <Link
-                  to={registerUrl}
+                  to={buildSignupUrl({ origin: 'contact' })}
                   className="inline-flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-6 py-3 rounded-sm hover:bg-[#b3e600] transition-all"
                 >
                   Assinar agora <ChevronRight className="w-4 h-4" />
@@ -189,10 +279,31 @@ export default function LandingPage() {
               </div>
             </motion.div>
             <motion.form initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }}
-              data-testid="contact-form" className="space-y-4" onSubmit={e => e.preventDefault()}>
-              <input data-testid="contact-name-input" type="text" placeholder="Seu nome" className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 focus:outline-none focus:ring-1 focus:ring-[#ccff00] focus:border-[#ccff00] transition-colors" />
-              <input data-testid="contact-email-input" type="email" placeholder="Seu e-mail" className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 focus:outline-none focus:ring-1 focus:ring-[#ccff00] focus:border-[#ccff00] transition-colors" />
-              <textarea data-testid="contact-message-input" placeholder="Sua mensagem" rows={4} className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm p-4 focus:outline-none focus:ring-1 focus:ring-[#ccff00] focus:border-[#ccff00] transition-colors resize-none" />
+              data-testid="contact-form" className="space-y-4" onSubmit={handleContactSubmit}>
+              <input
+                data-testid="contact-name-input"
+                type="text"
+                value={contactName}
+                onChange={(e) => setContactName(e.target.value)}
+                placeholder="Seu nome"
+                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 focus:outline-none focus:ring-1 focus:ring-[#ccff00] focus:border-[#ccff00] transition-colors"
+              />
+              <input
+                data-testid="contact-email-input"
+                type="email"
+                value={contactEmail}
+                onChange={(e) => setContactEmail(e.target.value)}
+                placeholder="Seu e-mail"
+                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 focus:outline-none focus:ring-1 focus:ring-[#ccff00] focus:border-[#ccff00] transition-colors"
+              />
+              <textarea
+                data-testid="contact-message-input"
+                value={contactMessage}
+                onChange={(e) => setContactMessage(e.target.value)}
+                placeholder="Sua mensagem"
+                rows={4}
+                className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm p-4 focus:outline-none focus:ring-1 focus:ring-[#ccff00] focus:border-[#ccff00] transition-colors resize-none"
+              />
               <button data-testid="contact-submit-btn" type="submit" className="bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-8 py-3.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-0.5 w-full md:w-auto">
                 Enviar Mensagem
               </button>
@@ -201,7 +312,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Footer */}
       <footer className="border-t border-zinc-800 py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
           <div className="flex items-center gap-2">
@@ -209,7 +319,7 @@ export default function LandingPage() {
             <span className="font-heading text-lg font-bold uppercase">GymBro</span>
           </div>
           <div className="text-sm text-zinc-400">
-            <p>Contato: juannicarosa@gmail.com | (33) 98851-5895 | Machacalis/MG</p>
+            <p>Contato: {CONTACT_EMAIL} | {CONTACT_PHONE} | {CONTACT_ADDRESS}</p>
             <p className="text-zinc-500">&copy; 2026 GymBro. Todos os direitos reservados.</p>
           </div>
         </div>

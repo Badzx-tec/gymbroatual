@@ -35,6 +35,43 @@ async function copyText(label, value) {
   }
 }
 
+function credentialsText(title, fields) {
+  const header = title ? `${title}\n\n` : '';
+  const body = (fields || [])
+    .map((field) => `${field.label}: ${field.value || ''}`)
+    .join('\n');
+  return `${header}${body}`.trim();
+}
+
+async function copyAll(title, fields) {
+  const text = credentialsText(title, fields);
+  await copyText('credenciais', text);
+}
+
+function downloadCredentials(title, fields) {
+  const text = credentialsText(title, fields);
+  if (!text) {
+    toast.error('Nada para exportar.');
+    return;
+  }
+  try {
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    const safeTitle = String(title || 'credenciais')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    anchor.href = url;
+    anchor.download = `${safeTitle || 'credenciais'}.txt`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    toast.success('Arquivo de credenciais baixado.');
+  } catch {
+    toast.error('Falha ao baixar credenciais.');
+  }
+}
+
 export default function CredentialPanel({ title, description, fields, onClose }) {
   if (!fields?.length) return null;
 
@@ -45,13 +82,29 @@ export default function CredentialPanel({ title, description, fields, onClose })
           <h3 className="font-semibold uppercase text-sm tracking-wide text-amber-200">{title}</h3>
           {description && <p className="text-xs text-amber-100/80 mt-1">{description}</p>}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-xs uppercase tracking-wide px-2 py-1 rounded-sm bg-zinc-900/70 border border-zinc-700 hover:bg-zinc-800"
-        >
-          Fechar
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => copyAll(title, fields)}
+            className="text-xs uppercase tracking-wide px-2 py-1 rounded-sm bg-zinc-900/70 border border-zinc-700 hover:bg-zinc-800"
+          >
+            Copiar tudo
+          </button>
+          <button
+            type="button"
+            onClick={() => downloadCredentials(title, fields)}
+            className="text-xs uppercase tracking-wide px-2 py-1 rounded-sm bg-zinc-900/70 border border-zinc-700 hover:bg-zinc-800"
+          >
+            Baixar .txt
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-xs uppercase tracking-wide px-2 py-1 rounded-sm bg-zinc-900/70 border border-zinc-700 hover:bg-zinc-800"
+          >
+            Fechar
+          </button>
+        </div>
       </div>
 
       <div className="space-y-2">

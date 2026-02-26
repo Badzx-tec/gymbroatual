@@ -105,6 +105,14 @@ export const api = {
   studentPortalProfile: () => request('/api/student/profile'),
   updateStudentPortalProfile: (data) => request('/api/student/profile', { method: 'PUT', body: JSON.stringify(data) }),
   studentPortalContracts: (limit = 20) => request(`/api/student/contracts?limit=${limit}`),
+  studentPortalBilling: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.limitContracts) query.set('limit_contracts', String(params.limitContracts));
+    if (params.limitCharges) query.set('limit_charges', String(params.limitCharges));
+    if (params.limitEvents) query.set('limit_events', String(params.limitEvents));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request(`/api/student/billing${suffix}`);
+  },
   studentPortalAccessLogs: (limit = 50) => request(`/api/student/access-logs?limit=${limit}`),
 
   dashboard: () => request('/api/dashboard'),
@@ -136,21 +144,38 @@ export const api = {
   updatePlan: (id, data) => request(`/api/plans/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deletePlan: (id) => request(`/api/plans/${id}`, { method: 'DELETE' }),
   studentBillingOverview: () => request('/api/student-billing/overview'),
+  runStudentBillingReconcile: (limit = 500) =>
+    request(`/api/student-billing/reconcile/run?limit=${encodeURIComponent(String(limit))}`, {
+      method: 'POST',
+    }),
+  listStudentBillingReconcileRuns: (limit = 30) =>
+    request(`/api/student-billing/reconcile/runs?limit=${encodeURIComponent(String(limit))}`),
   listStudentContracts: (params = {}) => {
     const query = new URLSearchParams();
     if (params.status) query.set('status', params.status);
+    if (params.contract_status) query.set('contract_status', params.contract_status);
+    if (params.financial_status) query.set('financial_status', params.financial_status);
+    if (params.access_status) query.set('access_status', params.access_status);
     if (params.student_id) query.set('student_id', params.student_id);
+    if (params.plan_id) query.set('plan_id', params.plan_id);
+    if (params.q) query.set('q', params.q);
     if (params.limit) query.set('limit', String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : '';
     return request(`/api/student-billing/contracts${suffix}`);
   },
+  getStudentContractDetail: (contractId) => request(`/api/student-billing/contracts/${contractId}`),
   createStudentContract: (data) => request('/api/student-billing/contracts', { method: 'POST', body: JSON.stringify(data) }),
-  cancelStudentContract: (contractId) => request(`/api/student-billing/contracts/${contractId}/cancel`, { method: 'POST' }),
+  updateStudentContract: (contractId, data) => request(`/api/student-billing/contracts/${contractId}`, { method: 'PUT', body: JSON.stringify(data) }),
+  renewStudentContract: (contractId, data) => request(`/api/student-billing/contracts/${contractId}/renew`, { method: 'POST', body: JSON.stringify(data || {}) }),
+  freezeStudentContract: (contractId, data) => request(`/api/student-billing/contracts/${contractId}/freeze`, { method: 'POST', body: JSON.stringify(data) }),
+  resumeStudentContract: (contractId, data) => request(`/api/student-billing/contracts/${contractId}/resume`, { method: 'POST', body: JSON.stringify(data || {}) }),
+  changeStudentContractPlan: (contractId, data) => request(`/api/student-billing/contracts/${contractId}/change-plan`, { method: 'POST', body: JSON.stringify(data) }),
+  cancelStudentContract: (contractId, data = {}) => request(`/api/student-billing/contracts/${contractId}/cancel`, { method: 'POST', body: JSON.stringify(data) }),
   listContractCharges: (contractId, limit = 200) => request(`/api/student-billing/contracts/${contractId}/charges?limit=${limit}`),
   createContractCharge: (contractId, data) => request(`/api/student-billing/contracts/${contractId}/charges`, { method: 'POST', body: JSON.stringify(data) }),
   cleanupContractCharges: (contractId, data = {}) => request(`/api/student-billing/contracts/${contractId}/charges/cleanup`, { method: 'POST', body: JSON.stringify(data) }),
   markStudentChargePaid: (chargeId, data) => request(`/api/student-billing/charges/${chargeId}/mark-paid`, { method: 'POST', body: JSON.stringify(data) }),
-  listStudentBillingEvents: (limit = 100) => request(`/api/student-billing/events?limit=${limit}`),
+  listStudentBillingEvents: (limit = 100, contractId = '') => request(`/api/student-billing/events?limit=${limit}${contractId ? `&contract_id=${encodeURIComponent(contractId)}` : ''}`),
 
   listAccessLogs: (limit = 50) => request(`/api/access-logs?limit=${limit}`),
   listWebhookLogs: (limit = 50) => request(`/api/webhook-logs?limit=${limit}`),
@@ -199,7 +224,20 @@ export const api = {
   createTurnstileDevice: (data) => request('/api/turnstiles/devices', { method: 'POST', body: JSON.stringify(data) }),
   rotateTurnstileDeviceToken: (deviceId) => request(`/api/turnstiles/devices/${deviceId}/rotate-token`, { method: 'POST' }),
   listTurnstileDevices: () => request('/api/turnstiles/devices'),
-  listTurnstileAccessLogs: (limit = 100) => request(`/api/turnstiles/access-logs?limit=${limit}`),
+  listTurnstileAccessLogs: (params = {}) => {
+    const normalized = typeof params === 'number' ? { limit: params } : params || {};
+    const query = new URLSearchParams();
+    if (normalized.limit) query.set('limit', String(normalized.limit));
+    if (normalized.decision) query.set('decision', String(normalized.decision));
+    if (normalized.reason) query.set('reason', String(normalized.reason));
+    if (normalized.subject_type) query.set('subject_type', String(normalized.subject_type));
+    if (normalized.device_id) query.set('device_id', String(normalized.device_id));
+    if (normalized.since_minutes) query.set('since_minutes', String(normalized.since_minutes));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request(`/api/turnstiles/access-logs${suffix}`);
+  },
+  turnstileAccessSummary: (windowMinutes = 60) =>
+    request(`/api/turnstiles/access-summary?window_minutes=${encodeURIComponent(String(windowMinutes))}`),
 
   opsMetrics: () => request('/api/ops/metrics'),
   opsAlerts: () => request('/api/ops/alerts'),
@@ -233,9 +271,15 @@ export function connectWebSocket(onMessage) {
 
   let ws;
   let reconnect;
+  let hasOpenedAtLeastOnce = false;
+  let failedBeforeOpen = false;
 
   const connect = () => {
     ws = new WebSocket(wsUrl);
+    ws.onopen = () => {
+      hasOpenedAtLeastOnce = true;
+      failedBeforeOpen = false;
+    };
     ws.onmessage = (event) => {
       try {
         onMessage(JSON.parse(event.data));
@@ -244,9 +288,15 @@ export function connectWebSocket(onMessage) {
       }
     };
     ws.onclose = () => {
+      if (!hasOpenedAtLeastOnce || failedBeforeOpen) {
+        return;
+      }
       reconnect = setTimeout(connect, 3000);
     };
-    ws.onerror = () => ws.close();
+    ws.onerror = () => {
+      if (!hasOpenedAtLeastOnce) failedBeforeOpen = true;
+      ws.close();
+    };
   };
 
   connect();

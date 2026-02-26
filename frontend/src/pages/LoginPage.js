@@ -22,10 +22,14 @@ export default function LoginPage() {
   const [showRegisterConfirmPw, setShowRegisterConfirmPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [paymentRequired, setPaymentRequired] = useState(null);
+  const [selectedPlan, setSelectedPlan] = useState('');
+  const [origin, setOrigin] = useState('');
 
   React.useEffect(() => {
     const params = new URLSearchParams(location.search);
     const requestedMode = params.get('mode');
+    setOrigin((params.get('origin') || '').toLowerCase());
+    setSelectedPlan(params.get('plan') || '');
     if (requestedMode === 'register' && !isPlatformSubdomain) {
       setMode('register');
       return;
@@ -34,6 +38,15 @@ export default function LoginPage() {
       setMode('verify');
     }
   }, [location.search, isPlatformSubdomain]);
+
+  const originHintMap = {
+    landing: 'Fluxo iniciado pela landing page.',
+    hero: 'Fluxo iniciado pelo CTA principal da home.',
+    pricing: 'Fluxo iniciado pela secao de planos.',
+    contact: 'Fluxo iniciado pela secao de contato.',
+    payment_required: 'Fluxo iniciado por assinatura pendente.',
+  };
+  const originHint = originHintMap[origin] || (origin ? `Origem: ${origin}.` : '');
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -101,6 +114,13 @@ export default function LoginPage() {
         return;
       }
 
+      const shouldGoSubscription = ['landing', 'hero', 'pricing', 'contact', 'payment_required'].includes(origin);
+      if (shouldGoSubscription && ['OWNER', 'MANAGER'].includes(role)) {
+        toast.success('Login realizado. Continue para ativar sua assinatura.');
+        navigate('/admin/assinatura');
+        return;
+      }
+
       toast.success('Login realizado.');
       navigate('/admin');
     } catch (err) {
@@ -150,7 +170,7 @@ export default function LoginPage() {
                   if (paymentRequired.checkoutUrl) {
                     window.location.href = paymentRequired.checkoutUrl;
                   } else {
-                    navigate('/');
+                    navigate('/signup?origin=payment_required');
                   }
                 }}
                 className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-xs h-10 rounded-sm hover:bg-[#b3e600]"
@@ -162,6 +182,11 @@ export default function LoginPage() {
 
           {mode === 'login' && (
             <form onSubmit={handleLogin} className="space-y-4">
+              {originHint && (
+                <div className="p-3 rounded-sm border border-blue-500/30 bg-blue-500/10 text-blue-200 text-xs">
+                  {originHint}
+                </div>
+              )}
               <label className="text-sm font-medium text-zinc-400 mb-1 block">Login (e-mail, CPF ou matricula)</label>
               <input value={loginIdentifier} onChange={(e) => setLoginIdentifier(e.target.value)} required placeholder="ex.: aluno@email.com, 000.000.000-00 ou ALU0001" className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
               <label className="text-sm font-medium text-zinc-400 mb-1 block">Senha</label>
@@ -179,6 +204,16 @@ export default function LoginPage() {
 
           {mode === 'register' && !isPlatformSubdomain && (
             <form onSubmit={handleRegister} className="space-y-4">
+              {(selectedPlan || originHint) && (
+                <div className="p-3 rounded-sm border border-blue-500/30 bg-blue-500/10 text-blue-200 text-xs">
+                  {originHint && <p>{originHint}</p>}
+                  {selectedPlan && (
+                    <p>
+                      Plano selecionado no site: <strong>{selectedPlan}</strong>. Voce pode ajustar esse plano depois no painel.
+                    </p>
+                  )}
+                </div>
+              )}
               <label className="text-sm font-medium text-zinc-400 mb-1 block">Nome</label>
               <input type="text" value={name} onChange={(e) => setName(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
               <label className="text-sm font-medium text-zinc-400 mb-1 block">Academia</label>

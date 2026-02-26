@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -33,6 +33,20 @@ def test_turnstile_access_allowed_when_rules_pass():
     allow, reason, _details = _evaluate_student_access(student, now)
     assert allow is True
     assert reason == "ok"
+
+
+def test_turnstile_access_allows_grace_period_even_if_plan_expired():
+    now = datetime(2026, 2, 20, 10, 0, tzinfo=timezone.utc)
+    student = {
+        "status": "ativo",
+        "contract_access_status": "grace_period",
+        "contract_grace_until": now + timedelta(days=2),
+        "plan_expires_at": now - timedelta(days=1),
+    }
+    allow, reason, details = _evaluate_student_access(student, now)
+    assert allow is True
+    assert reason == "ok"
+    assert details["rule"] == "grace_period"
 
 
 def test_turnstile_employee_access_allowed_when_rules_pass():
@@ -73,12 +87,87 @@ class _FakeCollection:
     async def update_one(self, _query, _update):
         return None
 
+    def find(self, query, _projection=None):
+        filtered = [doc for doc in self.docs if _matches_query(doc, query)]
+        return _FakeCursor(filtered)
+
+    async def count_documents(self, query):
+        return sum(1 for doc in self.docs if _matches_query(doc, query))
+
+    def aggregate(self, pipeline):
+        items = list(self.docs)
+        for stage in pipeline:
+            if "$match" in stage:
+                items = [doc for doc in items if _matches_query(doc, stage["$match"])]
+                continue
+            if "$group" in stage:
+                group = stage["$group"]
+                key_ref = str(group.get("_id") or "")
+                key_name = key_ref[1:] if key_ref.startswith("$") else key_ref
+                buckets: dict = {}
+                for doc in items:
+                    bucket_key = doc.get(key_name)
+                    buckets[bucket_key] = int(buckets.get(bucket_key, 0)) + 1
+                items = [{"_id": key, "count": value} for key, value in buckets.items()]
+                continue
+            if "$sort" in stage:
+                field, direction = next(iter(stage["$sort"].items()))
+                items = sorted(items, key=lambda doc: doc.get(field), reverse=int(direction) < 0)
+                continue
+            if "$limit" in stage:
+                items = items[: int(stage["$limit"])]
+        return _FakeCursor(items)
+
+
+class _FakeCursor:
+    def __init__(self, docs):
+        self.docs = list(docs)
+
+    def sort(self, field, direction):
+        self.docs = sorted(self.docs, key=lambda doc: doc.get(field), reverse=int(direction) < 0)
+        return self
+
+    def limit(self, limit):
+        self.docs = self.docs[: int(limit)]
+        return self
+
+    async def to_list(self, limit):
+        return list(self.docs[: int(limit)])
+
 
 def _matches_query(doc: dict, query: dict) -> bool:
     for key, value in query.items():
         if key == "$or":
             if not any(_matches_query(doc, part) for part in value):
                 return False
+            continue
+        if key == "$and":
+            if not all(_matches_query(doc, part) for part in value):
+                return False
+            continue
+        if isinstance(value, dict):
+            actual = doc.get(key)
+            for op, expected in value.items():
+                if op == "$gte":
+                    if actual is None or actual < expected:
+                        return False
+                elif op == "$gt":
+                    if actual is None or actual <= expected:
+                        return False
+                elif op == "$lte":
+                    if actual is None or actual > expected:
+                        return False
+                elif op == "$lt":
+                    if actual is None or actual >= expected:
+                        return False
+                elif op == "$in":
+                    if actual not in set(expected):
+                        return False
+                elif op == "$ne":
+                    if actual == expected:
+                        return False
+                else:
+                    return False
             continue
         if doc.get(key) != value:
             return False
@@ -110,6 +199,8 @@ class _FakeDb:
             ]
         )
         self.access_logs = _FakeCollection([])
+        self.turnstile_devices = _FakeCollection([])
+        self.turnstile_security_events = _FakeCollection([])
 
 
 class _DummyClient:
@@ -148,3 +239,145 @@ async def test_turnstile_decision_allows_employee_credentials(monkeypatch):
     assert decision["allow"] is True
     assert db.access_logs.inserted[-1]["employee_id"] == "emp_1"
     assert db.access_logs.inserted[-1]["subject_type"] == "employee"
+
+
+@pytest.mark.asyncio
+async def test_turnstile_access_logs_accepts_filters(monkeypatch):
+    now = datetime.now(timezone.utc)
+    db = _FakeDb()
+    db.access_logs = _FakeCollection(
+        [
+            {
+                "access_id": "acc_1",
+                "owner_id": "own_1",
+                "decision": "allow",
+                "subject_type": "student",
+                "reason": "ok",
+                "device_id": "dev_1",
+                "created_at": now - timedelta(minutes=10),
+            },
+            {
+                "access_id": "acc_2",
+                "owner_id": "own_1",
+                "decision": "deny",
+                "subject_type": "student",
+                "reason": "contract_access_blocked",
+                "device_id": "dev_1",
+                "created_at": now - timedelta(minutes=5),
+            },
+            {
+                "access_id": "acc_3",
+                "owner_id": "own_1",
+                "decision": "deny",
+                "subject_type": "employee",
+                "reason": "employee_inactive",
+                "device_id": "dev_2",
+                "created_at": now - timedelta(minutes=2),
+            },
+        ]
+    )
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+
+    result = await turnstiles.list_access_logs(
+        limit=50,
+        decision="deny",
+        reason="contract_access_blocked",
+        subject_type="student",
+        device_id="dev_1",
+        since_minutes=60,
+        actor={"owner_id": "own_1"},
+    )
+
+    assert len(result) == 1
+    assert result[0]["access_id"] == "acc_2"
+
+
+@pytest.mark.asyncio
+async def test_turnstile_access_summary_includes_grace_and_device_health(monkeypatch):
+    now = datetime.now(timezone.utc)
+    db = _FakeDb()
+    db.access_logs = _FakeCollection(
+        [
+            {
+                "access_id": "acc_1",
+                "owner_id": "own_1",
+                "decision": "allow",
+                "reason": "ok",
+                "created_at": now - timedelta(minutes=10),
+            },
+            {
+                "access_id": "acc_2",
+                "owner_id": "own_1",
+                "decision": "deny",
+                "reason": "contract_access_blocked",
+                "created_at": now - timedelta(minutes=8),
+            },
+            {
+                "access_id": "acc_3",
+                "owner_id": "own_1",
+                "decision": "deny",
+                "reason": "contract_access_blocked",
+                "created_at": now - timedelta(hours=3),
+            },
+        ]
+    )
+    db.turnstile_devices = _FakeCollection(
+        [
+            {
+                "device_id": "dev_1",
+                "owner_id": "own_1",
+                "last_seen_at": now - timedelta(minutes=2),
+                "blocked_until": None,
+            },
+            {
+                "device_id": "dev_2",
+                "owner_id": "own_1",
+                "last_seen_at": now - timedelta(minutes=20),
+                "blocked_until": now + timedelta(minutes=30),
+            },
+        ]
+    )
+    db.students = _FakeCollection(
+        [
+            {
+                "student_id": "stu_1",
+                "owner_id": "own_1",
+                "status": "ativo",
+                "access_blocked": False,
+                "contract_access_status": "grace_period",
+            },
+            {
+                "student_id": "stu_2",
+                "owner_id": "own_1",
+                "status": "ativo",
+                "access_blocked": True,
+                "contract_access_status": "allowed",
+            },
+        ]
+    )
+    db.turnstile_security_events = _FakeCollection(
+        [
+            {
+                "event_id": "sec_1",
+                "owner_id": "own_1",
+                "event": "auth_failure",
+                "created_at": now - timedelta(minutes=30),
+            }
+        ]
+    )
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+
+    summary = await turnstiles.get_access_summary(
+        window_minutes=60,
+        actor={"owner_id": "own_1"},
+    )
+
+    assert summary["window"]["total"] == 2
+    assert summary["window"]["deny"] == 1
+    assert summary["devices"]["total"] == 2
+    assert summary["devices"]["online_5m"] == 1
+    assert summary["devices"]["blocked"] == 1
+    assert summary["grace_students"] == 1
+    assert summary["blocked_students"] == 1
+    assert summary["gateway_auth_failures_1h"] == 1
+    assert summary["deny_reasons"][0]["reason"] == "contract_access_blocked"

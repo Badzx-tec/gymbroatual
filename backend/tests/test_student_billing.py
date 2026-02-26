@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from fastapi import HTTPException
 
+from app.core.deps import require_roles
 from app.models.student_billing import ChargeCleanupIn, ChargeMarkPaidIn, ContractCreateIn
 from app.routes import student_billing
+from app.services.student_contracts import refresh_contract_state
 
 
 class UpdateResult:
@@ -115,6 +118,7 @@ class FakeDb:
         self.student_contracts = FakeCollection([])
         self.student_charges = FakeCollection([])
         self.student_billing_events = FakeCollection([])
+        self.student_billing_reconcile_runs = FakeCollection([])
 
 
 def _set_value(doc: dict, key: str, value):
@@ -181,6 +185,8 @@ async def test_create_contract_with_plan_creates_initial_charge_and_updates_stud
     assert contract["plan_name"] == "Mensal"
     assert contract["status"] == "active"
     assert contract["manual_end_override"] is False
+    assert contract["dunning_level"] == 0
+    assert contract["grace_until"] is None
     assert contract["current_period_end"] == start_at + timedelta(days=30)
     assert charge["status"] == "open"
     assert updated_student["plano_id"] == "pln_1"
@@ -204,9 +210,12 @@ async def test_create_contract_respects_manual_period_end_override(monkeypatch):
 
     result = await student_billing.create_contract(payload=payload, actor=actor)
     contract = result["contract"]
+    refreshed, _, _ = await refresh_contract_state(db, contract)
 
     assert contract["manual_end_override"] is True
     assert contract["current_period_end"] == manual_end
+    assert refreshed["current_period_end"] == manual_end
+    assert len(refreshed.get("manual_overrides") or []) >= 1
 
 
 @pytest.mark.asyncio
@@ -396,3 +405,245 @@ async def test_cleanup_contract_charges_cancels_pending_and_records_event(monkey
     assert overdue_charge["status"] == "canceled"
     assert paid_charge["status"] == "paid"
     assert any(item["event_type"] == "charges_cleaned" for item in db.student_billing_events.docs)
+
+
+@pytest.mark.asyncio
+async def test_reconcile_marks_overdue_and_starts_grace(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+
+    now = datetime.now(timezone.utc)
+    contract = {
+        "contract_id": "ctr_reconcile_1",
+        "owner_id": "own_1",
+        "gym_id": "gym_1",
+        "student_id": "std_1",
+        "student_name": "Aluno Teste",
+        "plan_id": "pln_1",
+        "plan_name": "Mensal",
+        "amount": 149.9,
+        "currency": "BRL",
+        "duration_days": 30,
+        "billing_cycle": "monthly",
+        "billing_day": 1,
+        "manual_end_override": False,
+        "current_period_start": now - timedelta(days=15),
+        "current_period_end": now + timedelta(days=15),
+        "next_billing_at": now - timedelta(days=1),
+        "contract_status": "active",
+        "financial_status": "pending",
+        "access_status": "allowed",
+        "status": "active",
+        "auto_renew": True,
+        "grace_until": None,
+        "dunning_level": 0,
+        "next_retry_at": None,
+        "manual_overrides": [],
+        "scheduled_actions": [],
+        "freeze_periods": [],
+        "created_at": now - timedelta(days=20),
+        "updated_at": now - timedelta(days=1),
+    }
+    db.student_contracts.docs.append(contract)
+    db.student_charges.docs.append(
+        {
+            "charge_id": "chg_reconcile_open",
+            "contract_id": "ctr_reconcile_1",
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "student_id": "std_1",
+            "amount": 149.9,
+            "currency": "BRL",
+            "due_at": now - timedelta(days=1),
+            "status": "open",
+            "retry_count": 0,
+            "created_at": now - timedelta(days=2),
+            "updated_at": now - timedelta(days=2),
+        }
+    )
+
+    actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER"}
+    result = await student_billing.run_reconcile(limit=500, actor=actor)
+    summary = result["summary"]
+
+    refreshed_contract = await db.student_contracts.find_one(
+        {"owner_id": "own_1", "contract_id": "ctr_reconcile_1"}
+    )
+    refreshed_charge = await db.student_charges.find_one(
+        {"owner_id": "own_1", "charge_id": "chg_reconcile_open"}
+    )
+
+    assert summary["charge_overdue_marked"] == 1
+    assert result.get("run_id")
+    assert result.get("history_persisted") is True
+    assert refreshed_charge["status"] == "overdue"
+    assert refreshed_contract["financial_status"] == "overdue"
+    assert refreshed_contract["status"] == "past_due"
+    assert refreshed_contract["access_status"] == "grace_period"
+    assert refreshed_contract["grace_until"] is not None
+    assert int(refreshed_contract.get("dunning_level") or 0) >= 1
+    assert len(db.student_billing_reconcile_runs.docs) == 1
+    assert db.student_billing_reconcile_runs.docs[0]["owner_id"] == "own_1"
+    assert db.student_billing_reconcile_runs.docs[0]["summary"]["charge_overdue_marked"] == 1
+
+
+@pytest.mark.asyncio
+async def test_reconcile_blocks_access_after_grace_expiration(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+
+    now = datetime.now(timezone.utc)
+    expired_grace = now - timedelta(days=1)
+    contract = {
+        "contract_id": "ctr_reconcile_2",
+        "owner_id": "own_1",
+        "gym_id": "gym_1",
+        "student_id": "std_1",
+        "student_name": "Aluno Teste",
+        "plan_id": "pln_1",
+        "plan_name": "Mensal",
+        "amount": 149.9,
+        "currency": "BRL",
+        "duration_days": 30,
+        "billing_cycle": "monthly",
+        "billing_day": 1,
+        "manual_end_override": False,
+        "current_period_start": now - timedelta(days=10),
+        "current_period_end": now + timedelta(days=20),
+        "next_billing_at": now - timedelta(days=10),
+        "contract_status": "active",
+        "financial_status": "overdue",
+        "access_status": "grace_period",
+        "status": "past_due",
+        "auto_renew": False,
+        "grace_until": expired_grace,
+        "dunning_level": 1,
+        "next_retry_at": now - timedelta(days=1),
+        "manual_overrides": [],
+        "scheduled_actions": [],
+        "freeze_periods": [],
+        "created_at": now - timedelta(days=50),
+        "updated_at": now - timedelta(days=2),
+    }
+    db.student_contracts.docs.append(contract)
+    db.student_charges.docs.append(
+        {
+            "charge_id": "chg_reconcile_overdue",
+            "contract_id": "ctr_reconcile_2",
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "student_id": "std_1",
+            "amount": 149.9,
+            "currency": "BRL",
+            "due_at": now - timedelta(days=10),
+            "status": "overdue",
+            "created_at": now - timedelta(days=10),
+            "updated_at": now - timedelta(days=10),
+        }
+    )
+
+    actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER"}
+    result = await student_billing.run_reconcile(limit=500, actor=actor)
+
+    refreshed_contract = await db.student_contracts.find_one(
+        {"owner_id": "own_1", "contract_id": "ctr_reconcile_2"}
+    )
+    assert refreshed_contract["access_status"] == "blocked"
+    assert refreshed_contract["status"] == "past_due"
+    assert result["summary"]["grace_expired_access_blocked"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_reconcile_requires_owner_or_manager_role():
+    dep = require_roles("OWNER", "MANAGER")
+    with pytest.raises(HTTPException) as exc:
+        await dep({"actor_type": "employee", "role": "RECEPTION", "owner_id": "own_1"})
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_list_reconcile_runs_is_owner_scoped_and_sorted(monkeypatch):
+    db = FakeDb()
+    now = datetime.now(timezone.utc)
+    db.student_billing_reconcile_runs.docs.extend(
+        [
+            {
+                "run_id": "sbr_old",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "actor_type": "employee",
+                "actor_role": "MANAGER",
+                "actor_id": "emp_1",
+                "limit": 100,
+                "summary": {
+                    "limit": 100,
+                    "open_charges_scanned": 3,
+                    "charge_overdue_marked": 1,
+                    "contracts_processed": 2,
+                    "contracts_updated": 1,
+                    "dunning_step_advanced": 1,
+                    "grace_started": 1,
+                    "grace_expired_access_blocked": 0,
+                },
+                "history_persisted": True,
+                "started_at": now - timedelta(minutes=10),
+                "finished_at": now - timedelta(minutes=10) + timedelta(seconds=2),
+                "duration_ms": 2000,
+            },
+            {
+                "run_id": "sbr_new",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "actor_type": "employee",
+                "actor_role": "OWNER",
+                "actor_id": "own_1",
+                "limit": 100,
+                "summary": {
+                    "limit": 100,
+                    "open_charges_scanned": 8,
+                    "charge_overdue_marked": 4,
+                    "contracts_processed": 4,
+                    "contracts_updated": 3,
+                    "dunning_step_advanced": 2,
+                    "grace_started": 1,
+                    "grace_expired_access_blocked": 1,
+                },
+                "history_persisted": True,
+                "started_at": now - timedelta(minutes=1),
+                "finished_at": now - timedelta(minutes=1) + timedelta(seconds=3),
+                "duration_ms": 3000,
+            },
+            {
+                "run_id": "sbr_other_owner",
+                "owner_id": "own_2",
+                "gym_id": "gym_2",
+                "actor_type": "employee",
+                "actor_role": "OWNER",
+                "actor_id": "own_2",
+                "limit": 100,
+                "summary": {
+                    "limit": 100,
+                    "open_charges_scanned": 1,
+                    "charge_overdue_marked": 1,
+                    "contracts_processed": 1,
+                    "contracts_updated": 1,
+                    "dunning_step_advanced": 1,
+                    "grace_started": 0,
+                    "grace_expired_access_blocked": 0,
+                },
+                "history_persisted": True,
+                "started_at": now,
+                "finished_at": now + timedelta(seconds=1),
+                "duration_ms": 1000,
+            },
+        ]
+    )
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+
+    actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER"}
+    result = await student_billing.list_reconcile_runs(limit=10, actor=actor)
+
+    assert len(result) == 2
+    assert result[0]["run_id"] == "sbr_new"
+    assert result[1]["run_id"] == "sbr_old"
+    assert all(item["owner_id"] == "own_1" for item in result)

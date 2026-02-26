@@ -4,7 +4,7 @@ from datetime import date, datetime, time
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pymongo.errors import DuplicateKeyError
 
-from app.core.deps import require_admin_actor
+from app.core.deps import require_roles
 from app.core.security import hash_password
 from app.core.time import UTC
 from app.db.mongo import get_db
@@ -123,7 +123,7 @@ def _generated_temp_password() -> str:
 async def list_students(
     search: str = "",
     status: str = "",
-    owner: dict = Depends(require_admin_actor()),
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER")),
 ):
     db = get_db()
     query = {
@@ -148,7 +148,10 @@ async def list_students(
 
 
 @router.post("")
-async def create_student(payload: StudentCreateIn, owner: dict = Depends(require_admin_actor())):
+async def create_student(
+    payload: StudentCreateIn,
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION")),
+):
     db = get_db()
     now = datetime.now(UTC)
     student_id = f"std_{secrets.token_hex(6)}"
@@ -215,7 +218,10 @@ async def create_student(payload: StudentCreateIn, owner: dict = Depends(require
 
 
 @router.get("/{student_id}")
-async def get_student(student_id: str, owner: dict = Depends(require_admin_actor())):
+async def get_student(
+    student_id: str,
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER")),
+):
     db = get_db()
     student = await db.students.find_one(
         {"student_id": student_id, "owner_id": owner["owner_id"]},
@@ -253,7 +259,9 @@ async def get_student(student_id: str, owner: dict = Depends(require_admin_actor
 
 @router.put("/{student_id}")
 async def update_student(
-    student_id: str, payload: dict, owner: dict = Depends(require_admin_actor())
+    student_id: str,
+    payload: dict,
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION")),
 ):
     db = get_db()
     now = datetime.now(UTC)
@@ -327,7 +335,10 @@ async def update_student(
 
 
 @router.delete("/{student_id}")
-async def delete_student(student_id: str, owner: dict = Depends(require_admin_actor())):
+async def delete_student(
+    student_id: str,
+    owner: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
     db = get_db()
     result = await db.students.delete_one({"student_id": student_id, "owner_id": owner["owner_id"]})
     if result.deleted_count == 0:
@@ -339,7 +350,7 @@ async def delete_student(student_id: str, owner: dict = Depends(require_admin_ac
 async def add_measurement(
     student_id: str,
     payload: MeasurementIn,
-    owner: dict = Depends(require_admin_actor()),
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER")),
 ):
     db = get_db()
     gym_id = _require_gym_id(owner)
@@ -356,7 +367,10 @@ async def add_measurement(
 
 
 @router.get("/{student_id}/measurements")
-async def list_measurements(student_id: str, owner: dict = Depends(require_admin_actor())):
+async def list_measurements(
+    student_id: str,
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER")),
+):
     db = get_db()
     return (
         await db.measurements.find(
@@ -372,7 +386,7 @@ async def list_measurements(student_id: str, owner: dict = Depends(require_admin
 async def add_workout(
     student_id: str,
     payload: WorkoutPlanIn,
-    owner: dict = Depends(require_admin_actor()),
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER")),
 ):
     db = get_db()
     gym_id = _require_gym_id(owner)
@@ -389,7 +403,10 @@ async def add_workout(
 
 
 @router.get("/{student_id}/workouts")
-async def list_workouts(student_id: str, owner: dict = Depends(require_admin_actor())):
+async def list_workouts(
+    student_id: str,
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER")),
+):
     db = get_db()
     return (
         await db.workouts.find(
@@ -405,7 +422,7 @@ async def list_workouts(student_id: str, owner: dict = Depends(require_admin_act
 async def add_attendance(
     student_id: str,
     payload: AttendanceIn,
-    owner: dict = Depends(require_admin_actor()),
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER")),
 ):
     db = get_db()
     gym_id = _require_gym_id(owner)
@@ -440,7 +457,7 @@ async def add_attendance(
 @router.get("/{student_id}/attendance")
 async def list_attendance(
     student_id: str,
-    owner: dict = Depends(require_admin_actor()),
+    owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER")),
     limit: int = Query(default=100, le=500),
 ):
     db = get_db()

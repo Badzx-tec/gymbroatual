@@ -13,6 +13,9 @@ export default function PlansPage() {
   const [form, setForm] = useState(emptyPlan);
   const [editId, setEditId] = useState('');
   const [saving, setSaving] = useState(false);
+  const user = React.useMemo(() => JSON.parse(localStorage.getItem('gymbro_user') || '{}'), []);
+  const role = String(user.role || '').toUpperCase();
+  const canManagePlans = ['OWNER', 'MANAGER'].includes(role);
 
   useEffect(() => { loadData(); }, []);
 
@@ -24,8 +27,20 @@ export default function PlansPage() {
     setLoading(false);
   };
 
-  const openCreate = () => { setForm(emptyPlan); setEditId(''); setModal('create'); };
+  const openCreate = () => {
+    if (!canManagePlans) {
+      toast.error('Sem permissao para criar plano.');
+      return;
+    }
+    setForm(emptyPlan);
+    setEditId('');
+    setModal('create');
+  };
   const openEdit = (p) => {
+    if (!canManagePlans) {
+      toast.error('Sem permissao para editar plano.');
+      return;
+    }
     setForm({ nome: p.nome, valor: String(p.valor), duracao_dias: String(p.duracao_dias), descricao: p.descricao || '', ativo: p.ativo });
     setEditId(p.plan_id);
     setModal('edit');
@@ -33,6 +48,10 @@ export default function PlansPage() {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (!canManagePlans) {
+      toast.error('Sem permissao para salvar plano.');
+      return;
+    }
     setSaving(true);
     const payload = { ...form, valor: parseFloat(form.valor), duracao_dias: parseInt(form.duracao_dias) };
     try {
@@ -50,6 +69,10 @@ export default function PlansPage() {
   };
 
   const handleDelete = async (id, nome) => {
+    if (!canManagePlans) {
+      toast.error('Sem permissao para remover plano.');
+      return;
+    }
     if (!window.confirm(`Remover plano "${nome}"?`)) return;
     try {
       await api.deletePlan(id);
@@ -67,10 +90,12 @@ export default function PlansPage() {
           <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Planos</h1>
           <p className="text-zinc-400 mt-1">{plans.length} planos cadastrados</p>
         </div>
-        <button data-testid="add-plan-btn" onClick={openCreate}
-          className="flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-6 py-2.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-0.5">
-          <Plus className="w-4 h-4" /> Novo Plano
-        </button>
+        {canManagePlans && (
+          <button data-testid="add-plan-btn" onClick={openCreate}
+            className="flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-6 py-2.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-0.5">
+            <Plus className="w-4 h-4" /> Novo Plano
+          </button>
+        )}
       </div>
 
       {/* Cards */}
@@ -83,14 +108,16 @@ export default function PlansPage() {
               <div className="w-10 h-10 rounded-sm bg-[#ccff00]/10 flex items-center justify-center">
                 <Tag className="w-5 h-5 text-[#ccff00]" />
               </div>
-              <div className="flex gap-1">
-                <button data-testid={`edit-plan-${p.plan_id}`} onClick={() => openEdit(p)} className="p-1.5 hover:bg-zinc-800 rounded-sm transition-colors text-zinc-400 hover:text-white">
-                  <Edit2 className="w-4 h-4" />
-                </button>
-                <button data-testid={`delete-plan-${p.plan_id}`} onClick={() => handleDelete(p.plan_id, p.nome)} className="p-1.5 hover:bg-red-500/10 rounded-sm transition-colors text-zinc-400 hover:text-red-500">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
+              {canManagePlans && (
+                <div className="flex gap-1">
+                  <button data-testid={`edit-plan-${p.plan_id}`} onClick={() => openEdit(p)} className="p-1.5 hover:bg-zinc-800 rounded-sm transition-colors text-zinc-400 hover:text-white">
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button data-testid={`delete-plan-${p.plan_id}`} onClick={() => handleDelete(p.plan_id, p.nome)} className="p-1.5 hover:bg-red-500/10 rounded-sm transition-colors text-zinc-400 hover:text-red-500">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
             <h3 className="font-heading text-xl font-semibold uppercase mb-1">{p.nome}</h3>
             <p className="text-3xl font-bold mb-1">R$ {p.valor.toFixed(2).replace('.', ',')}</p>

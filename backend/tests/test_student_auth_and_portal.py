@@ -93,6 +93,7 @@ class FakeDb:
                     "student_id": "std_1",
                     "status": "active",
                     "amount": 129.9,
+                    "internal_notes": "nao deve aparecer no portal",
                     "current_period_start": now,
                     "current_period_end": now,
                     "created_at": now,
@@ -105,6 +106,50 @@ class FakeDb:
                     "amount": 149.9,
                     "current_period_start": now,
                     "current_period_end": now,
+                    "created_at": now,
+                },
+            ]
+        )
+        self.student_charges = FakeCollection(
+            [
+                {
+                    "charge_id": "chg_1",
+                    "owner_id": "own_1",
+                    "student_id": "std_1",
+                    "contract_id": "ctr_1",
+                    "amount": 129.9,
+                    "status": "open",
+                    "due_at": now + timedelta(days=3),
+                    "created_at": now,
+                },
+                {
+                    "charge_id": "chg_2",
+                    "owner_id": "own_1",
+                    "student_id": "std_2",
+                    "contract_id": "ctr_2",
+                    "amount": 149.9,
+                    "status": "paid",
+                    "due_at": now - timedelta(days=5),
+                    "paid_at": now - timedelta(days=4),
+                    "created_at": now,
+                },
+            ]
+        )
+        self.student_billing_events = FakeCollection(
+            [
+                {
+                    "event_id": "ev_1",
+                    "owner_id": "own_1",
+                    "contract_id": "ctr_1",
+                    "event_type": "contract_created",
+                    "actor_id": "emp_secret",
+                    "created_at": now,
+                },
+                {
+                    "event_id": "ev_2",
+                    "owner_id": "own_1",
+                    "contract_id": "ctr_2",
+                    "event_type": "contract_created",
                     "created_at": now,
                 },
             ]
@@ -174,3 +219,37 @@ async def test_student_portal_returns_only_own_data(monkeypatch):
     assert response["student"]["student_id"] == "std_1"
     assert all(item["student_id"] == "std_1" for item in response["recent_access_logs"])
     assert all(item["student_id"] == "std_1" for item in response["notifications"])
+    assert "access_context" in response
+
+
+@pytest.mark.asyncio
+async def test_student_portal_dashboard_reports_manual_access_block_reason(monkeypatch):
+    db = FakeDb()
+    db.students.docs[0]["access_blocked"] = True
+    monkeypatch.setattr(student_portal, "get_db", lambda: db)
+
+    actor = {"owner_id": "own_1", "student_id": "std_1", "actor_type": "student", "role": "STUDENT"}
+    response = await student_portal.student_dashboard(actor=actor)
+
+    assert response["access_status"] == "blocked"
+    assert response["access_context"]["blocked_reason"] == "manual_block"
+
+
+@pytest.mark.asyncio
+async def test_student_portal_billing_returns_only_own_contract_data(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_portal, "get_db", lambda: db)
+
+    actor = {"owner_id": "own_1", "student_id": "std_1", "actor_type": "student", "role": "STUDENT"}
+    response = await student_portal.student_billing(
+        limit_contracts=20,
+        limit_charges=100,
+        limit_events=120,
+        actor=actor,
+    )
+
+    assert all(item["student_id"] == "std_1" for item in response["charges"])
+    assert all(item["contract_id"] == "ctr_1" for item in response["contracts"])
+    assert all(item["contract_id"] == "ctr_1" for item in response["events"])
+    assert all("internal_notes" not in item for item in response["contracts"])
+    assert all("actor_id" not in item for item in response["events"])

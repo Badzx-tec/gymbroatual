@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     billing_reconcile_enabled: bool = True
     billing_reconcile_interval_seconds: int = 900
     billing_reconcile_batch_size: int = 200
+    student_billing_grace_days: int = 3
+    student_billing_retry_offsets_days: str = "1,3,7"
 
     alert_webhook_failures_threshold: int = 5
     alert_access_denies_threshold: int = 20

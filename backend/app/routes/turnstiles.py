@@ -3,7 +3,7 @@ import hmac
 import secrets
 from datetime import date, datetime, time, timedelta
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from pymongo.errors import DuplicateKeyError
 
 from app.core.config import get_settings
@@ -12,6 +12,7 @@ from app.core.http import get_client_ip
 from app.core.time import UTC
 from app.db.mongo import get_db
 from app.services.observability import log_event
+from app.services.student_contracts import refresh_contract_state
 from app.services.subscription import subscription_allows_login
 
 router = APIRouter()
@@ -144,6 +145,20 @@ def _evaluate_student_access(student: dict | None, now: datetime) -> tuple[bool,
     if bool(student.get("access_blocked", False)):
         return False, "student_manual_block", {"rule": "access_blocked"}
 
+    contract_access_status = str(student.get("contract_access_status") or "").lower()
+    contract_grace_until = _coerce_datetime_utc(student.get("contract_grace_until"))
+    if contract_access_status in {"blocked", "suspended"}:
+        return (
+            False,
+            "contract_access_blocked",
+            {
+                "contract_access_status": contract_access_status,
+                "contract_status": student.get("contract_status"),
+                "contract_financial_status": student.get("contract_financial_status"),
+            },
+        )
+    contract_access_allowed = contract_access_status in {"allowed", "grace_period"}
+
     blocked_until = _coerce_datetime_utc(
         student.get("blocked_until") or student.get("bloqueado_ate")
     )
@@ -177,14 +192,25 @@ def _evaluate_student_access(student: dict | None, now: datetime) -> tuple[bool,
             },
         )
 
-    plan_until = _coerce_datetime_utc(
-        student.get("plano_validade")
-        or student.get("plan_expires_at")
-        or student.get("subscription_end")
-    )
-    if plan_until and plan_until < now:
-        return False, "plan_expired", {"plan_expires_at": plan_until.isoformat()}
+    if not contract_access_allowed:
+        plan_until = _coerce_datetime_utc(
+            student.get("plano_validade")
+            or student.get("plan_expires_at")
+            or student.get("subscription_end")
+        )
+        if plan_until and plan_until < now:
+            return False, "plan_expired", {"plan_expires_at": plan_until.isoformat()}
 
+    if contract_access_status == "grace_period":
+        return (
+            True,
+            "ok",
+            {
+                "rule": "grace_period",
+                "contract_access_status": "grace_period",
+                "grace_until": contract_grace_until.isoformat() if contract_grace_until else None,
+            },
+        )
     return True, "ok", {"rule": "all_checks_passed"}
 
 
@@ -230,6 +256,42 @@ def _evaluate_employee_access(employee: dict | None, now: datetime) -> tuple[boo
         )
 
     return True, "ok", {"rule": "employee_checks_passed"}
+
+
+async def _refresh_student_contract_snapshot(student: dict, now: datetime) -> dict:
+    db = get_db()
+    latest = (
+        await db.student_contracts.find(
+            {"owner_id": student.get("owner_id"), "student_id": student.get("student_id")},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(1)
+        .to_list(1)
+    )
+    if not latest:
+        return student
+
+    contract, _, _ = await refresh_contract_state(db, latest[0])
+    updates = {
+        "contract_status": contract.get("contract_status"),
+        "contract_financial_status": contract.get("financial_status"),
+        "contract_access_status": contract.get("access_status"),
+        "contract_grace_until": contract.get("grace_until"),
+        "contract_next_retry_at": contract.get("next_retry_at"),
+        "contract_dunning_level": int(contract.get("dunning_level") or 0),
+        "plan_expires_at": contract.get("current_period_end"),
+        "subscription_end": contract.get("current_period_end"),
+        "data_vencimento": contract.get("current_period_end"),
+    }
+
+    should_update = any(student.get(key) != value for key, value in updates.items())
+    if should_update:
+        await db.students.update_one(
+            {"owner_id": student.get("owner_id"), "student_id": student.get("student_id")},
+            {"$set": {**updates, "updated_at": now}},
+        )
+    return {**student, **updates}
 
 
 async def _log_security_event(
@@ -573,6 +635,15 @@ async def turnstile_decision(
     subject_id = None
 
     if student:
+        try:
+            student = await _refresh_student_contract_snapshot(student, now)
+        except Exception as exc:  # pragma: no cover - resiliencia em runtime
+            log_event(
+                "turnstile_student_contract_refresh_error",
+                owner_id=device.get("owner_id"),
+                student_id=student.get("student_id"),
+                error=str(exc),
+            )
         allow, reason, details = _evaluate_student_access(student, now)
         subject_type = "student"
         subject_id = student.get("student_id")
@@ -658,13 +729,143 @@ async def turnstile_event(
 
 @router.get("/access-logs")
 async def list_access_logs(
-    limit: int = 100,
+    limit: int = Query(default=100, ge=1, le=500),
+    decision: str = "",
+    reason: str = "",
+    subject_type: str = "",
+    device_id: str = "",
+    since_minutes: int = Query(default=0, ge=0, le=10080),
     actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION")),
 ):
     db = get_db()
+    query: dict = {"owner_id": actor["owner_id"]}
+    normalized_decision = str(decision or "").strip().lower()
+    if normalized_decision in {"allow", "deny"}:
+        query["decision"] = normalized_decision
+    normalized_reason = str(reason or "").strip().lower()
+    if normalized_reason:
+        query["reason"] = normalized_reason
+    normalized_subject_type = str(subject_type or "").strip().lower()
+    if normalized_subject_type in {"student", "employee"}:
+        query["subject_type"] = normalized_subject_type
+    normalized_device_id = str(device_id or "").strip()
+    if normalized_device_id:
+        query["device_id"] = normalized_device_id
+    if since_minutes > 0:
+        query["created_at"] = {"$gte": datetime.now(UTC) - timedelta(minutes=since_minutes)}
+
     return (
-        await db.access_logs.find({"owner_id": actor["owner_id"]}, {"_id": 0})
+        await db.access_logs.find(query, {"_id": 0})
         .sort("created_at", -1)
         .limit(limit)
         .to_list(limit)
     )
+
+
+@router.get("/access-summary")
+async def get_access_summary(
+    window_minutes: int = Query(default=60, ge=5, le=1440),
+    actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION")),
+):
+    db = get_db()
+    owner_id = actor["owner_id"]
+    now = datetime.now(UTC)
+    window_start = now - timedelta(minutes=window_minutes)
+    day_start = now - timedelta(hours=24)
+    online_cutoff = now - timedelta(minutes=5)
+
+    async def _count_window(start: datetime) -> dict:
+        base = {"owner_id": owner_id, "created_at": {"$gte": start}}
+        total = await db.access_logs.count_documents(base)
+        allowed = await db.access_logs.count_documents({**base, "decision": "allow"})
+        denied = await db.access_logs.count_documents({**base, "decision": "deny"})
+        return {"total": int(total), "allow": int(allowed), "deny": int(denied)}
+
+    window_stats = await _count_window(window_start)
+    day_stats = await _count_window(day_start)
+
+    deny_reasons_raw = (
+        await db.access_logs.aggregate(
+            [
+                {
+                    "$match": {
+                        "owner_id": owner_id,
+                        "created_at": {"$gte": day_start},
+                        "decision": "deny",
+                    }
+                },
+                {"$group": {"_id": "$reason", "count": {"$sum": 1}}},
+                {"$sort": {"count": -1}},
+                {"$limit": 5},
+            ]
+        ).to_list(5)
+    )
+    deny_reasons = [
+        {"reason": str(item.get("_id") or "unknown"), "count": int(item.get("count") or 0)}
+        for item in deny_reasons_raw
+    ]
+
+    devices = (
+        await db.turnstile_devices.find(
+            {"owner_id": owner_id},
+            {"_id": 0, "device_id": 1, "last_seen_at": 1, "blocked_until": 1},
+        ).to_list(300)
+    )
+    devices_online_5m = sum(
+        1
+        for item in devices
+        if (
+            (last_seen := _coerce_datetime_utc(item.get("last_seen_at")))
+            and last_seen >= online_cutoff
+        )
+    )
+    devices_blocked = sum(
+        1
+        for item in devices
+        if (
+            (blocked_until := _coerce_datetime_utc(item.get("blocked_until")))
+            and blocked_until > now
+        )
+    )
+
+    grace_students = await db.students.count_documents(
+        {
+            "owner_id": owner_id,
+            "status": "ativo",
+            "access_blocked": {"$ne": True},
+            "contract_access_status": "grace_period",
+        }
+    )
+    blocked_students = await db.students.count_documents(
+        {
+            "owner_id": owner_id,
+            "$or": [
+                {"access_blocked": True},
+                {"status": {"$ne": "ativo"}},
+                {"contract_access_status": {"$in": ["blocked", "suspended"]}},
+            ],
+        }
+    )
+    gateway_auth_failures_1h = await db.turnstile_security_events.count_documents(
+        {
+            "owner_id": owner_id,
+            "event": "auth_failure",
+            "created_at": {"$gte": now - timedelta(hours=1)},
+        }
+    )
+
+    return {
+        "generated_at": now,
+        "window_minutes": window_minutes,
+        "window": window_stats,
+        "last_24h": day_stats,
+        "deny_reasons": deny_reasons,
+        "grace_students": int(grace_students),
+        "blocked_students": int(blocked_students),
+        "gateway_auth_failures_1h": int(gateway_auth_failures_1h),
+        "devices": {
+            "total": len(devices),
+            "online_5m": int(devices_online_5m),
+            "blocked": int(devices_blocked),
+        },
+    }

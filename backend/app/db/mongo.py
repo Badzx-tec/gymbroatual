@@ -71,9 +71,28 @@ async def init_indexes() -> None:
     await db.subscription_events.create_index([("owner_id", 1), ("created_at", -1)])
     await db.student_contracts.create_index([("owner_id", 1), ("contract_id", 1)], unique=True)
     await db.student_contracts.create_index([("owner_id", 1), ("student_id", 1), ("status", 1)])
+    await db.student_contracts.create_index(
+        [("owner_id", 1), ("student_id", 1), ("contract_status", 1)]
+    )
+    await db.student_contracts.create_index([("owner_id", 1), ("contract_status", 1)])
+    await db.student_contracts.create_index([("owner_id", 1), ("financial_status", 1)])
+    await db.student_contracts.create_index([("owner_id", 1), ("access_status", 1)])
+    await db.student_contracts.create_index([("owner_id", 1), ("plan_id", 1)])
+    await db.student_contracts.create_index([("owner_id", 1), ("current_period_end", 1)])
+    await db.student_contracts.create_index([("owner_id", 1), ("next_billing_at", 1)])
+    await db.student_contracts.create_index([("owner_id", 1), ("grace_until", 1)])
+    await db.student_contracts.create_index([("owner_id", 1), ("next_retry_at", 1)])
     await db.student_charges.create_index([("owner_id", 1), ("charge_id", 1)], unique=True)
     await db.student_charges.create_index([("owner_id", 1), ("contract_id", 1), ("due_at", -1)])
+    await db.student_charges.create_index([("owner_id", 1), ("contract_id", 1), ("status", 1)])
+    await db.student_charges.create_index([("owner_id", 1), ("student_id", 1), ("status", 1)])
+    await db.student_charges.create_index([("owner_id", 1), ("status", 1), ("due_at", 1)])
     await db.student_billing_events.create_index([("owner_id", 1), ("created_at", -1)])
+    await db.student_billing_events.create_index([("owner_id", 1), ("contract_id", 1), ("created_at", -1)])
+    await db.student_billing_reconcile_runs.create_index(
+        [("owner_id", 1), ("run_id", 1)], unique=True
+    )
+    await db.student_billing_reconcile_runs.create_index([("owner_id", 1), ("started_at", -1)])
     await db.students.create_index([("owner_id", 1), ("student_id", 1)], unique=True)
     await _ensure_matricula_unique_index(db.students)
     await db.students.create_index([("owner_id", 1), ("status", 1)])
