@@ -2,6 +2,7 @@ from collections.abc import Callable
 
 from fastapi import Depends, Header, HTTPException, status
 
+from app.core.config import get_settings
 from app.core.security import safe_jwt_decode
 from app.db.mongo import get_db
 from app.services.subscription import subscription_allows_login
@@ -37,6 +38,20 @@ async def get_current_actor(authorization: str | None = Header(default=None)) ->
     db = get_db()
     actor_type = payload.get("actor_type", "owner")
 
+    if actor_type == "super_admin":
+        settings = get_settings()
+        configured_email = (settings.super_admin_email or "").strip().lower()
+        token_email = str(payload.get("email") or payload.get("sub") or "").strip().lower()
+        if not configured_email or token_email != configured_email:
+            raise HTTPException(status_code=401, detail="Super admin invalido")
+        return {
+            "actor_type": "super_admin",
+            "role": "SUPER_ADMIN",
+            "super_admin_email": configured_email,
+            "name": settings.super_admin_name,
+            "email": configured_email,
+        }
+
     if actor_type == "employee":
         actor = await db.employees.find_one(
             {"employee_id": payload.get("sub"), "is_active": True}, {"_id": 0}
@@ -65,6 +80,9 @@ async def get_current_actor(authorization: str | None = Header(default=None)) ->
 
 
 async def require_active_subscription(actor: dict = Depends(get_current_actor)) -> dict:
+    if actor.get("actor_type") == "super_admin":
+        return actor
+
     db = get_db()
     subscription = await db.subscriptions.find_one({"owner_id": actor["owner_id"]}, {"_id": 0})
     if not subscription_allows_login(subscription):

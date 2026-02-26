@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default="change-me-dev-secret")
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24 * 7
+    super_admin_email: str | None = None
+    super_admin_password: str | None = None
+    super_admin_name: str = "Platform Admin"
 
     smtp_host: str | None = None
     smtp_port: int = 587

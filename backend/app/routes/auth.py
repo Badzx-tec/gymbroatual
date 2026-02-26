@@ -145,6 +145,32 @@ async def _employee_profile_payload(employee: dict) -> dict:
     }
 
 
+def _super_admin_profile_payload() -> dict:
+    settings = get_settings()
+    return {
+        "actor_type": "super_admin",
+        "role": "SUPER_ADMIN",
+        "name": settings.super_admin_name,
+        "email": (settings.super_admin_email or "").strip().lower(),
+        "phone": None,
+        "gym_name": "GymBro Platform",
+        "branding": {
+            "theme_key": "blue",
+            "logo_data_url": None,
+        },
+    }
+
+
+def _super_admin_password_matches(password: str, configured_password: str) -> bool:
+    # Allows plain text or bcrypt hash in environment configuration.
+    if configured_password.startswith("$2"):
+        try:
+            return verify_password(password, configured_password)
+        except Exception:
+            return False
+    return secrets.compare_digest(password, configured_password)
+
+
 async def _enforce_auth_rate_limit(
     request: Request, email: str, *, scope: str, limit: int, window_seconds: int
 ) -> None:
@@ -414,6 +440,39 @@ async def _login_employee(email: str, password: str) -> dict | None:
     }
 
 
+async def _login_super_admin(email: str, password: str) -> dict | None:
+    settings = get_settings()
+    configured_email = (settings.super_admin_email or "").strip().lower()
+    configured_password = (settings.super_admin_password or "").strip()
+    if not configured_email or not configured_password:
+        return None
+    if email != configured_email:
+        return None
+    if not _super_admin_password_matches(password, configured_password):
+        return None
+
+    token = create_access_token(
+        configured_email,
+        extra={
+            "actor_type": "super_admin",
+            "role": "SUPER_ADMIN",
+            "email": configured_email,
+        },
+    )
+    return {
+        "token": token,
+        "user": {
+            "name": settings.super_admin_name,
+            "email": configured_email,
+            "role": "SUPER_ADMIN",
+            "actor_type": "super_admin",
+            "email_verified": True,
+            "owner_id": None,
+            "gym_id": None,
+        },
+    }
+
+
 @router.post("/login")
 async def login(payload: LoginIn, request: Request):
     settings = get_settings()
@@ -425,6 +484,10 @@ async def login(payload: LoginIn, request: Request):
         limit=settings.auth_login_rate_limit,
         window_seconds=settings.auth_login_window_seconds,
     )
+
+    result = await _login_super_admin(email, payload.password)
+    if result:
+        return result
 
     result = await _login_owner(email, payload.password)
     if result:
@@ -439,6 +502,17 @@ async def login(payload: LoginIn, request: Request):
 
 @router.get("/me")
 async def me(actor: dict = Depends(get_current_actor)):
+    if actor.get("actor_type") == "super_admin":
+        return {
+            "name": actor.get("name") or "Platform Admin",
+            "email": actor.get("email"),
+            "role": "SUPER_ADMIN",
+            "actor_type": "super_admin",
+            "email_verified": True,
+            "owner_id": None,
+            "gym_id": None,
+        }
+
     if actor.get("actor_type") == "employee":
         return {
             "owner_id": actor["owner_id"],
@@ -455,6 +529,9 @@ async def me(actor: dict = Depends(get_current_actor)):
 
 @router.get("/profile")
 async def profile(actor: dict = Depends(get_current_actor)):
+    if actor.get("actor_type") == "super_admin":
+        return _super_admin_profile_payload()
+
     db = get_db()
     if actor.get("actor_type") == "employee":
         employee = await db.employees.find_one(
@@ -473,6 +550,12 @@ async def profile(actor: dict = Depends(get_current_actor)):
 
 @router.put("/profile")
 async def update_profile(payload: dict, actor: dict = Depends(get_current_actor)):
+    if actor.get("actor_type") == "super_admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Perfil do super admin e gerenciado por variavel de ambiente",
+        )
+
     db = get_db()
     now = datetime.now(UTC)
 
@@ -584,6 +667,12 @@ async def update_profile(payload: dict, actor: dict = Depends(get_current_actor)
 
 @router.post("/profile/password")
 async def change_profile_password(payload: dict, actor: dict = Depends(get_current_actor)):
+    if actor.get("actor_type") == "super_admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Senha do super admin e gerenciada por variavel de ambiente",
+        )
+
     current_password = str(payload.get("current_password") or "")
     new_password = str(payload.get("new_password") or "")
 

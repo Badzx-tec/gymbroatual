@@ -2,6 +2,7 @@
 
 Plataforma SaaS para academias com:
 - autenticação de owner e funcionários (RBAC)
+- autenticação separada para `SUPER_ADMIN` da plataforma
 - bloqueio por assinatura mensal (Mercado Pago)
 - verificação de e-mail antes do login
 - gestão de alunos (CRUD, medidas, treinos, frequência)
@@ -39,6 +40,7 @@ cp .env.example .env
 Principais:
 - `MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD`, `DB_NAME`
 - `JWT_SECRET`, `FERNET_KEY`
+- `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, `SUPER_ADMIN_NAME`
 - `APP_BASE_URL`, `FRONTEND_BASE_URL`, `CORS_ORIGINS`
 - `MP_ACCESS_TOKEN`, `MP_PUBLIC_KEY`, `MP_WEBHOOK_SECRET`
 - `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`
@@ -136,6 +138,20 @@ Rotas:
 
 Login é unificado (`/api/auth/login`) para owner e employee.
 JWT inclui `role`, `gym_id`, `owner_id` e `actor_type`.
+
+## Painel de Plataforma (SUPER_ADMIN)
+
+Subdomínio recomendado: `admin.gymbr.dev.br`
+
+Login do super admin:
+- credenciais via `.env`: `SUPER_ADMIN_EMAIL` e `SUPER_ADMIN_PASSWORD`
+- redirecionamento para `/platform`
+
+Rotas de plataforma:
+- `GET /api/platform/overview`
+- `GET /api/platform/owners`
+- `GET /api/platform/finance/summary`
+- `GET /api/platform/logs`
 
 ## Contratos de alunos (billing interno)
 
@@ -313,6 +329,9 @@ Use estes registros para o droplet `167.71.177.198`:
 2. `CNAME` para `www`:
    - `Nome`: `www`
    - `Valor`: `gymbro.dev.br`
+3. `A` para admin:
+   - `Nome`: `admin.gymbr.dev.br`
+   - `Valor`: `167.71.177.198`
 
 Validação:
 ```bash
@@ -327,7 +346,7 @@ No `.env` de produção:
 ```env
 APP_BASE_URL=https://gymbro.dev.br
 FRONTEND_BASE_URL=https://gymbro.dev.br
-CORS_ORIGINS=https://gymbro.dev.br,https://www.gymbro.dev.br
+CORS_ORIGINS=https://gymbro.dev.br,https://www.gymbro.dev.br,https://admin.gymbr.dev.br
 ```
 
 Aplicar:
@@ -348,7 +367,7 @@ docker run --rm \
   -v "$(pwd)/deploy/www:/var/www/certbot" \
   certbot/certbot certonly \
   --webroot -w /var/www/certbot \
-  -d gymbro.dev.br -d www.gymbro.dev.br \
+  -d gymbro.dev.br -d www.gymbro.dev.br -d admin.gymbr.dev.br -d admin.gymbro.dev.br \
   --email seu-email@dominio.com --agree-tos --no-eff-email
 ```
 
@@ -365,6 +384,7 @@ docker compose -f docker-compose.prod.yml up -d nginx
 ```bash
 curl -I https://gymbro.dev.br
 curl -I https://www.gymbro.dev.br
+curl -I https://admin.gymbr.dev.br
 ```
 
 Renovação (cron mensal):

@@ -194,6 +194,17 @@ export const api = {
 
   opsMetrics: () => request('/api/ops/metrics'),
   opsAlerts: () => request('/api/ops/alerts'),
+  platformOverview: () => request('/api/platform/overview'),
+  platformOwners: (limit = 100) => request(`/api/platform/owners?limit=${limit}`),
+  platformFinanceSummary: (days = 30) => request(`/api/platform/finance/summary?days=${days}`),
+  platformLogs: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.owner_id) query.set('owner_id', params.owner_id);
+    if (params.source) query.set('source', params.source);
+    if (params.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request(`/api/platform/logs${suffix}`);
+  },
 
   catracaCommand: (data) => request('/api/catraca/command', { method: 'POST', body: JSON.stringify(data) }),
   catracaCommands: () => request('/api/catraca/commands'),

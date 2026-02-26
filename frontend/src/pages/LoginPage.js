@@ -7,6 +7,7 @@ import { api } from '../api';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const isPlatformSubdomain = /^admin\./i.test(window.location.hostname);
   const [mode, setMode] = useState('login');
   const [name, setName] = useState('');
   const [gymName, setGymName] = useState('');
@@ -23,7 +24,7 @@ export default function LoginPage() {
   const handleRegister = async (e) => {
     e.preventDefault();
     if (password !== confirmPassword) {
-      toast.error('As senhas não conferem.');
+      toast.error('As senhas nao conferem.');
       return;
     }
     if (password.length < 8) {
@@ -35,7 +36,7 @@ export default function LoginPage() {
     try {
       await api.register({ name, gym_name: gymName, email, password });
       await api.verifyStart(email);
-      toast.success('Conta criada. Código enviado por e-mail.');
+      toast.success('Conta criada. Codigo enviado por e-mail.');
       setMode('verify');
     } catch (err) {
       toast.error(err.message);
@@ -49,7 +50,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await api.verifyConfirm(email, code);
-      toast.success('E-mail verificado. Faça login para continuar.');
+      toast.success('E-mail verificado. Faca login para continuar.');
       setMode('login');
     } catch (err) {
       toast.error(err.message);
@@ -66,7 +67,22 @@ export default function LoginPage() {
       const result = await api.login({ email, password });
       localStorage.setItem('gymbro_token', result.token);
       localStorage.setItem('gymbro_user', JSON.stringify(result.user));
-      toast.success('Login realizado');
+      const role = String(result?.user?.role || '').toUpperCase();
+
+      if (role === 'SUPER_ADMIN') {
+        toast.success('Login administrativo realizado.');
+        navigate('/platform');
+        return;
+      }
+
+      if (isPlatformSubdomain) {
+        localStorage.removeItem('gymbro_token');
+        localStorage.removeItem('gymbro_user');
+        toast.error('Esse subdominio e exclusivo para o super admin.');
+        return;
+      }
+
+      toast.success('Login realizado.');
       navigate('/admin');
     } catch (err) {
       if (err.code === 'NEED_EMAIL_VERIFICATION') {
@@ -78,7 +94,7 @@ export default function LoginPage() {
           checkoutUrl: err.checkout_url || '',
           message: err.message || 'Assinatura inativa.',
         });
-        toast.error('Assinatura necessária para acessar o painel.');
+        toast.error('Assinatura necessaria para acessar o painel.');
       } else {
         toast.error(err.message);
       }
@@ -102,7 +118,7 @@ export default function LoginPage() {
 
           {paymentRequired && (
             <div className="mb-5 p-4 rounded-sm border border-yellow-500/30 bg-yellow-500/10">
-              <p className="text-yellow-300 font-semibold text-sm mb-2">Assinatura necessária</p>
+              <p className="text-yellow-300 font-semibold text-sm mb-2">Assinatura necessaria</p>
               <p className="text-zinc-300 text-sm mb-3">{paymentRequired.message}</p>
               <button
                 type="button"
@@ -137,7 +153,7 @@ export default function LoginPage() {
             </form>
           )}
 
-          {mode === 'register' && (
+          {mode === 'register' && !isPlatformSubdomain && (
             <form onSubmit={handleRegister} className="space-y-4">
               <label className="text-sm font-medium text-zinc-400 mb-1 block">Nome</label>
               <input type="text" value={name} onChange={(e) => setName(e.target.value)} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4" />
@@ -168,23 +184,24 @@ export default function LoginPage() {
             </form>
           )}
 
-          {mode === 'verify' && (
+          {mode === 'verify' && !isPlatformSubdomain && (
             <form onSubmit={handleVerify} className="space-y-4">
-              <p className="text-sm text-zinc-400">Informe o código de 6 dígitos enviado para {email}.</p>
+              <p className="text-sm text-zinc-400">Informe o codigo de 6 digitos enviado para {email}.</p>
               <input type="text" value={code} onChange={(e) => setCode(e.target.value)} minLength={6} maxLength={6} required className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-12 px-4 tracking-[0.4em] text-center" />
               <button type="submit" disabled={loading} className="w-full bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-[#b3e600] disabled:opacity-50">
-                {loading ? 'Validando...' : 'Validar Código'}
+                {loading ? 'Validando...' : 'Validar Codigo'}
               </button>
-              <button type="button" onClick={() => api.verifyStart(email).then(() => toast.success('Código reenviado')).catch((err) => toast.error(err.message))} className="w-full bg-zinc-800 text-white font-semibold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-zinc-700">
-                Reenviar Código
+              <button type="button" onClick={() => api.verifyStart(email).then(() => toast.success('Codigo reenviado')).catch((err) => toast.error(err.message))} className="w-full bg-zinc-800 text-white font-semibold uppercase tracking-wider text-sm h-12 rounded-sm hover:bg-zinc-700">
+                Reenviar Codigo
               </button>
             </form>
           )}
 
           <p className="text-center text-zinc-500 text-sm mt-6">
-            {mode === 'login' && <>Não tem conta? <button onClick={() => setMode('register')} className="text-[#ccff00] hover:underline">Criar conta</button></>}
-            {mode === 'register' && <>Já tem conta? <button onClick={() => setMode('login')} className="text-[#ccff00] hover:underline">Fazer login</button></>}
-            {mode === 'verify' && <>Voltar para <button onClick={() => setMode('login')} className="text-[#ccff00] hover:underline">login</button></>}
+            {mode === 'login' && !isPlatformSubdomain && <>Nao tem conta? <button onClick={() => setMode('register')} className="text-[#ccff00] hover:underline">Criar conta</button></>}
+            {mode === 'register' && !isPlatformSubdomain && <>Ja tem conta? <button onClick={() => setMode('login')} className="text-[#ccff00] hover:underline">Fazer login</button></>}
+            {mode === 'verify' && !isPlatformSubdomain && <>Voltar para <button onClick={() => setMode('login')} className="text-[#ccff00] hover:underline">login</button></>}
+            {mode === 'login' && isPlatformSubdomain && <>Acesso restrito ao super admin da plataforma.</>}
           </p>
         </div>
       </div>

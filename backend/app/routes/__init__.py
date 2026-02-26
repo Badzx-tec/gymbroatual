@@ -6,6 +6,7 @@ from . import (
     gyms,
     legacy,
     ops,
+    platform_admin,
     staff,
     student_billing,
     students,
@@ -25,4 +26,5 @@ api_router.include_router(
 )
 api_router.include_router(turnstiles.router, prefix="/turnstiles", tags=["turnstiles"])
 api_router.include_router(ops.router, prefix="/ops", tags=["ops"])
+api_router.include_router(platform_admin.router, prefix="/platform", tags=["platform"])
 api_router.include_router(legacy.router, tags=["legacy"])
