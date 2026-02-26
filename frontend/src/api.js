@@ -54,6 +54,8 @@ function shouldLogoutOnUnauthorized(path, detail, code) {
     return true;
   }
 
+  if (path.includes('/auth/me')) return true;
+
   const normalizedDetail = String(detail || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -62,10 +64,6 @@ function shouldLogoutOnUnauthorized(path, detail, code) {
     'sessao expirada',
     'token invalido',
     'nao autenticado',
-    'usuario nao encontrado',
-    'funcionario nao encontrado',
-    'aluno nao encontrado',
-    'super admin invalido',
   ];
   return invalidSessionSignals.some((signal) => normalizedDetail.includes(signal));
 }
