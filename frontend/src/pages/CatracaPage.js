@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import CredentialPanel from '../components/CredentialPanel';
 
 export default function CatracaPage() {
   const [devices, setDevices] = useState([]);
@@ -10,6 +11,7 @@ export default function CatracaPage() {
   const [alerts, setAlerts] = useState([]);
   const [deviceName, setDeviceName] = useState('Gateway Toletus');
   const [loading, setLoading] = useState(true);
+  const [tokenPanel, setTokenPanel] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -48,7 +50,15 @@ export default function CatracaPage() {
     try {
       const created = await api.createTurnstileDevice({ name: deviceName });
       setDevices((prev) => [created, ...prev]);
-      toast.success(`Dispositivo criado. Token: ${created.token}`);
+      toast.success('Dispositivo criado');
+      setTokenPanel({
+        title: `Token do dispositivo ${created.device_id}`,
+        description: 'Copie e guarde. O token so aparece no momento da criacao/rotacao.',
+        fields: [
+          { label: 'Device ID', value: created.device_id },
+          { label: 'Device Token', value: created.token },
+        ],
+      });
     } catch (err) {
       toast.error(err.message);
     }
@@ -67,7 +77,15 @@ export default function CatracaPage() {
   const rotateToken = async (deviceId) => {
     try {
       const rotated = await api.rotateTurnstileDeviceToken(deviceId);
-      toast.success(`Novo token de ${deviceId}: ${rotated.token}`);
+      toast.success(`Token rotacionado para ${deviceId}`);
+      setTokenPanel({
+        title: `Novo token de ${deviceId}`,
+        description: 'Atualize esse valor no gateway imediatamente.',
+        fields: [
+          { label: 'Device ID', value: deviceId },
+          { label: 'Novo token', value: rotated.token },
+        ],
+      });
     } catch (err) {
       toast.error(err.message);
     }
@@ -83,6 +101,15 @@ export default function CatracaPage() {
         <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Catraca</h1>
         <p className="text-zinc-400 mt-1">Gerencie dispositivos e acompanhe acessos (polling 5s).</p>
       </div>
+
+      {tokenPanel && (
+        <CredentialPanel
+          title={tokenPanel.title}
+          description={tokenPanel.description}
+          fields={tokenPanel.fields}
+          onClose={() => setTokenPanel(null)}
+        />
+      )}
 
       <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4 space-y-3">
         <h2 className="font-semibold uppercase text-sm tracking-wide">Dispositivos</h2>

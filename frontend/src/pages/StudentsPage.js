@@ -3,6 +3,7 @@ import { api } from '../api';
 import { toast } from 'sonner';
 import { Plus, Search, Edit2, Trash2, X, User, FileSpreadsheet, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import CredentialPanel from '../components/CredentialPanel';
 
 const emptyStudent = { nome: '', email: '', cpf: '', telefone: '', plano_id: '', matricula: '', tag_rfid: '', biometria_id: '', status: 'ativo', data_vencimento: '', peso_kg: '', idade: '', altura_cm: '', treino: '', dias_frequencia: 0, auth_login_enabled: true, password: '', auto_generate_password: false, force_password_reset: false };
 
@@ -27,6 +28,7 @@ export default function StudentsPage() {
   const [form, setForm] = useState(emptyStudent);
   const [editId, setEditId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [credentialPanel, setCredentialPanel] = useState(null);
 
   useEffect(() => { loadData(); }, []);
 
@@ -99,7 +101,26 @@ export default function StudentsPage() {
         toast.success(`Matricula gerada automaticamente: ${result.generated_matricula}`);
       }
       if (result?.temp_password) {
-        toast.success(`Senha temporaria do aluno: ${result.temp_password}`);
+        toast.success('Senha temporaria do aluno gerada');
+        const fields = [];
+        if (result?.email || form.email) {
+          fields.push({ label: 'Login (e-mail)', value: result?.email || form.email });
+        }
+        if (result?.cpf || form.cpf) {
+          fields.push({ label: 'Login (CPF)', value: result?.cpf || form.cpf });
+        }
+        if (result?.matricula || form.matricula || result?.generated_matricula) {
+          fields.push({
+            label: 'Login (matricula)',
+            value: result?.matricula || form.matricula || result?.generated_matricula,
+          });
+        }
+        fields.push({ label: 'Senha temporaria', value: result.temp_password });
+        setCredentialPanel({
+          title: `Credenciais do aluno ${result?.nome || form.nome}`,
+          description: 'Copie agora e entregue ao aluno. Ele pode entrar com e-mail, CPF ou matricula.',
+          fields,
+        });
       }
       setModal(null);
       loadData();
@@ -153,6 +174,15 @@ export default function StudentsPage() {
           </button>
         </div>
       </div>
+
+      {credentialPanel && (
+        <CredentialPanel
+          title={credentialPanel.title}
+          description={credentialPanel.description}
+          fields={credentialPanel.fields}
+          onClose={() => setCredentialPanel(null)}
+        />
+      )}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">

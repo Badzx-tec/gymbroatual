@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import CredentialPanel from '../components/CredentialPanel';
 
 const emptyEmployeeForm = {
   name: '',
@@ -26,6 +27,7 @@ export default function StaffPage() {
     is_active: true,
   });
   const [savingEdit, setSavingEdit] = useState(false);
+  const [credentialPanel, setCredentialPanel] = useState(null);
 
   const load = async ({ silent = false } = {}) => {
     setLoading(true);
@@ -61,7 +63,24 @@ export default function StaffPage() {
     e.preventDefault();
     try {
       const result = await api.createEmployee(form);
-      toast.success(`Funcionario criado. Senha temporaria: ${result.temp_password}`);
+      toast.success('Funcionario criado');
+      const fields = [];
+      if (result.email) {
+        fields.push({ label: 'Login (e-mail)', value: result.email });
+      }
+      if (result.temp_password) {
+        fields.push({ label: 'Senha temporaria', value: result.temp_password });
+      }
+      if (result.matricula) {
+        fields.push({ label: 'Matricula', value: result.matricula });
+      }
+      if (fields.length) {
+        setCredentialPanel({
+          title: `Credenciais de ${result.name || form.name}`,
+          description: 'Copie e guarde agora. A senha temporaria nao sera exibida novamente.',
+          fields,
+        });
+      }
       if (result.matricula_auto_generated && result.generated_matricula) {
         toast.success(`Matricula gerada automaticamente: ${result.generated_matricula}`);
       }
@@ -73,6 +92,29 @@ export default function StaffPage() {
       }
       setForm(emptyEmployeeForm);
       await load({ silent: true });
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const resetEmployeePassword = async (employee) => {
+    try {
+      const result = await api.resetEmployeePassword(employee.employee_id);
+      toast.success('Senha redefinida');
+      const fields = [];
+      if (employee.email) {
+        fields.push({ label: 'Login (e-mail)', value: employee.email });
+      }
+      if (result.temp_password) {
+        fields.push({ label: 'Nova senha temporaria', value: result.temp_password });
+      }
+      if (fields.length) {
+        setCredentialPanel({
+          title: `Nova senha de ${employee.name}`,
+          description: 'Copie e entregue ao funcionario. O acesso e feito pela tela de login.',
+          fields,
+        });
+      }
     } catch (err) {
       toast.error(err.message);
     }
@@ -225,6 +267,15 @@ export default function StaffPage() {
         <p className="text-zinc-400 mt-1">RBAC por academia: OWNER, MANAGER, RECEPTION, TRAINER.</p>
       </div>
 
+      {credentialPanel && (
+        <CredentialPanel
+          title={credentialPanel.title}
+          description={credentialPanel.description}
+          fields={credentialPanel.fields}
+          onClose={() => setCredentialPanel(null)}
+        />
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <form onSubmit={createEmployee} className="bg-zinc-900 border border-zinc-800 rounded-md p-4 space-y-3">
           <h2 className="font-semibold uppercase text-sm tracking-wide">Criar funcionario</h2>
@@ -295,7 +346,7 @@ export default function StaffPage() {
                   <button onClick={() => enrollEmployeeBiometry(employee)} className="bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-sm text-xs">Biometria</button>
                   <button onClick={() => updateCredentials(employee)} className="bg-blue-500/20 text-blue-300 px-3 py-1 rounded-sm text-xs">Credenciais</button>
                   <button onClick={() => syncShadowStudent(employee.employee_id)} className="bg-amber-500/20 text-amber-300 px-3 py-1 rounded-sm text-xs">Sync</button>
-                  <button onClick={() => api.resetEmployeePassword(employee.employee_id).then((r) => toast.success(`Senha: ${r.temp_password}`)).catch((err) => toast.error(err.message))} className="bg-zinc-800 px-3 py-1 rounded-sm text-xs">Reset</button>
+                  <button onClick={() => resetEmployeePassword(employee)} className="bg-zinc-800 px-3 py-1 rounded-sm text-xs">Reset</button>
                   <button onClick={() => api.deactivateEmployee(employee.employee_id).then(() => load({ silent: true })).catch((err) => toast.error(err.message))} className="bg-red-500/20 text-red-300 px-3 py-1 rounded-sm text-xs">Desativar</button>
                 </td>
               </tr>
