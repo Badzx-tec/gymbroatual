@@ -28,3 +28,30 @@ def test_litenet2_parse_event_rfid():
 
     assert event["method"] == "rfid"
     assert event["credential"] == "000123"
+
+
+def test_litenet2_encode_decode_release_exit_and_both():
+    protocol = _load_protocol_module()
+    packet_exit = protocol.encode_release_exit("OUT")
+    packet_both = protocol.encode_release_both("BOTH")
+
+    decoded_exit = protocol.decode_packet(packet_exit)
+    decoded_both = protocol.decode_packet(packet_both)
+
+    assert decoded_exit.command == protocol.CMD_RELEASE_EXIT
+    assert decoded_exit.data.startswith(b"OUT")
+    assert decoded_both.command == protocol.CMD_RELEASE_BOTH
+    assert decoded_both.data.startswith(b"BOTH")
+
+
+def test_litenet2_parse_event_passage_direction_and_count():
+    protocol = _load_protocol_module()
+    payload = bytes([1, 9, 0, 0, 0]) + (b"\x00" * 11)
+    packet = protocol.encode_packet(protocol.EVT_PASSAGE, payload)
+    event = protocol.parse_event(packet)
+
+    assert event["kind"] == "operational"
+    assert event["type"] == "passage"
+    assert event["method"] == "passage"
+    assert event["direction"] == "entry"
+    assert event["count"] == 9

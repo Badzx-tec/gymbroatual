@@ -176,25 +176,35 @@ Implementado:
 
 ## Toletus LiteNet2
 
-### Protocolo (porta 7878)
-Arquivo: `gateway-toletus/protocol.py`
+Documentacao operacional detalhada:
+- `gateway-toletus/README.md`
+
+Protocolo (porta `7878`), arquivo `gateway-toletus/protocol.py`:
 - pacote fixo 20 bytes
 - prefixo `0x53`, sufixo `0xC3`
 - comando 2 bytes little-endian + dados 16 bytes
-- referência oficial Toletus LiteNet2:
+- referencia oficial:
   - https://github.com/Toletus/LiteNet2-ManuaisDeIntegracao
 
-Comandos implementados:
+Comandos gateway implementados:
 - `0x0001`: liberar entrada
-- `0x0002`: liberar saída
-- `0x0005`: notificar usuário (bip/led)
-- `0x0006`: reservado para bidirecional
+- `0x0002`: liberar saida
+- `0x0005`: feedback deny (beep/led)
+- `0x0006`: liberar bidirecional
+- probes de sessao:
+  - `0x010C` (query firmware)
+  - `0x0112` (query init states)
 
 Eventos parseados:
-- `0x0301`: RFID
-- `0x0303`: teclado
-- `0x0306`: biometria
-- `0x0304`: passagem
+- credenciais:
+  - `0x0301` RFID
+  - `0x0302` barcode
+  - `0x0303` teclado
+  - `0x0306` biometria
+- operacionais:
+  - `0x0304` passagem (entry/exit + contador)
+  - `0x0305` timeout de liberacao
+  - `0x0307` biometria nao cadastrada
 
 ### API SaaS para Gateway
 - `POST /api/turnstiles/devices`
@@ -252,11 +262,31 @@ Header obrigatório:
 }
 ```
 
-### Teste sem catraca física (simulador)
+### Teste sem catraca fisica (simulador)
 1. Crie um dispositivo na API: `POST /api/turnstiles/devices` (guarde `device_id` e `token`).
 2. Configure `.env` do gateway com `GATEWAY_DEVICE_ID`, `GATEWAY_DEVICE_TOKEN`, `TOLETUS_SIMULATOR=true`.
 3. Suba: `docker compose --profile gateway up -d gateway-toletus`.
 4. Acompanhe logs: `docker compose logs -f gateway-toletus backend`.
+
+### Direcao de acesso (entry/exit/both)
+
+O gateway normaliza decisao por matriz de direcao, com suporte a:
+- `allow entry`
+- `deny entry`
+- `allow exit`
+- `deny exit`
+- `allow both`
+- `deny both`
+
+Campos aceitos na resposta de decisao:
+- legados:
+  - `allow`
+  - `direction`
+- por direcao:
+  - `allow_entry`, `allow_exit`
+  - `deny_entry`, `deny_exit`, `allow_both`, `deny_both`
+  - `allowed_directions`/`allow_directions`
+  - `command_direction`
 
 ### Cadastro de biometria (alunos e funcionários)
 Aluno:
