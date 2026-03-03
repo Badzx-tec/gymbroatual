@@ -163,6 +163,59 @@ export const api = {
   createPlan: (data) => request('/api/plans', { method: 'POST', body: JSON.stringify(data) }),
   updatePlan: (id, data) => request(`/api/plans/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deletePlan: (id) => request(`/api/plans/${id}`, { method: 'DELETE' }),
+  adminContracts: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.page) query.set('page', String(params.page));
+    if (params.pageSize) query.set('pageSize', String(params.pageSize));
+    if (params.q) query.set('q', String(params.q));
+    if (params.sortBy) query.set('sortBy', String(params.sortBy));
+    if (params.sortDir) query.set('sortDir', String(params.sortDir));
+    if (params.startDate) query.set('startDate', String(params.startDate));
+    if (params.endDate) query.set('endDate', String(params.endDate));
+    if (params.expiringInDays) query.set('expiringInDays', String(params.expiringInDays));
+    if (params.pendingOnly) query.set('pendingOnly', 'true');
+    if (Array.isArray(params.status)) {
+      params.status.filter(Boolean).forEach((status) => query.append('status', String(status)));
+    }
+    if (Array.isArray(params.planoId)) {
+      params.planoId.filter(Boolean).forEach((planId) => query.append('planoId', String(planId)));
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request(`/api/admin/contratos${suffix}`);
+  },
+  adminContractDetail: (contractId) => request(`/api/admin/contratos/${contractId}`),
+  adminRenewContract: (contractId, data = {}) =>
+    request(`/api/admin/contratos/${contractId}/renovar`, { method: 'POST', body: JSON.stringify(data) }),
+  adminCancelContract: (contractId, data = {}) =>
+    request(`/api/admin/contratos/${contractId}/cancelar`, { method: 'POST', body: JSON.stringify(data) }),
+  adminPauseContract: (contractId, data = {}) =>
+    request(`/api/admin/contratos/${contractId}/pausar`, { method: 'POST', body: JSON.stringify(data) }),
+  adminContractPdf: (contractId) =>
+    request(`/api/admin/contratos/${contractId}/pdf`, { isBlob: true }).then((b) =>
+      downloadBlob(b, `contrato_${contractId}.pdf`)
+    ),
+  exportAdminContracts: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.format) query.set('format', String(params.format));
+    if (params.q) query.set('q', String(params.q));
+    if (params.startDate) query.set('startDate', String(params.startDate));
+    if (params.endDate) query.set('endDate', String(params.endDate));
+    if (params.expiringInDays) query.set('expiringInDays', String(params.expiringInDays));
+    if (params.pendingOnly) query.set('pendingOnly', 'true');
+    if (Array.isArray(params.status)) {
+      params.status.filter(Boolean).forEach((status) => query.append('status', String(status)));
+    }
+    if (Array.isArray(params.planoId)) {
+      params.planoId.filter(Boolean).forEach((planId) => query.append('planoId', String(planId)));
+    }
+    if (Array.isArray(params.ids)) {
+      params.ids.filter(Boolean).forEach((id) => query.append('ids', String(id)));
+    }
+    const format = String(params.format || 'xlsx').toLowerCase();
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    const filename = format === 'csv' ? 'contratos_gymbro.csv' : 'contratos_gymbro.xlsx';
+    return request(`/api/admin/contratos/export${suffix}`, { isBlob: true }).then((b) => downloadBlob(b, filename));
+  },
   studentBillingOverview: () => request('/api/student-billing/overview'),
   runStudentBillingReconcile: (limit = 500) =>
     request(`/api/student-billing/reconcile/run?limit=${encodeURIComponent(String(limit))}`, {
