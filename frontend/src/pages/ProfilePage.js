@@ -8,6 +8,7 @@ import {
   normalizeBranding,
   saveBranding,
 } from '../branding';
+import { roleLabel } from '../utils/labels';
 
 const MAX_LOGO_SIZE_BYTES = 800 * 1024;
 
@@ -253,7 +254,7 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            <p className="text-xs text-zinc-500">Perfil atual: {role}</p>
+            <p className="text-xs text-zinc-500">Perfil atual: {roleLabel(role)}</p>
           </div>
         )}
       </div>

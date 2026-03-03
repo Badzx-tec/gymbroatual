@@ -193,16 +193,37 @@ async def notification_delete(notif_id: str, actor: dict = Depends(require_admin
 @router.post("/catraca/command")
 async def catraca_command(payload: dict, actor: dict = Depends(require_admin_actor())):
     db = get_db()
+    action = str(payload.get("action") or "").strip().lower()
+    target_scope = payload.get("target_scope") or payload.get("scope") or "all"
+    control_state = None
+    status_value = "pending"
+    normalized_action = turnstile_routes._normalize_control_action(action)
+    if normalized_action in turnstile_routes.CONTROL_ACTIONS:
+        control_state = await turnstile_routes.apply_turnstile_control_action(
+            owner_id=actor["owner_id"],
+            gym_id=actor.get("gym_id"),
+            action=action,
+            scope=target_scope,
+            actor_id=actor.get("employee_id") or actor.get("owner_id"),
+            actor_role=str(actor.get("role") or "").upper() or None,
+        )
+        status_value = "applied"
+
     doc = {
         "cmd_id": f"cmd_{secrets.token_hex(6)}",
         "owner_id": actor["owner_id"],
-        "action": payload.get("action"),
+        "action": action,
+        "target_scope": turnstile_routes._normalize_control_scope(target_scope),
         "message": payload.get("message", ""),
-        "status": "pending",
+        "status": status_value,
+        "command_type": "turnstile_control_state" if control_state else "legacy_forward",
         "created_at": datetime.now(UTC),
     }
     await db.catraca_commands.insert_one(doc)
-    return _clean_doc(doc)
+    response = _clean_doc(doc)
+    if control_state:
+        response["control_state"] = control_state
+    return response
 
 
 @router.get("/catraca/commands")
@@ -213,6 +234,14 @@ async def catraca_commands(actor: dict = Depends(require_admin_actor())):
         .sort("created_at", -1)
         .limit(50)
         .to_list(50)
+    )
+
+
+@router.get("/catraca/control-state")
+async def catraca_control_state(actor: dict = Depends(require_admin_actor())):
+    return await turnstile_routes.get_turnstile_control_state(
+        owner_id=actor["owner_id"],
+        gym_id=actor.get("gym_id"),
     )
 
 
@@ -300,9 +329,10 @@ async def export_access_excel(actor: dict = Depends(require_admin_actor())):
     )
     headers = [
         "Data/Hora",
-        "Tipo",
-        "Aluno",
-        "Funcionario",
+        "Perfil",
+        "Pessoa",
+        "ID Pessoa",
+        "Direcao",
         "Metodo",
         "Autorizado",
         "Motivo",
@@ -311,10 +341,20 @@ async def export_access_excel(actor: dict = Depends(require_admin_actor())):
         [
             as_text(log.get("timestamp") or log.get("created_at")),
             as_text(log.get("subject_type") or log.get("tipo")),
-            as_text(log.get("student_name")),
-            as_text(log.get("employee_name")),
+            as_text(
+                log.get("subject_name")
+                or log.get("student_name")
+                or log.get("employee_name")
+                or log.get("owner_name")
+            ),
+            as_text(log.get("subject_id") or log.get("student_id") or log.get("employee_id")),
+            as_text(log.get("direction")),
             as_text(log.get("method")),
-            as_text(log.get("autorizado")),
+            as_text(
+                log.get("autorizado")
+                if log.get("autorizado") is not None
+                else str(log.get("decision") or "").lower() == "allow"
+            ),
             as_text(log.get("motivo") or log.get("reason")),
         ]
         for log in logs

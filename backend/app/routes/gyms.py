@@ -51,7 +51,13 @@ def _normalize_access_log(log: dict) -> dict:
     )
     return {
         "log_id": log.get("log_id") or "",
-        "student_name": log.get("student_name") or log.get("employee_name") or "Nao identificado",
+        "student_name": (
+            log.get("subject_name")
+            or log.get("student_name")
+            or log.get("employee_name")
+            or log.get("owner_name")
+            or "Nao identificado"
+        ),
         "tipo": log.get("tipo") or log.get("subject_type") or log.get("method") or "acesso",
         "autorizado": _is_access_allowed(log),
         "timestamp": timestamp,

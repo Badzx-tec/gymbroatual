@@ -84,8 +84,19 @@ class _FakeCollection:
         self.inserted.append(doc)
         self.docs.append(doc)
 
-    async def update_one(self, _query, _update):
-        return None
+    async def update_one(self, query, update, upsert=False):
+        for item in self.docs:
+            if _matches_query(item, query):
+                for key, value in update.get("$set", {}).items():
+                    item[key] = value
+                return type("UpdateResult", (), {"matched_count": 1, "modified_count": 1})()
+        if upsert:
+            created = dict(query)
+            created.update(update.get("$setOnInsert", {}))
+            created.update(update.get("$set", {}))
+            self.docs.append(created)
+            return type("UpdateResult", (), {"matched_count": 0, "modified_count": 0, "upserted_id": "up_1"})()
+        return type("UpdateResult", (), {"matched_count": 0, "modified_count": 0})()
 
     def find(self, query, _projection=None):
         filtered = [doc for doc in self.docs if _matches_query(doc, query)]
@@ -185,6 +196,7 @@ class _FakeDb:
                 }
             ]
         )
+        self.owners = _FakeCollection([])
         self.students = _FakeCollection([])
         self.employees = _FakeCollection(
             [
@@ -201,6 +213,7 @@ class _FakeDb:
         self.access_logs = _FakeCollection([])
         self.turnstile_devices = _FakeCollection([])
         self.turnstile_security_events = _FakeCollection([])
+        self.catraca_control_state = _FakeCollection([])
 
 
 class _DummyClient:
@@ -239,6 +252,84 @@ async def test_turnstile_decision_allows_employee_credentials(monkeypatch):
     assert decision["allow"] is True
     assert db.access_logs.inserted[-1]["employee_id"] == "emp_1"
     assert db.access_logs.inserted[-1]["subject_type"] == "employee"
+
+
+@pytest.mark.asyncio
+async def test_turnstile_decision_identifies_owner_credentials(monkeypatch):
+    db = _FakeDb()
+    db.owners.docs.append(
+        {
+            "owner_id": "own_1",
+            "name": "Dono",
+            "biometria_id": "BIO-OWN-1",
+        }
+    )
+
+    async def fake_authenticate(*_args, **_kwargs):
+        return (
+            {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"},
+            {
+                "device_id": "dev_1",
+                "method": "biometry",
+                "credential": "BIO-OWN-1",
+                "direction": "entry",
+            },
+        )
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_request", fake_authenticate)
+    monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
+
+    decision = await turnstiles.turnstile_decision(
+        payload={},
+        request=_DummyRequest(),
+        x_device_token=None,
+    )
+
+    assert decision["allow"] is True
+    assert db.access_logs.inserted[-1]["subject_type"] == "owner"
+    assert db.access_logs.inserted[-1]["subject_name"] == "Dono"
+
+
+@pytest.mark.asyncio
+async def test_turnstile_control_state_can_lock_entry_for_employee(monkeypatch):
+    db = _FakeDb()
+    db.catraca_control_state.docs.append(
+        {
+            "owner_id": "own_1",
+            "subject_controls": {
+                "student": {"entry_locked": False, "exit_locked": False},
+                "employee": {"entry_locked": True, "exit_locked": False},
+                "owner": {"entry_locked": False, "exit_locked": False},
+            },
+        }
+    )
+
+    async def fake_authenticate(*_args, **_kwargs):
+        return (
+            {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"},
+            {
+                "device_id": "dev_1",
+                "method": "biometry",
+                "credential": "BIO-EMP-1",
+                "direction": "entry",
+            },
+        )
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_request", fake_authenticate)
+    monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
+
+    decision = await turnstiles.turnstile_decision(
+        payload={},
+        request=_DummyRequest(),
+        x_device_token=None,
+    )
+
+    assert decision["allow"] is False
+    assert decision["allow_entry"] is False
+    assert decision["allow_exit"] is True
+    assert db.access_logs.inserted[-1]["reason"] == "turnstile_direction_locked"
 
 
 @pytest.mark.asyncio
@@ -295,6 +386,50 @@ async def test_turnstile_access_logs_accepts_filters(monkeypatch):
     assert result[0]["access_id"] == "acc_2"
     assert "credential" not in result[0]
     assert result[0]["credential_masked"] == "********3333"
+
+
+@pytest.mark.asyncio
+async def test_turnstile_access_logs_accepts_owner_subject_type(monkeypatch):
+    now = datetime.now(timezone.utc)
+    db = _FakeDb()
+    db.access_logs = _FakeCollection(
+        [
+            {
+                "access_id": "acc_1",
+                "owner_id": "own_1",
+                "decision": "allow",
+                "subject_type": "owner",
+                "reason": "ok",
+                "device_id": "dev_1",
+                "credential": "OWN001",
+                "created_at": now - timedelta(minutes=4),
+            },
+            {
+                "access_id": "acc_2",
+                "owner_id": "own_1",
+                "decision": "allow",
+                "subject_type": "employee",
+                "reason": "ok",
+                "device_id": "dev_1",
+                "credential": "EMP001",
+                "created_at": now - timedelta(minutes=2),
+            },
+        ]
+    )
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+
+    result = await turnstiles.list_access_logs(
+        limit=50,
+        decision="allow",
+        reason="",
+        subject_type="owner",
+        device_id="dev_1",
+        since_minutes=60,
+        actor={"owner_id": "own_1"},
+    )
+
+    assert len(result) == 1
+    assert result[0]["subject_type"] == "owner"
 
 
 @pytest.mark.asyncio

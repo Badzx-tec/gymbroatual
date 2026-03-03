@@ -2,12 +2,19 @@ import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import { roleLabel } from '../utils/labels';
 import CredentialPanel from '../components/CredentialPanel';
 import {
   clearCredentialHistory,
   loadCredentialHistory,
   pushCredentialHistory,
 } from '../utils/credentialHistory';
+
+const ROLE_OPTIONS = [
+  { value: 'MANAGER', label: 'Diretor' },
+  { value: 'RECEPTION', label: 'Recepcionista' },
+  { value: 'TRAINER', label: 'Treinador' },
+];
 
 const emptyEmployeeForm = {
   name: '',
@@ -294,7 +301,7 @@ export default function StaffPage() {
     <div className="space-y-6">
       <div>
         <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Funcionarios</h1>
-        <p className="text-zinc-400 mt-1">RBAC por academia: OWNER, MANAGER, RECEPTION, TRAINER.</p>
+        <p className="text-zinc-400 mt-1">Niveis de acesso: Dono da academia, Diretor, Recepcionista e Treinador.</p>
       </div>
 
       {credentialPanel && (
@@ -361,9 +368,9 @@ export default function StaffPage() {
             className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3"
           />
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3">
-            <option value="MANAGER">MANAGER</option>
-            <option value="RECEPTION">RECEPTION</option>
-            <option value="TRAINER">TRAINER</option>
+            {ROLE_OPTIONS.map((item) => (
+              <option key={item.value} value={item.value}>{item.label}</option>
+            ))}
           </select>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <input placeholder="Matricula (opcional)" value={form.matricula} onChange={(e) => setForm({ ...form, matricula: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
@@ -392,9 +399,9 @@ export default function StaffPage() {
           <h2 className="font-semibold uppercase text-sm tracking-wide">Criar convite</h2>
           <input placeholder="Email" type="email" value={inviteForm.email} onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" required />
           <select value={inviteForm.role} onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3">
-            <option value="MANAGER">MANAGER</option>
-            <option value="RECEPTION">RECEPTION</option>
-            <option value="TRAINER">TRAINER</option>
+            {ROLE_OPTIONS.map((item) => (
+              <option key={item.value} value={item.value}>{item.label}</option>
+            ))}
           </select>
           <button className="bg-zinc-800 text-white font-semibold text-xs uppercase tracking-wider h-10 px-4 rounded-sm">Convidar</button>
         </form>
@@ -406,7 +413,7 @@ export default function StaffPage() {
             <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
               <th className="text-left px-4 py-3">Nome</th>
               <th className="text-left px-4 py-3">Email</th>
-              <th className="text-left px-4 py-3">Role</th>
+              <th className="text-left px-4 py-3">Perfil</th>
               <th className="text-left px-4 py-3">Credenciais</th>
               <th className="text-left px-4 py-3">Status</th>
               <th className="text-right px-4 py-3">Acoes</th>
@@ -417,7 +424,7 @@ export default function StaffPage() {
               <tr key={employee.employee_id} className="border-b border-zinc-800/50">
                 <td className="px-4 py-3">{employee.name}</td>
                 <td className="px-4 py-3 text-zinc-400">{employee.email}</td>
-                <td className="px-4 py-3">{employee.role}</td>
+                <td className="px-4 py-3">{roleLabel(employee.role)}</td>
                 <td className="px-4 py-3 text-xs text-zinc-400">
                   BIO: {employee.biometria_id || '-'} | RFID: {employee.tag_rfid || '-'} | KEY: {employee.keypad_code || '-'}
                 </td>
@@ -443,7 +450,7 @@ export default function StaffPage() {
         <ul className="space-y-2 text-sm">
           {invites.map((invite) => (
             <li key={invite.invite_id} className="flex items-center justify-between border border-zinc-800 rounded-sm px-3 py-2">
-              <span>{invite.email} - {invite.role}</span>
+              <span>{invite.email} - {roleLabel(invite.role)}</span>
               <button onClick={() => api.cancelStaffInvite(invite.invite_id).then(() => load({ silent: true })).catch((err) => toast.error(err.message))} className="text-red-300 text-xs">Cancelar</button>
             </li>
           ))}
@@ -463,9 +470,9 @@ export default function StaffPage() {
               <input placeholder="Nome" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" required />
               <input placeholder="Email" type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />
               <select value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3">
-                <option value="MANAGER">MANAGER</option>
-                <option value="RECEPTION">RECEPTION</option>
-                <option value="TRAINER">TRAINER</option>
+                {ROLE_OPTIONS.map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
+                ))}
               </select>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <input placeholder="Matricula" value={editForm.matricula} onChange={(e) => setEditForm({ ...editForm, matricula: e.target.value })} className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3" />

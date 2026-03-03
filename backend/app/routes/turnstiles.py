@@ -18,6 +18,23 @@ from app.services.subscription import subscription_allows_login
 router = APIRouter()
 
 ALLOWED_METHODS = {"rfid", "keypad", "biometry", "passage"}
+DIRECTION_ENTRY = "entry"
+DIRECTION_EXIT = "exit"
+DIRECTION_BOTH = "both"
+DIRECTION_UNKNOWN = "unknown"
+SUBJECT_TYPES = ("student", "employee", "owner")
+CONTROL_ACTIONS = {
+    "lock_entry",
+    "lock_exit",
+    "lock_both",
+    "unlock_entry",
+    "unlock_exit",
+    "unlock_both",
+    # aliases legados da rota /catraca/command
+    "block",
+    "release_entry",
+    "release_exit",
+}
 WEEKDAY_NAMES = {
     "monday": 0,
     "mon": 0,
@@ -43,6 +60,188 @@ WEEKDAY_NAMES = {
     "sun": 6,
     "domingo": 6,
 }
+
+
+def _normalize_direction(value) -> str:
+    if isinstance(value, int):
+        if value == 1:
+            return DIRECTION_ENTRY
+        if value == 2:
+            return DIRECTION_EXIT
+        if value == 3:
+            return DIRECTION_BOTH
+        return DIRECTION_UNKNOWN
+
+    raw = str(value or "").strip().lower()
+    if raw in {"entry", "entrada", "in", "inside", "1"}:
+        return DIRECTION_ENTRY
+    if raw in {"exit", "saida", "out", "outside", "2"}:
+        return DIRECTION_EXIT
+    if raw in {"both", "bidir", "bidirectional", "bidirecional", "3"}:
+        return DIRECTION_BOTH
+    return DIRECTION_UNKNOWN
+
+
+def _normalize_control_scope(value) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in {"students", "student", "alunos", "aluno"}:
+        return "students"
+    if raw in {"employees", "employee", "funcionarios", "funcionario"}:
+        return "employees"
+    if raw in {"owners", "owner", "donos", "dono"}:
+        return "owners"
+    return "all"
+
+
+def _subjects_for_scope(scope: str) -> set[str]:
+    normalized = _normalize_control_scope(scope)
+    if normalized == "students":
+        return {"student"}
+    if normalized == "employees":
+        return {"employee"}
+    if normalized == "owners":
+        return {"owner"}
+    return {"student", "employee", "owner"}
+
+
+def _empty_subject_controls() -> dict:
+    return {
+        subject: {"entry_locked": False, "exit_locked": False}
+        for subject in SUBJECT_TYPES
+    }
+
+
+def _normalize_subject_controls(raw) -> dict:
+    controls = _empty_subject_controls()
+    if not isinstance(raw, dict):
+        return controls
+    for subject in SUBJECT_TYPES:
+        current = raw.get(subject)
+        if not isinstance(current, dict):
+            continue
+        controls[subject] = {
+            "entry_locked": bool(current.get("entry_locked", False)),
+            "exit_locked": bool(current.get("exit_locked", False)),
+        }
+    return controls
+
+
+def _sanitize_turnstile_control_state(doc: dict | None) -> dict:
+    current = doc or {}
+    return {
+        "owner_id": current.get("owner_id"),
+        "gym_id": current.get("gym_id"),
+        "subject_controls": _normalize_subject_controls(current.get("subject_controls")),
+        "last_action": current.get("last_action"),
+        "last_scope": current.get("last_scope"),
+        "updated_at": current.get("updated_at"),
+        "updated_by": current.get("updated_by"),
+        "updated_role": current.get("updated_role"),
+    }
+
+
+def _resolve_directional_allowance(direction: str, allow_entry: bool, allow_exit: bool) -> bool:
+    normalized = _normalize_direction(direction)
+    if normalized == DIRECTION_ENTRY:
+        return allow_entry
+    if normalized == DIRECTION_EXIT:
+        return allow_exit
+    return allow_entry or allow_exit
+
+
+def _default_control_state(*, owner_id: str, gym_id: str | None) -> dict:
+    return {
+        "owner_id": owner_id,
+        "gym_id": gym_id,
+        "subject_controls": _empty_subject_controls(),
+        "last_action": None,
+        "last_scope": "all",
+        "updated_at": None,
+        "updated_by": None,
+        "updated_role": None,
+    }
+
+
+async def get_turnstile_control_state(*, owner_id: str, gym_id: str | None = None) -> dict:
+    db = get_db()
+    stored = await db.catraca_control_state.find_one({"owner_id": owner_id}, {"_id": 0})
+    if not stored:
+        return _default_control_state(owner_id=owner_id, gym_id=gym_id)
+    sanitized = _sanitize_turnstile_control_state(stored)
+    if not sanitized.get("gym_id") and gym_id:
+        sanitized["gym_id"] = gym_id
+    return sanitized
+
+
+def _normalize_control_action(value: str) -> str:
+    action = str(value or "").strip().lower()
+    alias = {
+        "block": "lock_both",
+        "release_entry": "unlock_entry",
+        "release_exit": "unlock_exit",
+    }
+    return alias.get(action, action)
+
+
+async def apply_turnstile_control_action(
+    *,
+    owner_id: str,
+    gym_id: str | None,
+    action: str,
+    scope: str,
+    actor_id: str | None,
+    actor_role: str | None,
+) -> dict:
+    normalized_action = _normalize_control_action(action)
+    if normalized_action not in CONTROL_ACTIONS:
+        raise HTTPException(status_code=400, detail="Acao de catraca invalida")
+
+    normalized_scope = _normalize_control_scope(scope)
+    target_subjects = _subjects_for_scope(normalized_scope)
+    db = get_db()
+    now = datetime.now(UTC)
+    current = await get_turnstile_control_state(owner_id=owner_id, gym_id=gym_id)
+    controls = _normalize_subject_controls(current.get("subject_controls"))
+
+    for subject in target_subjects:
+        item = controls.get(subject) or {"entry_locked": False, "exit_locked": False}
+        if normalized_action == "lock_entry":
+            item["entry_locked"] = True
+        elif normalized_action == "lock_exit":
+            item["exit_locked"] = True
+        elif normalized_action == "lock_both":
+            item["entry_locked"] = True
+            item["exit_locked"] = True
+        elif normalized_action == "unlock_entry":
+            item["entry_locked"] = False
+        elif normalized_action == "unlock_exit":
+            item["exit_locked"] = False
+        elif normalized_action == "unlock_both":
+            item["entry_locked"] = False
+            item["exit_locked"] = False
+        controls[subject] = item
+
+    payload = {
+        "owner_id": owner_id,
+        "gym_id": gym_id,
+        "subject_controls": controls,
+        "last_action": normalized_action,
+        "last_scope": normalized_scope,
+        "updated_at": now,
+        "updated_by": actor_id,
+        "updated_role": actor_role,
+    }
+    await db.catraca_control_state.update_one(
+        {"owner_id": owner_id},
+        {
+            "$set": payload,
+            "$setOnInsert": {
+                "created_at": now,
+            },
+        },
+        upsert=True,
+    )
+    return _sanitize_turnstile_control_state(payload)
 
 
 def _hash_token(token: str) -> str:
@@ -276,6 +475,50 @@ def _evaluate_employee_access(employee: dict | None, now: datetime) -> tuple[boo
     return True, "ok", {"rule": "employee_checks_passed"}
 
 
+def _evaluate_owner_access(owner: dict | None, now: datetime) -> tuple[bool, str, dict]:
+    if not owner:
+        return False, "owner_not_found", {"rule": "owner_exists"}
+
+    if owner.get("is_active") is False:
+        return False, "owner_inactive", {"is_active": owner.get("is_active")}
+
+    if bool(owner.get("access_blocked", False)):
+        return False, "owner_manual_block", {"rule": "access_blocked"}
+
+    blocked_until = _coerce_datetime_utc(owner.get("blocked_until"))
+    if blocked_until and blocked_until > now:
+        return (
+            False,
+            "owner_blocked_until",
+            {"blocked_until": blocked_until.isoformat()},
+        )
+
+    allowed_weekdays = _normalize_weekdays(
+        owner.get("allowed_weekdays") or owner.get("dias_permitidos")
+    )
+    if allowed_weekdays and now.weekday() not in allowed_weekdays:
+        return (
+            False,
+            "owner_outside_allowed_weekday",
+            {"allowed_weekdays": sorted(allowed_weekdays), "current_weekday": now.weekday()},
+        )
+
+    start = _parse_hhmm(owner.get("allowed_time_start") or owner.get("horario_inicio"))
+    end = _parse_hhmm(owner.get("allowed_time_end") or owner.get("horario_fim"))
+    if start and end and not _is_inside_time_window(now.time(), start, end):
+        return (
+            False,
+            "owner_outside_allowed_time",
+            {
+                "allowed_time_start": start.strftime("%H:%M"),
+                "allowed_time_end": end.strftime("%H:%M"),
+                "current_time": now.strftime("%H:%M"),
+            },
+        )
+
+    return True, "ok", {"rule": "owner_checks_passed"}
+
+
 async def _refresh_student_contract_snapshot(student: dict, now: datetime) -> dict:
     db = get_db()
     latest = (
@@ -403,6 +646,7 @@ async def _authenticate_gateway_request(
     device_id = str(payload.get("device_id") or "").strip()
     method = _normalize_method(payload.get("method", ""))
     credential = str(payload.get("credential", ""))
+    direction = _normalize_direction(payload.get("direction"))
     timestamp = str(payload.get("timestamp", ""))
     nonce = str(payload.get("nonce", ""))
     signature = str(payload.get("signature", ""))
@@ -510,6 +754,7 @@ async def _authenticate_gateway_request(
         "device_id": device_id,
         "method": method,
         "credential": credential,
+        "direction": direction,
         "timestamp": parsed_timestamp,
         "nonce": nonce,
     }
@@ -581,6 +826,33 @@ async def list_devices(actor: dict = Depends(require_roles("OWNER", "MANAGER", "
     )
 
 
+@router.get("/control-state")
+async def turnstile_control_state(
+    actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION")),
+):
+    return await get_turnstile_control_state(
+        owner_id=actor["owner_id"],
+        gym_id=actor.get("gym_id"),
+    )
+
+
+@router.post("/control-state/action")
+async def turnstile_control_action(
+    payload: dict,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION")),
+):
+    action = str(payload.get("action") or "").strip().lower()
+    scope = payload.get("scope") or payload.get("target_scope") or "all"
+    return await apply_turnstile_control_action(
+        owner_id=actor["owner_id"],
+        gym_id=actor.get("gym_id"),
+        action=action,
+        scope=scope,
+        actor_id=actor.get("employee_id") or actor.get("owner_id"),
+        actor_role=str(actor.get("role") or "").upper() or None,
+    )
+
+
 @router.post("/decision")
 async def turnstile_decision(
     payload: dict,
@@ -595,11 +867,20 @@ async def turnstile_decision(
         source_ip=source_ip,
     )
     now = datetime.now(UTC)
+    event_direction = _normalize_direction(payload.get("direction") or normalized.get("direction"))
+    control_state = await get_turnstile_control_state(
+        owner_id=device["owner_id"],
+        gym_id=device.get("gym_id"),
+    )
 
     subscription = await db.subscriptions.find_one({"owner_id": device["owner_id"]}, {"_id": 0})
     if not subscription_allows_login(subscription):
         reason = "academy_subscription_inactive"
-        details = {"rule": "owner_subscription", "owner_id": device["owner_id"]}
+        details = {
+            "rule": "owner_subscription",
+            "owner_id": device["owner_id"],
+            "requested_direction": event_direction,
+        }
         await db.access_logs.insert_one(
             {
                 "access_id": f"acc_{secrets.token_hex(6)}",
@@ -608,9 +889,15 @@ async def turnstile_decision(
                 "device_id": normalized["device_id"],
                 "method": normalized["method"],
                 "credential": normalized["credential"],
+                "direction": event_direction,
                 "decision": "deny",
+                "autorizado": False,
+                "motivo": reason,
                 "reason": reason,
                 "reason_detail": details,
+                "allow_entry": False,
+                "allow_exit": False,
+                "timestamp": now,
                 "created_at": now,
             }
         )
@@ -623,7 +910,10 @@ async def turnstile_decision(
         )
         return {
             "allow": False,
-            "direction": "entry",
+            "allow_entry": False,
+            "allow_exit": False,
+            "direction": event_direction if event_direction != DIRECTION_UNKNOWN else DIRECTION_ENTRY,
+            "command_direction": event_direction if event_direction != DIRECTION_UNKNOWN else None,
             "message": "Assinatura da academia inativa",
             "beep": 2,
             "led": "red",
@@ -646,11 +936,17 @@ async def turnstile_decision(
     )
 
     employee = None
-    allow = False
+    owner_account = None
+    allow_base = False
+    allow_now = False
+    allow_entry = False
+    allow_exit = False
     reason = "credential_not_found"
     details: dict = {"rule": "credential_match"}
     subject_type = None
     subject_id = None
+    subject_name = None
+    subject_role = None
 
     if student:
         try:
@@ -662,18 +958,68 @@ async def turnstile_decision(
                 student_id=student.get("student_id"),
                 error=str(exc),
             )
-        allow, reason, details = _evaluate_student_access(student, now)
+        allow_base, reason, details = _evaluate_student_access(student, now)
         subject_type = "student"
         subject_id = student.get("student_id")
+        subject_name = student.get("nome") or student.get("name")
+        subject_role = "STUDENT"
     else:
         employee = await db.employees.find_one(
             credential_query,
             {"_id": 0, "password_hash": 0},
         )
         if employee:
-            allow, reason, details = _evaluate_employee_access(employee, now)
+            allow_base, reason, details = _evaluate_employee_access(employee, now)
             subject_type = "employee"
             subject_id = employee.get("employee_id")
+            subject_name = employee.get("name")
+            subject_role = (employee.get("role") or "").upper() or None
+        else:
+            owner_account = await db.owners.find_one(
+                credential_query,
+                {"_id": 0, "password_hash": 0},
+            )
+            if owner_account:
+                allow_base, reason, details = _evaluate_owner_access(owner_account, now)
+                subject_type = "owner"
+                subject_id = owner_account.get("owner_id")
+                subject_name = owner_account.get("name")
+                subject_role = "OWNER"
+
+    if allow_base:
+        subject_controls = _normalize_subject_controls(control_state.get("subject_controls"))
+        subject_control = subject_controls.get(subject_type or "")
+        if isinstance(subject_control, dict):
+            allow_entry = not bool(subject_control.get("entry_locked", False))
+            allow_exit = not bool(subject_control.get("exit_locked", False))
+        else:
+            allow_entry = True
+            allow_exit = True
+
+        allow_now = _resolve_directional_allowance(event_direction, allow_entry, allow_exit)
+        if not allow_now:
+            reason = "turnstile_direction_locked"
+            details = {
+                "rule": "turnstile_control_state",
+                "requested_direction": event_direction,
+                "entry_locked": not allow_entry,
+                "exit_locked": not allow_exit,
+                "scope_subject_type": subject_type,
+                "updated_at": (
+                    control_state.get("updated_at").isoformat()
+                    if isinstance(control_state.get("updated_at"), datetime)
+                    else control_state.get("updated_at")
+                ),
+                "updated_role": control_state.get("updated_role"),
+            }
+    else:
+        allow_entry = False
+        allow_exit = False
+        allow_now = False
+
+    student_name = student.get("nome") if student else None
+    employee_name = employee.get("name") if employee else None
+    owner_name = owner_account.get("name") if owner_account else None
 
     await db.access_logs.insert_one(
         {
@@ -683,33 +1029,58 @@ async def turnstile_decision(
             "device_id": normalized["device_id"],
             "method": normalized["method"],
             "credential": normalized["credential"],
+            "direction": event_direction,
             "subject_type": subject_type,
             "subject_id": subject_id,
+            "subject_name": subject_name,
+            "subject_role": subject_role,
             "student_id": student.get("student_id") if student else None,
+            "student_name": student_name,
             "employee_id": employee.get("employee_id") if employee else None,
-            "decision": "allow" if allow else "deny",
+            "employee_name": employee_name,
+            "owner_name": owner_name,
+            "decision": "allow" if allow_now else "deny",
+            "autorizado": bool(allow_now),
+            "tipo": subject_type or normalized["method"],
+            "motivo": reason,
             "reason": reason,
             "reason_detail": details,
+            "allow_entry": allow_entry,
+            "allow_exit": allow_exit,
+            "timestamp": now,
             "created_at": now,
         }
     )
 
     log_event(
         "turnstile_access_decision",
-        decision="allow" if allow else "deny",
+        decision="allow" if allow_now else "deny",
         reason=reason,
         owner_id=device["owner_id"],
         device_id=device["device_id"],
         subject_type=subject_type,
         subject_id=subject_id,
+        direction=event_direction,
+        allow_entry=allow_entry,
+        allow_exit=allow_exit,
     )
 
+    if allow_now:
+        message = "Acesso liberado"
+    elif reason == "turnstile_direction_locked":
+        message = "Fluxo travado para esta direcao"
+    else:
+        message = "Acesso negado"
+
     return {
-        "allow": allow,
-        "direction": "entry",
-        "message": "Acesso liberado" if allow else "Acesso negado",
-        "beep": 1 if allow else 2,
-        "led": "green" if allow else "red",
+        "allow": allow_now,
+        "allow_entry": allow_entry,
+        "allow_exit": allow_exit,
+        "direction": event_direction if event_direction != DIRECTION_UNKNOWN else DIRECTION_ENTRY,
+        "command_direction": event_direction if event_direction != DIRECTION_UNKNOWN else None,
+        "message": message,
+        "beep": 1 if allow_now else 2,
+        "led": "green" if allow_now else "red",
         "ttl": 3,
     }
 
@@ -736,8 +1107,12 @@ async def turnstile_event(
         "device_id": normalized["device_id"],
         "method": normalized["method"],
         "credential": normalized["credential"],
+        "direction": _normalize_direction(payload.get("direction") or normalized.get("direction")),
         "decision": payload.get("decision"),
         "message": payload.get("message"),
+        "allow_entry": payload.get("allow_entry"),
+        "allow_exit": payload.get("allow_exit"),
+        "release_direction": payload.get("release_direction"),
         "raw": payload.get("raw"),
         "created_at": now,
     }
@@ -753,7 +1128,7 @@ async def list_access_logs(
     subject_type: str = "",
     device_id: str = "",
     since_minutes: int = Query(default=0, ge=0, le=10080),
-    actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION")),
+    actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER")),
 ):
     db = get_db()
     query: dict = {"owner_id": actor["owner_id"]}
@@ -764,7 +1139,7 @@ async def list_access_logs(
     if normalized_reason:
         query["reason"] = normalized_reason
     normalized_subject_type = str(subject_type or "").strip().lower()
-    if normalized_subject_type in {"student", "employee"}:
+    if normalized_subject_type in {"student", "employee", "owner"}:
         query["subject_type"] = normalized_subject_type
     normalized_device_id = str(device_id or "").strip()
     if normalized_device_id:

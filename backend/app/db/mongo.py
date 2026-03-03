@@ -123,4 +123,5 @@ async def init_indexes() -> None:
     await db.turnstile_security_events.create_index([("owner_id", 1), ("created_at", -1)])
     await db.notifications.create_index([("owner_id", 1), ("created_at", -1)])
     await db.catraca_commands.create_index([("owner_id", 1), ("created_at", -1)])
+    await db.catraca_control_state.create_index([("owner_id", 1)], unique=True)
     await db.rate_limits.create_index("expires_at", expireAfterSeconds=0)

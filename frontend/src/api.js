@@ -275,6 +275,7 @@ export const api = {
 
   catracaCommand: (data) => request('/api/catraca/command', { method: 'POST', body: JSON.stringify(data) }),
   catracaCommands: () => request('/api/catraca/commands'),
+  catracaControlState: () => request('/api/catraca/control-state'),
 
   exportStudentsExcel: () => request('/api/reports/students/excel', { isBlob: true }).then((b) => downloadBlob(b, 'alunos_gymbro.xlsx')),
   exportStudentsPdf: () => request('/api/reports/students/pdf', { isBlob: true }).then((b) => downloadBlob(b, 'alunos_gymbro.pdf')),
