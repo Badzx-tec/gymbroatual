@@ -34,6 +34,10 @@ Gateway local que conecta a catraca LiteNet2 (TCP 7878) ao SaaS (`/api/turnstile
    - nao chama endpoint de decisao;
    - envia telemetria para `POST /api/turnstiles/events`.
 
+Observacao importante:
+- no LiteNet2, a notificacao de biometria (`0x0306`) nao traz lado;
+- por isso o gateway usa `TOLETUS_BIOMETRY_DEFAULT_DIRECTION` (padrao `both`).
+
 ## Contrato de decisao suportado
 
 O gateway aceita resposta legada e resposta por direcao:
@@ -61,6 +65,7 @@ O gateway aceita resposta legada e resposta por direcao:
 - `TOLETUS_PROBE_ON_CONNECT`: envia probes ao conectar.
 - `TOLETUS_PROBE_ON_TIMEOUT`: envia probe em timeout de leitura.
 - `TOLETUS_DEFAULT_DIRECTION`: direcao padrao para credenciais sem lado (`entry|exit|both|unknown`).
+- `TOLETUS_BIOMETRY_DEFAULT_DIRECTION`: direcao padrao especifica da biometria (`entry|exit|both|unknown`), padrao `both`.
 - `TOLETUS_DENY_DURATION_MS`: duracao do feedback deny.
 - `TOLETUS_DENY_BEEP`: padrao de beep no deny.
 - `TOLETUS_DENY_LED`: cor/led no deny.

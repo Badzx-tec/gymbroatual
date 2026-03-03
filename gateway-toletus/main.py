@@ -131,6 +131,9 @@ TOLETUS_RECONNECT_DELAY = _env_float("TOLETUS_RECONNECT_DELAY", 3.0, minimum=0.5
 TOLETUS_PROBE_ON_CONNECT = _env_bool("TOLETUS_PROBE_ON_CONNECT", True)
 TOLETUS_PROBE_ON_TIMEOUT = _env_bool("TOLETUS_PROBE_ON_TIMEOUT", True)
 TOLETUS_DEFAULT_DIRECTION = normalize_direction(_env_str("TOLETUS_DEFAULT_DIRECTION", "entry"))
+TOLETUS_BIOMETRY_DEFAULT_DIRECTION = normalize_direction(
+    _env_str("TOLETUS_BIOMETRY_DEFAULT_DIRECTION", "both")
+)
 SAAS_REQUEST_TIMEOUT = _env_float("SAAS_REQUEST_TIMEOUT", 10.0, minimum=1.0)
 TOLETUS_DENY_BEEP = _env_int("TOLETUS_DENY_BEEP", 2, minimum=0)
 TOLETUS_DENY_LED = _env_int("TOLETUS_DENY_LED", 1, minimum=0)
@@ -163,6 +166,9 @@ def _normalize_event_direction(event: dict) -> tuple[str, str]:
     event_direction = normalize_direction(event.get("direction"))
     if event_direction != DIRECTION_UNKNOWN:
         return event_direction, "event"
+    method = str(event.get("method") or "").strip().lower()
+    if method == "biometry" and TOLETUS_BIOMETRY_DEFAULT_DIRECTION != DIRECTION_UNKNOWN:
+        return TOLETUS_BIOMETRY_DEFAULT_DIRECTION, "biometry_default"
     if TOLETUS_DEFAULT_DIRECTION != DIRECTION_UNKNOWN:
         return TOLETUS_DEFAULT_DIRECTION, "default"
     return DIRECTION_UNKNOWN, "unknown"
@@ -604,6 +610,7 @@ async def main() -> None:
         probe_on_connect=TOLETUS_PROBE_ON_CONNECT,
         probe_on_timeout=TOLETUS_PROBE_ON_TIMEOUT,
         default_direction=TOLETUS_DEFAULT_DIRECTION,
+        biometry_default_direction=TOLETUS_BIOMETRY_DEFAULT_DIRECTION,
     )
     timeout = httpx.Timeout(timeout=SAAS_REQUEST_TIMEOUT)
     async with httpx.AsyncClient(timeout=timeout) as client:

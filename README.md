@@ -278,6 +278,10 @@ O gateway normaliza decisao por matriz de direcao, com suporte a:
 - `allow both`
 - `deny both`
 
+Nota sobre biometria LiteNet2:
+- o evento `0x0306` nao informa lado (entrada/saida);
+- o gateway aplica `TOLETUS_BIOMETRY_DEFAULT_DIRECTION` (padrao `both`) para liberar giro nos dois sentidos quando permitido.
+
 Campos aceitos na resposta de decisao:
 - legados:
   - `allow`
