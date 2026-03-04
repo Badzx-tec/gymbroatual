@@ -190,6 +190,8 @@ export const api = {
     request(`/api/admin/contratos/${contractId}/cancelar`, { method: 'POST', body: JSON.stringify(data) }),
   adminPauseContract: (contractId, data = {}) =>
     request(`/api/admin/contratos/${contractId}/pausar`, { method: 'POST', body: JSON.stringify(data) }),
+  adminRemoveCanceledContracts: (data = {}) =>
+    request('/api/admin/contratos/remover-cancelados', { method: 'POST', body: JSON.stringify(data) }),
   adminContractPdf: (contractId) =>
     request(`/api/admin/contratos/${contractId}/pdf`, { isBlob: true }).then((b) =>
       downloadBlob(b, `contrato_${contractId}.pdf`)

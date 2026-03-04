@@ -103,6 +103,7 @@
 - `POST /api/admin/contratos/{id}/renovar`
 - `POST /api/admin/contratos/{id}/cancelar`
 - `POST /api/admin/contratos/{id}/pausar`
+- `POST /api/admin/contratos/remover-cancelados`
 - `GET /api/admin/contratos/{id}/pdf`
 - `GET /api/admin/contratos/export`
   - `format=xlsx|csv` e suporte a `ids[]` para exportacao dos selecionados.
@@ -157,6 +158,7 @@
 6. Clique linha -> drawer de detalhe com timeline/auditoria/cobrancas.
 7. Execute acoes: renovar, pausar, cancelar.
 8. Teste exportacao geral e exportacao de selecionados.
+9. Teste botao "Remover cancelados" no header (acao permanente).
 
 ### API (exemplos)
 - Lista paginada com filtros:
@@ -173,4 +175,3 @@
   - `/api/admin/contratos/ctr_xxx/pdf`
 - Exportar:
   - `/api/admin/contratos/export?format=xlsx&status=active`
-

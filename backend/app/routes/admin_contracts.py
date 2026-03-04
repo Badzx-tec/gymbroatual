@@ -55,6 +55,10 @@ class AdminContractPauseIn(BaseModel):
     extend_end_by_frozen_days: bool = True
 
 
+class AdminRemoveCanceledIn(BaseModel):
+    older_than_days: int = Field(default=0, ge=0, le=3650)
+
+
 def _normalize_sort(sort_by: str, sort_dir: str) -> tuple[str, int]:
     db_field = ALLOWED_SORT_FIELDS.get(str(sort_by or "").strip())
     if not db_field:
@@ -319,6 +323,66 @@ async def list_admin_contracts(
             "pendingCount": int(pending_count),
             "canceledMonthCount": int(canceled_month_count),
         },
+    }
+
+
+@router.post("/contratos/remover-cancelados")
+async def remove_canceled_contracts(
+    payload: AdminRemoveCanceledIn | None = None,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
+    db = get_db()
+    request_data = payload or AdminRemoveCanceledIn()
+    now = utc_now()
+
+    query: dict = {"owner_id": actor["owner_id"], "contract_status": "canceled"}
+    if int(request_data.older_than_days or 0) > 0:
+        threshold = now - timedelta(days=int(request_data.older_than_days))
+        query["canceled_at"] = {"$lte": threshold}
+
+    canceled_docs = await db.student_contracts.find(query, {"_id": 0, "contract_id": 1}).limit(20000).to_list(20000)
+    contract_ids = sorted({str(item.get("contract_id") or "").strip() for item in canceled_docs if str(item.get("contract_id") or "").strip()})
+    if not contract_ids:
+        return {
+            "removed_contracts": 0,
+            "removed_charges": 0,
+            "removed_events": 0,
+            "removed_audits": 0,
+            "older_than_days": int(request_data.older_than_days or 0),
+        }
+
+    contracts_result = await db.student_contracts.delete_many(
+        {"owner_id": actor["owner_id"], "contract_id": {"$in": contract_ids}}
+    )
+    charges_result = await db.student_charges.delete_many(
+        {"owner_id": actor["owner_id"], "contract_id": {"$in": contract_ids}}
+    )
+    events_result = await db.student_billing_events.delete_many(
+        {"owner_id": actor["owner_id"], "contract_id": {"$in": contract_ids}}
+    )
+    audits_result = await db.contract_audit.delete_many(
+        {"owner_id": actor["owner_id"], "contract_id": {"$in": contract_ids}}
+    )
+
+    audit_id = await _record_contract_audit(
+        actor=actor,
+        contract_id="bulk_remove_canceled",
+        action="bulk_remove_canceled",
+        payload={
+            "older_than_days": int(request_data.older_than_days or 0),
+            "contracts": len(contract_ids),
+        },
+        before={"contract_id": "bulk_remove_canceled"},
+        after={"contract_id": "bulk_remove_canceled"},
+    )
+
+    return {
+        "removed_contracts": int(getattr(contracts_result, "deleted_count", 0) or 0),
+        "removed_charges": int(getattr(charges_result, "deleted_count", 0) or 0),
+        "removed_events": int(getattr(events_result, "deleted_count", 0) or 0),
+        "removed_audits": int(getattr(audits_result, "deleted_count", 0) or 0),
+        "older_than_days": int(request_data.older_than_days or 0),
+        "audit_id": audit_id,
     }
 
 

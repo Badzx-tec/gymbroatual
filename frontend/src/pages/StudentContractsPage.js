@@ -503,6 +503,35 @@ export default function StudentContractsPage() {
     }
   };
 
+  const runRemoveCanceled = async () => {
+    if (!canManageContractRules) {
+      toast.error('Somente Dono da academia ou Diretor pode remover cancelados.');
+      return;
+    }
+    const confirmed = window.confirm(
+      'Remover todos os contratos cancelados?\n\nEsta acao e permanente e apaga historico financeiro/auditoria destes contratos.'
+    );
+    if (!confirmed) return;
+
+    setBusyAction(true);
+    try {
+      const response = await api.adminRemoveCanceledContracts({ older_than_days: 0 });
+      const removed = Number(response?.removed_contracts || 0);
+      toast.success(
+        `Cancelados removidos: ${removed}. Cobrancas: ${Number(response?.removed_charges || 0)}.`
+      );
+      setSelectedIds([]);
+      setDetailOpen(false);
+      setDetailData(null);
+      setContractInUrl('');
+      await loadContracts();
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao remover contratos cancelados.');
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
   const recalcCreateEndAt = useCallback((nextForm) => {
     if (manualEndEdited) return nextForm;
     const selectedPlan = plansById.get(nextForm.plan_id);
@@ -586,6 +615,16 @@ export default function StudentContractsPage() {
               <Filter className="h-4 w-4" />
               Filtros
             </button>
+            {canManageContractRules ? (
+              <button
+                type="button"
+                onClick={runRemoveCanceled}
+                disabled={busyAction}
+                className="inline-flex h-10 items-center gap-2 rounded-md border border-red-500/40 bg-red-500/15 px-4 text-xs font-semibold uppercase tracking-wide text-red-300 hover:bg-red-500/20 disabled:opacity-60"
+              >
+                Remover cancelados
+              </button>
+            ) : null}
           </div>
         </div>
       </header>

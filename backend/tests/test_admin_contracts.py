@@ -13,6 +13,11 @@ class UpdateResult:
         self.modified_count = modified_count
 
 
+class DeleteResult:
+    def __init__(self, deleted_count: int):
+        self.deleted_count = deleted_count
+
+
 class FakeCursor:
     def __init__(self, docs):
         self.docs = [dict(item) for item in docs]
@@ -64,6 +69,17 @@ class FakeCollection:
             self.docs.append(base)
             return UpdateResult(1, 1)
         return UpdateResult(0, 0)
+
+    async def delete_many(self, query):
+        kept = []
+        deleted = 0
+        for doc in self.docs:
+            if _matches(doc, query):
+                deleted += 1
+            else:
+                kept.append(doc)
+        self.docs = kept
+        return DeleteResult(deleted)
 
 
 class FakeDb:
@@ -132,6 +148,7 @@ class FakeDb:
                 }
             ]
         )
+        self.student_billing_events = FakeCollection([])
         self.contract_audit = FakeCollection([])
 
 
@@ -251,3 +268,42 @@ async def test_admin_contract_cancel_records_audit(monkeypatch):
     assert db.contract_audit.docs[0]["action"] == "cancel"
     assert db.contract_audit.docs[0]["before"]["contract_status"] == "active"
     assert db.contract_audit.docs[0]["after"]["contract_status"] == "canceled"
+
+
+@pytest.mark.asyncio
+async def test_remove_canceled_contracts_cascades(monkeypatch):
+    db = FakeDb()
+    actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER", "actor_type": "owner"}
+
+    db.student_charges.docs.extend(
+        [
+            {"owner_id": "own_1", "contract_id": "ctr_ana_1", "charge_id": "chg_1"},
+            {"owner_id": "own_1", "contract_id": "ctr_ana_2", "charge_id": "chg_2"},
+        ]
+    )
+    db.student_billing_events.docs.extend(
+        [
+            {"owner_id": "own_1", "contract_id": "ctr_ana_1", "event_id": "evt_1"},
+            {"owner_id": "own_1", "contract_id": "ctr_ana_2", "event_id": "evt_2"},
+        ]
+    )
+    db.contract_audit.docs.extend(
+        [
+            {"owner_id": "own_1", "contract_id": "ctr_ana_1", "audit_id": "aud_1"},
+            {"owner_id": "own_1", "contract_id": "ctr_ana_2", "audit_id": "aud_2"},
+        ]
+    )
+
+    monkeypatch.setattr(admin_contracts, "get_db", lambda: db)
+
+    result = await admin_contracts.remove_canceled_contracts(
+        payload=admin_contracts.AdminRemoveCanceledIn(older_than_days=0),
+        actor=actor,
+    )
+
+    assert result["removed_contracts"] == 1
+    assert result["removed_charges"] == 1
+    assert result["removed_events"] == 1
+    assert result["removed_audits"] == 1
+    assert any(item["contract_id"] == "ctr_ana_2" for item in db.student_contracts.docs)
+    assert all(item["contract_id"] != "ctr_ana_1" for item in db.student_contracts.docs)
