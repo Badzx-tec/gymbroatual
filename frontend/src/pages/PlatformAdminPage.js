@@ -49,6 +49,7 @@ export default function PlatformAdminPage() {
   const [ownerFilter, setOwnerFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
   const [refreshingLogs, setRefreshingLogs] = useState(false);
+  const [ownerActionLoading, setOwnerActionLoading] = useState('');
 
   const user = useMemo(() => {
     try {
@@ -112,6 +113,48 @@ export default function PlatformAdminPage() {
     localStorage.removeItem('gymbro_token');
     localStorage.removeItem('gymbro_user');
     navigate('/login');
+  };
+
+  const handleGrantGrace = async (owner) => {
+    const ownerId = String(owner?.owner_id || '').trim();
+    if (!ownerId) return;
+    const daysInput = window.prompt('Quantos dias de carencia deseja aplicar?', '3');
+    if (daysInput === null) return;
+    const days = Number.parseInt(String(daysInput || '').trim(), 10);
+    if (!Number.isFinite(days) || days < 1 || days > 90) {
+      toast.error('Informe um numero entre 1 e 90 dias.');
+      return;
+    }
+    setOwnerActionLoading(`grant:${ownerId}`);
+    try {
+      const result = await api.platformGrantGrace(ownerId, {
+        days,
+        reason: 'ajuste manual no painel da plataforma',
+      });
+      toast.success(`Carencia aplicada para ${owner.email || ownerId} ate ${formatDate(result?.grace_until)}.`);
+      await loadAll();
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao aplicar carencia.');
+    } finally {
+      setOwnerActionLoading('');
+    }
+  };
+
+  const handleClearGrace = async (owner) => {
+    const ownerId = String(owner?.owner_id || '').trim();
+    if (!ownerId) return;
+    const confirmed = window.confirm(`Remover a carencia de ${owner.email || ownerId}?`);
+    if (!confirmed) return;
+    setOwnerActionLoading(`clear:${ownerId}`);
+    try {
+      await api.platformClearGrace(ownerId);
+      toast.success(`Carencia removida para ${owner.email || ownerId}.`);
+      await loadAll();
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao remover carencia.');
+    } finally {
+      setOwnerActionLoading('');
+    }
   };
 
   if (loading) {
@@ -272,7 +315,9 @@ export default function PlatformAdminPage() {
                 <th className="text-left py-2">Assinatura</th>
                 <th className="text-left py-2">Alunos</th>
                 <th className="text-left py-2">Equipe</th>
+                <th className="text-left py-2">Carencia</th>
                 <th className="text-left py-2">Ultimo acesso</th>
+                <th className="text-left py-2">Acoes</th>
               </tr>
             </thead>
             <tbody>
@@ -290,12 +335,31 @@ export default function PlatformAdminPage() {
                   </td>
                   <td className="py-2">{owner.students_active || 0} / {owner.students_total || 0}</td>
                   <td className="py-2">{owner.employees_active || 0}</td>
+                  <td className="py-2 text-zinc-400">{formatDate(owner.subscription_grace_until)}</td>
                   <td className="py-2 text-zinc-400">{formatDate(owner.last_access_at)}</td>
+                  <td className="py-2">
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        onClick={() => handleGrantGrace(owner)}
+                        disabled={ownerActionLoading === `grant:${owner.owner_id}` || ownerActionLoading === `clear:${owner.owner_id}`}
+                        className="h-8 rounded-sm border border-blue-500/40 bg-blue-500/15 px-2 text-[11px] uppercase text-blue-300 disabled:opacity-50"
+                      >
+                        Dar carencia
+                      </button>
+                      <button
+                        onClick={() => handleClearGrace(owner)}
+                        disabled={ownerActionLoading === `grant:${owner.owner_id}` || ownerActionLoading === `clear:${owner.owner_id}`}
+                        className="h-8 rounded-sm border border-red-500/40 bg-red-500/15 px-2 text-[11px] uppercase text-red-300 disabled:opacity-50"
+                      >
+                        Tirar carencia
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
               {owners.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-4 text-center text-zinc-500">Nenhum dono encontrado.</td>
+                  <td colSpan={8} className="py-4 text-center text-zinc-500">Nenhum dono encontrado.</td>
                 </tr>
               )}
             </tbody>

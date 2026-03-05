@@ -321,6 +321,15 @@ export const api = {
   opsAlerts: () => request('/api/ops/alerts'),
   platformOverview: () => request('/api/platform/overview'),
   platformOwners: (limit = 100) => request(`/api/platform/owners?limit=${limit}`),
+  platformGrantGrace: (ownerId, data = {}) =>
+    request(`/api/platform/owners/${encodeURIComponent(ownerId)}/grace`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  platformClearGrace: (ownerId) =>
+    request(`/api/platform/owners/${encodeURIComponent(ownerId)}/grace`, {
+      method: 'DELETE',
+    }),
   platformFinanceSummary: (days = 30) => request(`/api/platform/finance/summary?days=${days}`),
   platformLogs: (params = {}) => {
     const query = new URLSearchParams();

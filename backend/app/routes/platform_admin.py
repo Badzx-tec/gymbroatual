@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from app.core.deps import require_roles
 from app.core.time import UTC
@@ -8,6 +9,11 @@ from app.db.mongo import get_db
 from app.services.subscription import subscription_allows_login
 
 router = APIRouter()
+
+
+class OwnerGraceIn(BaseModel):
+    days: int = Field(default=3, ge=1, le=90)
+    reason: str | None = Field(default=None, max_length=240)
 
 
 def _as_utc_datetime(value) -> datetime | None:
@@ -55,6 +61,17 @@ def _is_access_allowed(log: dict) -> bool:
     if decision:
         return decision == "allow"
     return True
+
+
+async def _load_owner_and_subscription(owner_id: str) -> tuple[dict, dict]:
+    db = get_db()
+    owner = await db.owners.find_one({"owner_id": owner_id}, {"_id": 0, "owner_id": 1, "email": 1, "name": 1})
+    if not owner:
+        raise HTTPException(status_code=404, detail="Owner nao encontrado")
+    subscription = await db.subscriptions.find_one({"owner_id": owner_id}, {"_id": 0})
+    if not subscription:
+        raise HTTPException(status_code=404, detail="Assinatura nao encontrada")
+    return owner, subscription
 
 
 @router.get("/overview")
@@ -221,6 +238,128 @@ async def platform_owners(
         )
 
     return {"items": items, "count": len(items)}
+
+
+@router.post("/owners/{owner_id}/grace")
+async def grant_owner_grace(
+    owner_id: str,
+    payload: OwnerGraceIn | None = None,
+    actor: dict = Depends(require_roles("SUPER_ADMIN")),
+):
+    db = get_db()
+    owner, subscription = await _load_owner_and_subscription(owner_id)
+    request_data = payload or OwnerGraceIn()
+    now = datetime.now(UTC)
+    grace_until = now + timedelta(days=int(request_data.days))
+
+    await db.subscriptions.update_one(
+        {"owner_id": owner_id},
+        {
+            "$set": {
+                "status": "past_due",
+                "grace_until": grace_until,
+                "updated_at": now,
+                "meta.manual_grace_days": int(request_data.days),
+                "meta.manual_grace_reason": request_data.reason,
+                "meta.manual_grace_set_at": now,
+                "meta.manual_grace_set_by": actor.get("email") or actor.get("sub"),
+            }
+        },
+    )
+    await db.memberships.update_one(
+        {"owner_id": owner_id},
+        {"$set": {"status": "past_due", "updated_at": now}},
+    )
+    await db.subscription_events.insert_one(
+        {
+            "event_id": f"subevt_manual_grace_{owner_id}_{int(now.timestamp() * 1000)}",
+            "owner_id": owner_id,
+            "source": "super_admin",
+            "event_type": "manual_grace_granted",
+            "status": "past_due",
+            "metadata": {
+                "days": int(request_data.days),
+                "reason": request_data.reason,
+                "grace_until": grace_until,
+                "actor_email": actor.get("email"),
+                "owner_email": owner.get("email"),
+                "status_before": subscription.get("status"),
+            },
+            "created_at": now,
+        }
+    )
+
+    updated = await db.subscriptions.find_one(
+        {"owner_id": owner_id},
+        {"_id": 0, "owner_id": 1, "status": 1, "grace_until": 1, "trial_ends_at": 1, "current_period_end": 1},
+    )
+    return {
+        "owner_id": owner_id,
+        "owner_email": owner.get("email"),
+        "status": (updated or {}).get("status"),
+        "grace_until": (updated or {}).get("grace_until"),
+        "can_login": subscription_allows_login(updated or {}),
+    }
+
+
+@router.delete("/owners/{owner_id}/grace")
+async def clear_owner_grace(
+    owner_id: str,
+    actor: dict = Depends(require_roles("SUPER_ADMIN")),
+):
+    db = get_db()
+    owner, subscription = await _load_owner_and_subscription(owner_id)
+    now = datetime.now(UTC)
+    current_status = str(subscription.get("status") or "").lower()
+    next_status = "expired" if current_status == "past_due" else (current_status or "expired")
+
+    await db.subscriptions.update_one(
+        {"owner_id": owner_id},
+        {
+            "$set": {
+                "status": next_status,
+                "grace_until": None,
+                "updated_at": now,
+                "meta.manual_grace_days": None,
+                "meta.manual_grace_reason": None,
+                "meta.manual_grace_set_at": None,
+                "meta.manual_grace_set_by": None,
+                "meta.manual_grace_cleared_at": now,
+                "meta.manual_grace_cleared_by": actor.get("email") or actor.get("sub"),
+            }
+        },
+    )
+    await db.memberships.update_one(
+        {"owner_id": owner_id},
+        {"$set": {"status": next_status, "updated_at": now}},
+    )
+    await db.subscription_events.insert_one(
+        {
+            "event_id": f"subevt_manual_grace_clear_{owner_id}_{int(now.timestamp() * 1000)}",
+            "owner_id": owner_id,
+            "source": "super_admin",
+            "event_type": "manual_grace_removed",
+            "status": next_status,
+            "metadata": {
+                "actor_email": actor.get("email"),
+                "owner_email": owner.get("email"),
+                "status_before": subscription.get("status"),
+            },
+            "created_at": now,
+        }
+    )
+
+    updated = await db.subscriptions.find_one(
+        {"owner_id": owner_id},
+        {"_id": 0, "owner_id": 1, "status": 1, "grace_until": 1, "trial_ends_at": 1, "current_period_end": 1},
+    )
+    return {
+        "owner_id": owner_id,
+        "owner_email": owner.get("email"),
+        "status": (updated or {}).get("status"),
+        "grace_until": (updated or {}).get("grace_until"),
+        "can_login": subscription_allows_login(updated or {}),
+    }
 
 
 @router.get("/finance/summary")
