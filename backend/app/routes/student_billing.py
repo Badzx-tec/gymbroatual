@@ -13,6 +13,7 @@ from app.models.student_billing import (
     ChargeCleanupOut,
     ChargeCreateIn,
     ChargeMarkPaidIn,
+    ChargeMarkUnpaidIn,
     ChargeOut,
     ContractCancelIn,
     ContractChangePlanIn,
@@ -31,6 +32,7 @@ from app.services.student_contracts import (
     append_manual_override,
     clean_doc,
     coerce_datetime_utc,
+    derive_student_operational_status,
     ensure_transition,
     infer_access_status,
     legacy_status,
@@ -131,6 +133,20 @@ async def _record_event(
 async def _sync_student_contract_projection(contract: dict) -> None:
     db = get_db()
     now = utc_now()
+    student = await db.students.find_one(
+        {"owner_id": contract["owner_id"], "student_id": contract["student_id"]},
+        {"_id": 0, "status": 1, "auto_status_source": 1},
+    )
+    if not student:
+        return
+
+    desired_status, desired_auto_source = derive_student_operational_status(
+        current_status=student.get("status"),
+        current_auto_source=student.get("auto_status_source"),
+        contract_access_status=contract.get("access_status"),
+        contract_financial_status=contract.get("financial_status"),
+    )
+
     updates = {
         "updated_at": now,
         "plan_expires_at": coerce_datetime_utc(contract.get("current_period_end")),
@@ -143,6 +159,13 @@ async def _sync_student_contract_projection(contract: dict) -> None:
         "contract_next_retry_at": coerce_datetime_utc(contract.get("next_retry_at")),
         "contract_dunning_level": int(contract.get("dunning_level") or 0),
     }
+    current_status = str(student.get("status") or "ativo").strip().lower()
+    if current_status != desired_status:
+        updates["status"] = desired_status
+    current_auto_source = str(student.get("auto_status_source") or "").strip().lower() or None
+    if current_auto_source != desired_auto_source:
+        updates["auto_status_source"] = desired_auto_source
+
     if contract.get("plan_id"):
         updates["plano_id"] = contract.get("plan_id")
     await db.students.update_one(
@@ -1505,6 +1528,79 @@ async def mark_charge_paid(
             "payment_method": payload.payment_method,
             "amount_received": amount_received,
             "extend_contract": payload.extend_contract,
+        },
+        actor=actor,
+    )
+    updated = await db.student_charges.find_one(
+        {"owner_id": actor["owner_id"], "charge_id": charge_id},
+        {"_id": 0},
+    )
+    if not updated:
+        raise HTTPException(status_code=500, detail="Falha ao atualizar cobranca")
+    return updated
+
+
+@router.post("/charges/{charge_id}/mark-unpaid", response_model=ChargeOut)
+async def mark_charge_unpaid(
+    charge_id: str,
+    payload: ChargeMarkUnpaidIn | None = None,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION")),
+):
+    db = get_db()
+    now = utc_now()
+    request_data = payload or ChargeMarkUnpaidIn()
+    charge = await db.student_charges.find_one(
+        {"owner_id": actor["owner_id"], "charge_id": charge_id},
+        {"_id": 0},
+    )
+    if not charge:
+        raise HTTPException(status_code=404, detail="Cobranca nao encontrada")
+
+    current_status = str(charge.get("status") or "").lower()
+    if current_status in {"canceled", "refunded"}:
+        raise HTTPException(status_code=409, detail="Nao e possivel desfazer pagamento desta cobranca")
+    if current_status != "paid":
+        return charge
+
+    due_at = coerce_datetime_utc(charge.get("due_at"))
+    next_status = "overdue" if due_at and due_at < now else "open"
+    await db.student_charges.update_one(
+        {"owner_id": actor["owner_id"], "charge_id": charge_id},
+        {
+            "$set": {
+                "status": next_status,
+                "paid_at": None,
+                "payment_method": None,
+                "amount_received": None,
+                "external_reference": None,
+                "updated_at": now,
+            }
+        },
+    )
+
+    contract = await _load_contract_for_owner(charge["contract_id"], actor, refresh=False)
+    refreshed, events, changed = await refresh_contract_state(db, contract)
+    if changed:
+        for auto_event in events:
+            await _record_event(
+                owner_id=refreshed["owner_id"],
+                gym_id=refreshed["gym_id"],
+                contract_id=refreshed["contract_id"],
+                event_type=auto_event["event_type"],
+                payload=auto_event.get("payload") or {},
+                actor={"actor_type": "system", "role": "SYSTEM"},
+            )
+    await _sync_student_contract_projection(refreshed)
+    await _record_event(
+        owner_id=refreshed["owner_id"],
+        gym_id=refreshed["gym_id"],
+        contract_id=refreshed["contract_id"],
+        event_type="charge_payment_reverted",
+        payload={
+            "charge_id": charge_id,
+            "status_before": current_status,
+            "status_after": next_status,
+            "reason": request_data.reason,
         },
         actor=actor,
     )

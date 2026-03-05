@@ -20,6 +20,7 @@ ACTIVE_LIKE_CONTRACT_STATUSES = {
     "scheduled_cancel",
     "scheduled_freeze",
 }
+AUTO_STATUS_SOURCE_FINANCIAL = "financeiro_inadimplente"
 
 
 def student_billing_grace_days() -> int:
@@ -151,6 +152,41 @@ def infer_access_status(
             return "grace_period"
         return "blocked"
     return "allowed"
+
+
+def derive_student_operational_status(
+    *,
+    current_status: str | None,
+    current_auto_source: str | None,
+    contract_access_status: str | None,
+    contract_financial_status: str | None,
+) -> tuple[str, str | None]:
+    normalized_status = str(current_status or "ativo").strip().lower()
+    if normalized_status != "inativo":
+        normalized_status = "ativo"
+
+    normalized_auto_source = str(current_auto_source or "").strip().lower() or None
+    normalized_access = str(contract_access_status or "").strip().lower()
+    normalized_financial = str(contract_financial_status or "").strip().lower()
+
+    delinquent_blocked = normalized_access in {"blocked", "suspended"} and normalized_financial in {
+        "overdue",
+        "failed",
+    }
+    if delinquent_blocked:
+        # Only control status automatically when the student is active or already controlled by finance.
+        if normalized_status == "ativo" or normalized_auto_source == AUTO_STATUS_SOURCE_FINANCIAL:
+            return "inativo", AUTO_STATUS_SOURCE_FINANCIAL
+        return normalized_status, normalized_auto_source
+
+    back_in_good_standing = normalized_access in {"allowed", "grace_period"} and normalized_financial not in {
+        "overdue",
+        "failed",
+    }
+    if back_in_good_standing and normalized_auto_source == AUTO_STATUS_SOURCE_FINANCIAL:
+        return "ativo", None
+
+    return normalized_status, normalized_auto_source
 
 
 def _close_open_freeze_period(contract: dict, *, resumed_at: datetime):

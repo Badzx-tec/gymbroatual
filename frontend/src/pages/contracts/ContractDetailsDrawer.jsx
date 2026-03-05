@@ -160,14 +160,24 @@ export default function ContractDetailsDrawer({
                       const badge = financialBadge(charge.status);
                       return <span className={`rounded-md border px-2 py-0.5 font-semibold uppercase ${badge.className}`}>{badge.label}</span>;
                     })()}
-                    {canSettleOverdue && !['paid', 'canceled', 'refunded'].includes(String(charge.status || '').toLowerCase()) ? (
-                      <button
-                        type="button"
-                        onClick={() => onAction('payCharge', { ...charge, contract_id: contract.contract_id })}
-                        className="rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-300"
-                      >
-                        Marcar pago
-                      </button>
+                    {canSettleOverdue ? (
+                      String(charge.status || '').toLowerCase() === 'paid' ? (
+                        <button
+                          type="button"
+                          onClick={() => onAction('unpayCharge', { ...charge, contract_id: contract.contract_id })}
+                          className="rounded-md border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-amber-300"
+                        >
+                          Cancelar pagto
+                        </button>
+                      ) : !['canceled', 'refunded'].includes(String(charge.status || '').toLowerCase()) ? (
+                        <button
+                          type="button"
+                          onClick={() => onAction('payCharge', { ...charge, contract_id: contract.contract_id })}
+                          className="rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-300"
+                        >
+                          Marcar pago
+                        </button>
+                      ) : null
                     ) : null}
                   </li>
                 ))}

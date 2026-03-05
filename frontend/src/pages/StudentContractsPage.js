@@ -399,6 +399,25 @@ export default function StudentContractsPage() {
       );
       return;
     }
+    if (action === 'unpayCharge') {
+      if (!canSettleOverdue) {
+        toast.error('Sem permissao para cancelar pagamento.');
+        return;
+      }
+      const chargeId = String(row?.charge_id || '').trim();
+      if (!chargeId) {
+        toast.error('Cobranca invalida.');
+        return;
+      }
+      const confirmed = window.confirm('Cancelar este pagamento e voltar a cobranca para pendente/atrasada?');
+      if (!confirmed) return;
+      await runMutation(
+        () => api.markStudentChargeUnpaid(chargeId, { reason: 'reversao manual na central de contratos' }),
+        'Pagamento cancelado com sucesso.',
+        contractId
+      );
+      return;
+    }
     if (action === 'settle') {
       if (!canSettleOverdue) {
         toast.error('Sem permissao para colocar contrato em dia.');

@@ -252,6 +252,7 @@ export const api = {
   createContractCharge: (contractId, data) => request(`/api/student-billing/contracts/${contractId}/charges`, { method: 'POST', body: JSON.stringify(data) }),
   cleanupContractCharges: (contractId, data = {}) => request(`/api/student-billing/contracts/${contractId}/charges/cleanup`, { method: 'POST', body: JSON.stringify(data) }),
   markStudentChargePaid: (chargeId, data) => request(`/api/student-billing/charges/${chargeId}/mark-paid`, { method: 'POST', body: JSON.stringify(data) }),
+  markStudentChargeUnpaid: (chargeId, data = {}) => request(`/api/student-billing/charges/${chargeId}/mark-unpaid`, { method: 'POST', body: JSON.stringify(data) }),
   listStudentBillingEvents: (limit = 100, contractId = '') => request(`/api/student-billing/events?limit=${limit}${contractId ? `&contract_id=${encodeURIComponent(contractId)}` : ''}`),
 
   listAccessLogs: (limit = 50) => request(`/api/access-logs?limit=${limit}`),

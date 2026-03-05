@@ -4,7 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.core.deps import require_roles
-from app.models.student_billing import ChargeCleanupIn, ChargeMarkPaidIn, ContractCreateIn
+from app.models.student_billing import ChargeCleanupIn, ChargeMarkPaidIn, ChargeMarkUnpaidIn, ContractCreateIn
 from app.routes import student_billing
 from app.services.student_contracts import refresh_contract_state
 
@@ -174,7 +174,7 @@ async def test_create_contract_with_plan_creates_initial_charge_and_updates_stud
     monkeypatch.setattr(student_billing, "get_db", lambda: db)
 
     actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER"}
-    start_at = datetime(2026, 3, 1, 0, 0, tzinfo=timezone.utc)
+    start_at = datetime.now(timezone.utc) + timedelta(days=30)
     payload = ContractCreateIn(student_id="std_1", plan_id="pln_1", start_at=start_at)
 
     result = await student_billing.create_contract(payload=payload, actor=actor)
@@ -288,6 +288,146 @@ async def test_mark_charge_paid_extends_contract_period(monkeypatch):
     assert updated_contract["status"] == "active"
     assert updated_contract["current_period_end"] > old_end
     assert updated_student["plan_expires_at"] == updated_contract["current_period_end"]
+
+
+@pytest.mark.asyncio
+async def test_mark_charge_unpaid_reverts_paid_charge_and_contract_status(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+
+    now = datetime.now(timezone.utc)
+    contract = {
+        "contract_id": "ctr_unpay",
+        "owner_id": "own_1",
+        "gym_id": "gym_1",
+        "student_id": "std_1",
+        "student_name": "Aluno Teste",
+        "plan_id": "pln_1",
+        "plan_name": "Mensal",
+        "amount": 149.9,
+        "currency": "BRL",
+        "duration_days": 30,
+        "current_period_start": now - timedelta(days=20),
+        "current_period_end": now + timedelta(days=10),
+        "contract_status": "active",
+        "financial_status": "paid",
+        "access_status": "allowed",
+        "status": "active",
+        "auto_renew": False,
+        "notes": None,
+        "canceled_at": None,
+        "last_payment_at": now - timedelta(days=1),
+        "last_charge_id": "chg_paid_unpay",
+        "created_at": now - timedelta(days=20),
+        "updated_at": now - timedelta(days=1),
+    }
+    db.student_contracts.docs.append(contract)
+    db.student_charges.docs.append(
+        {
+            "charge_id": "chg_paid_unpay",
+            "contract_id": "ctr_unpay",
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "student_id": "std_1",
+            "amount": 149.9,
+            "currency": "BRL",
+            "due_at": now - timedelta(days=5),
+            "status": "paid",
+            "paid_at": now - timedelta(days=1),
+            "payment_method": "pix",
+            "amount_received": 149.9,
+            "external_reference": None,
+            "notes": None,
+            "period_start": now - timedelta(days=20),
+            "period_end": now + timedelta(days=10),
+            "created_at": now - timedelta(days=5),
+            "updated_at": now - timedelta(days=1),
+        }
+    )
+
+    actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "MANAGER"}
+    updated_charge = await student_billing.mark_charge_unpaid(
+        charge_id="chg_paid_unpay",
+        payload=ChargeMarkUnpaidIn(reason="teste"),
+        actor=actor,
+    )
+
+    updated_contract = await db.student_contracts.find_one(
+        {"owner_id": "own_1", "contract_id": "ctr_unpay"}
+    )
+    updated_student = await db.students.find_one({"owner_id": "own_1", "student_id": "std_1"})
+
+    assert updated_charge["status"] == "overdue"
+    assert updated_charge["paid_at"] is None
+    assert updated_contract["financial_status"] == "overdue"
+    assert updated_contract["status"] == "past_due"
+    assert updated_student["status"] == "inativo"
+    assert updated_student["auto_status_source"] == "financeiro_inadimplente"
+    assert any(item["event_type"] == "charge_payment_reverted" for item in db.student_billing_events.docs)
+
+
+@pytest.mark.asyncio
+async def test_sync_projection_auto_inactivates_student_on_financial_block(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+    now = datetime.now(timezone.utc)
+
+    contract = {
+        "owner_id": "own_1",
+        "student_id": "std_1",
+        "plan_id": "pln_1",
+        "current_period_end": now + timedelta(days=7),
+        "contract_status": "active",
+        "financial_status": "overdue",
+        "access_status": "blocked",
+        "grace_until": None,
+        "next_retry_at": None,
+        "dunning_level": 1,
+    }
+
+    await student_billing._sync_student_contract_projection(contract)
+    updated_student = await db.students.find_one({"owner_id": "own_1", "student_id": "std_1"})
+
+    assert updated_student["status"] == "inativo"
+    assert updated_student["auto_status_source"] == "financeiro_inadimplente"
+    assert updated_student["contract_access_status"] == "blocked"
+    assert updated_student["contract_financial_status"] == "overdue"
+
+
+@pytest.mark.asyncio
+async def test_sync_projection_reactivates_only_financial_auto_inactive(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+    now = datetime.now(timezone.utc)
+
+    db.students.docs[0]["status"] = "inativo"
+    db.students.docs[0]["auto_status_source"] = "financeiro_inadimplente"
+
+    paid_contract = {
+        "owner_id": "own_1",
+        "student_id": "std_1",
+        "plan_id": "pln_1",
+        "current_period_end": now + timedelta(days=30),
+        "contract_status": "active",
+        "financial_status": "paid",
+        "access_status": "allowed",
+        "grace_until": None,
+        "next_retry_at": None,
+        "dunning_level": 0,
+    }
+
+    await student_billing._sync_student_contract_projection(paid_contract)
+    updated_student = await db.students.find_one({"owner_id": "own_1", "student_id": "std_1"})
+    assert updated_student["status"] == "ativo"
+    assert updated_student.get("auto_status_source") is None
+
+    db.students.docs[0]["status"] = "inativo"
+    db.students.docs[0]["auto_status_source"] = None
+
+    await student_billing._sync_student_contract_projection(paid_contract)
+    manually_inactive = await db.students.find_one({"owner_id": "own_1", "student_id": "std_1"})
+    assert manually_inactive["status"] == "inativo"
+    assert manually_inactive.get("auto_status_source") is None
 
 
 @pytest.mark.asyncio

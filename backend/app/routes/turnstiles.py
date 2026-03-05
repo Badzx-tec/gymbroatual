@@ -12,7 +12,7 @@ from app.core.http import get_client_ip
 from app.core.time import UTC
 from app.db.mongo import get_db
 from app.services.observability import log_event
-from app.services.student_contracts import refresh_contract_state
+from app.services.student_contracts import derive_student_operational_status, refresh_contract_state
 from app.services.subscription import subscription_allows_login
 
 router = APIRouter()
@@ -545,6 +545,18 @@ async def _refresh_student_contract_snapshot(student: dict, now: datetime) -> di
         "subscription_end": contract.get("current_period_end"),
         "data_vencimento": contract.get("current_period_end"),
     }
+    desired_status, desired_auto_source = derive_student_operational_status(
+        current_status=student.get("status"),
+        current_auto_source=student.get("auto_status_source"),
+        contract_access_status=contract.get("access_status"),
+        contract_financial_status=contract.get("financial_status"),
+    )
+    current_status = str(student.get("status") or "ativo").strip().lower()
+    if current_status != desired_status:
+        updates["status"] = desired_status
+    current_auto_source = str(student.get("auto_status_source") or "").strip().lower() or None
+    if current_auto_source != desired_auto_source:
+        updates["auto_status_source"] = desired_auto_source
 
     should_update = any(student.get(key) != value for key, value in updates.items())
     if should_update:

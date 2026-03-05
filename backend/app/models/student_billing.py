@@ -161,6 +161,10 @@ class ChargeMarkPaidIn(BaseModel):
     extend_contract: bool = False
 
 
+class ChargeMarkUnpaidIn(BaseModel):
+    reason: str | None = Field(default=None, max_length=200)
+
+
 class ChargeCleanupIn(BaseModel):
     status_filter: ChargeCleanupScope = "pending"
     due_before: datetime | None = None
