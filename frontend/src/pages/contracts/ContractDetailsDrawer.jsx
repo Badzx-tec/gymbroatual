@@ -24,6 +24,7 @@ export default function ContractDetailsDrawer({
   onRetry,
   onAction,
   canManageContractRules,
+  canSettleOverdue,
 }) {
   if (!open) return null;
 
@@ -103,8 +104,13 @@ export default function ContractDetailsDrawer({
                 <p>Vigencia: {formatDate(contract.current_period_start)} ate {formatDate(contract.current_period_end)}</p>
                 <p>Proxima cobranca: {formatDate(contract.next_charge_due_at)}</p>
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
                 <button type="button" onClick={() => onAction('renew', contract)} className="h-9 rounded-md border border-emerald-500/40 bg-emerald-500/15 text-xs font-semibold uppercase text-emerald-300">Renovar</button>
+                {canSettleOverdue ? (
+                  <button type="button" onClick={() => onAction('settle', contract)} className="h-9 rounded-md border border-cyan-500/40 bg-cyan-500/15 text-xs font-semibold uppercase text-cyan-300">Colocar em dia</button>
+                ) : (
+                  <button type="button" disabled className="h-9 rounded-md border border-zinc-700 bg-zinc-800 text-xs font-semibold uppercase text-zinc-500">Colocar em dia</button>
+                )}
                 {canManageContractRules ? (
                   <>
                     <button type="button" onClick={() => onAction('pause', contract)} className="h-9 rounded-md border border-blue-500/40 bg-blue-500/15 text-xs font-semibold uppercase text-blue-300">Pausar</button>
@@ -154,6 +160,15 @@ export default function ContractDetailsDrawer({
                       const badge = financialBadge(charge.status);
                       return <span className={`rounded-md border px-2 py-0.5 font-semibold uppercase ${badge.className}`}>{badge.label}</span>;
                     })()}
+                    {canSettleOverdue && !['paid', 'canceled', 'refunded'].includes(String(charge.status || '').toLowerCase()) ? (
+                      <button
+                        type="button"
+                        onClick={() => onAction('payCharge', { ...charge, contract_id: contract.contract_id })}
+                        className="rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase text-emerald-300"
+                      >
+                        Marcar pago
+                      </button>
+                    ) : null}
                   </li>
                 ))}
                 {!charges.length ? <li className="text-xs text-zinc-500">Sem cobrancas registradas.</li> : null}

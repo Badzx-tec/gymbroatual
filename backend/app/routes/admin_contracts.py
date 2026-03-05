@@ -45,6 +45,7 @@ CONTRACT_STATUSES = [
 ]
 
 PENDING_FINANCIAL_STATUSES = {"pending", "open", "overdue", "failed", "partially_paid"}
+SETTLE_ALLOWED_PAYMENT_METHODS = {"pix", "card", "cash", "boleto", "transfer", "debit", "other"}
 
 
 class AdminContractPauseIn(BaseModel):
@@ -57,6 +58,13 @@ class AdminContractPauseIn(BaseModel):
 
 class AdminRemoveCanceledIn(BaseModel):
     older_than_days: int = Field(default=0, ge=0, le=3650)
+
+
+class AdminSettleOverdueIn(BaseModel):
+    paid_at: str | None = None
+    payment_method: str = Field(default="other", max_length=20)
+    reason: str | None = Field(default=None, max_length=240)
+    include_future_open: bool = False
 
 
 def _normalize_sort(sort_by: str, sort_dir: str) -> tuple[str, int]:
@@ -431,6 +439,7 @@ async def get_admin_contract_detail(
             "can_cancel": role in {"OWNER", "MANAGER"},
             "can_pause": role in {"OWNER", "MANAGER"},
             "can_renew": role in {"OWNER", "MANAGER", "RECEPTION"},
+            "can_settle_overdue": role in {"OWNER", "MANAGER", "RECEPTION"},
         },
     }
 
@@ -512,6 +521,125 @@ async def pause_admin_contract(
         after=after,
     )
     return {"contract": clean_doc(after), "audit_id": audit_id}
+
+
+@router.post("/contratos/{contract_id}/quitar-atrasos")
+async def settle_admin_contract_overdue(
+    contract_id: str,
+    payload: AdminSettleOverdueIn | None = None,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION")),
+):
+    db = get_db()
+    now = utc_now()
+    request_data = payload or AdminSettleOverdueIn()
+
+    payment_method = str(request_data.payment_method or "other").strip().lower()
+    if payment_method not in SETTLE_ALLOWED_PAYMENT_METHODS:
+        raise HTTPException(status_code=400, detail="payment_method invalido")
+
+    paid_at = coerce_datetime_utc(request_data.paid_at) or now
+    before = await student_billing._load_contract_for_owner(contract_id, actor, refresh=False)
+
+    base_query: dict = {"owner_id": actor["owner_id"], "contract_id": contract_id}
+    if request_data.include_future_open:
+        charge_query = {
+            **base_query,
+            "status": {"$in": ["open", "overdue", "failed", "partially_paid"]},
+        }
+    else:
+        charge_query = {
+            **base_query,
+            "$or": [
+                {"status": {"$in": ["overdue", "failed"]}},
+                {"status": {"$in": ["open", "partially_paid"]}, "due_at": {"$lte": now}},
+            ],
+        }
+
+    pending_charges = (
+        await db.student_charges.find(
+            charge_query,
+            {"_id": 0, "charge_id": 1, "amount": 1},
+        )
+        .limit(5000)
+        .to_list(5000)
+    )
+
+    updated_charges = 0
+    charge_ids: list[str] = []
+    for item in pending_charges:
+        charge_id = str(item.get("charge_id") or "").strip()
+        if not charge_id:
+            continue
+        amount_received = float(item.get("amount") or 0)
+        result = await db.student_charges.update_one(
+            {
+                "owner_id": actor["owner_id"],
+                "charge_id": charge_id,
+                "status": {"$in": ["open", "overdue", "failed", "partially_paid"]},
+            },
+            {
+                "$set": {
+                    "status": "paid",
+                    "paid_at": paid_at,
+                    "payment_method": payment_method,
+                    "amount_received": amount_received,
+                    "failure_reason": None,
+                    "updated_at": now,
+                }
+            },
+        )
+        if int(getattr(result, "modified_count", 0) or 0) > 0:
+            updated_charges += 1
+            charge_ids.append(charge_id)
+
+    refreshed, events, changed = await student_billing.refresh_contract_state(db, before, now=now)
+    if changed:
+        for auto_event in events:
+            await student_billing._record_event(
+                owner_id=refreshed["owner_id"],
+                gym_id=refreshed["gym_id"],
+                contract_id=refreshed["contract_id"],
+                event_type=auto_event["event_type"],
+                payload=auto_event.get("payload") or {},
+                actor={"actor_type": "system", "role": "SYSTEM"},
+            )
+        await student_billing._sync_student_contract_projection(refreshed)
+
+    if updated_charges > 0:
+        await student_billing._record_event(
+            owner_id=refreshed["owner_id"],
+            gym_id=refreshed["gym_id"],
+            contract_id=refreshed["contract_id"],
+            event_type="contract_overdue_settled",
+            payload={
+                "updated_charges": updated_charges,
+                "charge_ids": charge_ids[:100],
+                "payment_method": payment_method,
+                "paid_at": paid_at.isoformat(),
+                "reason": request_data.reason,
+                "include_future_open": bool(request_data.include_future_open),
+            },
+            actor=actor,
+        )
+
+    audit_payload = request_data.model_dump(exclude_none=True)
+    audit_payload["updated_charges"] = updated_charges
+    audit_payload["charge_ids"] = charge_ids[:100]
+    audit_id = await _record_contract_audit(
+        actor=actor,
+        contract_id=contract_id,
+        action="settle_overdue",
+        payload=audit_payload,
+        before=before,
+        after=refreshed,
+    )
+
+    return {
+        "contract": clean_doc(refreshed),
+        "updated_charges": int(updated_charges),
+        "charge_ids": charge_ids,
+        "audit_id": audit_id,
+    }
 
 
 @router.get("/contratos/{contract_id}/pdf")

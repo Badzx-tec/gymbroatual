@@ -190,6 +190,8 @@ export const api = {
     request(`/api/admin/contratos/${contractId}/cancelar`, { method: 'POST', body: JSON.stringify(data) }),
   adminPauseContract: (contractId, data = {}) =>
     request(`/api/admin/contratos/${contractId}/pausar`, { method: 'POST', body: JSON.stringify(data) }),
+  adminSettleOverdueContract: (contractId, data = {}) =>
+    request(`/api/admin/contratos/${contractId}/quitar-atrasos`, { method: 'POST', body: JSON.stringify(data) }),
   adminRemoveCanceledContracts: (data = {}) =>
     request('/api/admin/contratos/remover-cancelados', { method: 'POST', body: JSON.stringify(data) }),
   adminContractPdf: (contractId) =>

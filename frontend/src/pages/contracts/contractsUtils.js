@@ -46,9 +46,10 @@ export function contractBadge(contractStatus) {
 }
 
 export function financialBadge(financialStatus) {
+  const normalized = String(financialStatus || '').toLowerCase();
   return {
     className: badgeClass(financialStatus),
-    label: financialStatusLabel(financialStatus),
+    label: normalized === 'paid' ? 'Em dia' : financialStatusLabel(financialStatus),
   };
 }
 

@@ -34,6 +34,7 @@ function RowMenu({ onAction }) {
   return (
     <div className="absolute right-0 top-8 z-30 w-40 rounded-md border border-zinc-700 bg-zinc-950 shadow-xl">
       <button type="button" onClick={() => onAction('detail')} className="w-full border-b border-zinc-800 px-3 py-2 text-left text-xs hover:bg-zinc-800">Ver detalhes</button>
+      <button type="button" onClick={() => onAction('settle')} className="w-full border-b border-zinc-800 px-3 py-2 text-left text-xs hover:bg-zinc-800">Colocar em dia</button>
       <button type="button" onClick={() => onAction('renew')} className="w-full border-b border-zinc-800 px-3 py-2 text-left text-xs hover:bg-zinc-800">Renovar</button>
       <button type="button" onClick={() => onAction('pause')} className="w-full border-b border-zinc-800 px-3 py-2 text-left text-xs hover:bg-zinc-800">Pausar</button>
       <button type="button" onClick={() => onAction('cancel')} className="w-full border-b border-zinc-800 px-3 py-2 text-left text-xs hover:bg-zinc-800">Cancelar</button>

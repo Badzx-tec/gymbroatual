@@ -135,6 +135,7 @@ export default function StudentContractsPage() {
   const role = String(user.role || '').toUpperCase();
   const canCreateContracts = ['OWNER', 'MANAGER', 'RECEPTION'].includes(role);
   const canManageContractRules = ['OWNER', 'MANAGER'].includes(role);
+  const canSettleOverdue = ['OWNER', 'MANAGER', 'RECEPTION'].includes(role);
 
   const plansById = useMemo(() => new Map(plans.map((plan) => [plan.plan_id, plan])), [plans]);
 
@@ -378,6 +379,58 @@ export default function StudentContractsPage() {
         toast.success('Link copiado.');
       } catch {
         toast.error('Nao foi possivel copiar o link.');
+      }
+      return;
+    }
+    if (action === 'payCharge') {
+      if (!canSettleOverdue) {
+        toast.error('Sem permissao para registrar pagamento.');
+        return;
+      }
+      const chargeId = String(row?.charge_id || '').trim();
+      if (!chargeId) {
+        toast.error('Cobranca invalida.');
+        return;
+      }
+      await runMutation(
+        () => api.markStudentChargePaid(chargeId, { payment_method: 'other', extend_contract: false }),
+        'Cobranca marcada como paga.',
+        contractId
+      );
+      return;
+    }
+    if (action === 'settle') {
+      if (!canSettleOverdue) {
+        toast.error('Sem permissao para colocar contrato em dia.');
+        return;
+      }
+      const confirmed = window.confirm(
+        'Registrar pagamento das pendencias vencidas deste contrato e recalcular acesso?'
+      );
+      if (!confirmed) return;
+      const includeFutureOpen = window.confirm(
+        'Incluir tambem cobrancas futuras em aberto?\n\nOK = sim\nCancelar = quitar apenas atrasadas/vencidas'
+      );
+
+      setBusyAction(true);
+      try {
+        const response = await api.adminSettleOverdueContract(contractId, {
+          payment_method: 'other',
+          include_future_open: includeFutureOpen,
+          reason: 'baixa manual na central de contratos',
+        });
+        const updatedCharges = Number(response?.updated_charges || 0);
+        if (updatedCharges > 0) {
+          toast.success(`Contrato atualizado. Cobrancas baixadas: ${updatedCharges}.`);
+        } else {
+          toast.success('Nenhuma cobranca pendente para baixa.');
+        }
+        await loadContracts();
+        await loadDetail(contractId);
+      } catch (err) {
+        toast.error(err?.message || 'Falha ao colocar contrato em dia.');
+      } finally {
+        setBusyAction(false);
       }
       return;
     }
@@ -745,6 +798,7 @@ export default function StudentContractsPage() {
         onRetry={() => loadDetail(queryState.contractId)}
         onAction={onRowAction}
         canManageContractRules={canManageContractRules}
+        canSettleOverdue={canSettleOverdue}
       />
 
       {createOpen ? (
