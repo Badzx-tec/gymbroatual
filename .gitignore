@@ -35,6 +35,8 @@ Thumbs.db
 
 # Docker runtime
 mongo_data/
+deploy/certs/
+deploy/www/
 
 # Backup / E2E artifacts
 backups/
