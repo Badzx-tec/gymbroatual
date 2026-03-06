@@ -52,7 +52,7 @@ export default function AccessLogsPage() {
   const [loading, setLoading] = useState(true);
   const [profileFilter, setProfileFilter] = useState('');
 
-  const loadData = async () => {
+  const loadData = React.useCallback(async () => {
     setLoading(true);
     try {
       const response = await api.listTurnstileAccessLogs({
@@ -66,11 +66,11 @@ export default function AccessLogsPage() {
       toast.error(err?.message || 'Erro ao carregar os acessos.');
     }
     setLoading(false);
-  };
+  }, [profileFilter]);
 
   useEffect(() => {
     loadData();
-  }, [profileFilter]);
+  }, [loadData]);
 
   const stats = useMemo(() => {
     const total = logs.length;

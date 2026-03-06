@@ -8,7 +8,13 @@ from app.core.deps import require_roles
 from app.core.security import hash_password
 from app.core.time import UTC
 from app.db.mongo import get_db
-from app.models.students import AttendanceIn, MeasurementIn, StudentCreateIn, StudentIn, WorkoutPlanIn
+from app.models.students import (
+    AttendanceIn,
+    MeasurementIn,
+    StudentCreateIn,
+    StudentIn,
+    WorkoutPlanIn,
+)
 from app.services.internal_codes import (
     ensure_unique_internal_code,
     generate_unique_internal_code,

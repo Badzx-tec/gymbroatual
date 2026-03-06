@@ -8,6 +8,7 @@ import {
   normalizeBranding,
   saveBranding,
 } from '../branding';
+import { updateStoredUser } from '../lib/session';
 import { roleLabel } from '../utils/labels';
 
 const MAX_LOGO_SIZE_BYTES = 800 * 1024;
@@ -63,9 +64,7 @@ export default function ProfilePage() {
   }, []);
 
   const updateLocalUser = (name, email) => {
-    const currentUser = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
-    const updatedUser = { ...currentUser, name, email };
-    localStorage.setItem('gymbro_user', JSON.stringify(updatedUser));
+    updateStoredUser((currentUser) => ({ ...currentUser, name, email }));
   };
 
   const onLogoFile = (event) => {

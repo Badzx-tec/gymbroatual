@@ -1,7 +1,7 @@
 import secrets
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pymongo.errors import DuplicateKeyError
 
 from app.core.config import get_settings
@@ -14,6 +14,7 @@ from app.core.security import (
     verification_code_hash,
     verify_password,
 )
+from app.core.session import clear_auth_cookie, set_auth_cookie
 from app.core.time import UTC
 from app.db.mongo import get_db
 from app.models.auth import (
@@ -25,6 +26,7 @@ from app.models.auth import (
 )
 from app.services.billing_reconcile import reconcile_subscriptions
 from app.services.email import EmailDeliveryError, send_email_code
+from app.services.observability import log_event
 from app.services.subscription import initial_subscription, subscription_allows_login
 
 router = APIRouter()
@@ -213,6 +215,95 @@ def _super_admin_password_matches(password: str, configured_password: str) -> bo
         except Exception:
             return False
     return secrets.compare_digest(password, configured_password)
+
+
+def _set_auth_response_headers(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+
+
+def _issue_actor_token(actor: dict) -> str:
+    actor_type = str(actor.get("actor_type") or "owner").lower()
+    if actor_type == "super_admin":
+        email = str(actor.get("email") or actor.get("super_admin_email") or "").strip().lower()
+        return create_access_token(
+            email,
+            extra={"actor_type": "super_admin", "role": "SUPER_ADMIN", "email": email},
+        )
+    if actor_type == "employee":
+        return create_access_token(
+            actor["employee_id"],
+            extra={
+                "actor_type": "employee",
+                "role": actor.get("role") or "RECEPTION",
+                "owner_id": actor.get("owner_id"),
+                "gym_id": actor.get("gym_id"),
+            },
+        )
+    if actor_type == "student":
+        return create_access_token(
+            actor["student_id"],
+            extra={
+                "actor_type": "student",
+                "role": "STUDENT",
+                "owner_id": actor.get("owner_id"),
+                "gym_id": actor.get("gym_id"),
+                "student_id": actor["student_id"],
+            },
+        )
+    return create_access_token(
+        actor["owner_id"],
+        extra={
+            "actor_type": "owner",
+            "role": "OWNER",
+            "owner_id": actor["owner_id"],
+            "gym_id": actor.get("gym_id"),
+        },
+    )
+
+
+async def _record_auth_audit(
+    *,
+    event: str,
+    request: Request | None,
+    outcome: str,
+    actor: dict | None = None,
+    identifier: str | None = None,
+    detail: str | None = None,
+) -> None:
+    db = get_db()
+    actor = actor or {}
+    actor_id = (
+        actor.get("owner_id")
+        or actor.get("employee_id")
+        or actor.get("student_id")
+        or actor.get("email")
+        or actor.get("super_admin_email")
+    )
+    doc = {
+        "owner_id": actor.get("owner_id"),
+        "gym_id": actor.get("gym_id"),
+        "event": event,
+        "outcome": outcome,
+        "actor_type": actor.get("actor_type"),
+        "actor_id": actor_id,
+        "identifier": _clean_optional(identifier),
+        "detail": detail,
+        "ip": get_client_ip(request),
+        "request_id": getattr(getattr(request, "state", None), "request_id", None),
+        "created_at": datetime.now(UTC),
+    }
+    await db.audit_logs.insert_one(doc)
+    log_event(
+        "auth_audit",
+        event=event,
+        outcome=outcome,
+        actor_type=doc["actor_type"],
+        actor_id=actor_id,
+        owner_id=doc["owner_id"],
+        request_id=doc["request_id"],
+        detail=detail,
+    )
 
 
 async def _enforce_auth_rate_limit(
@@ -431,27 +522,43 @@ async def _login_owner(email: str, password: str) -> dict | None:
             headers=headers,
         )
 
-    token = create_access_token(
-        owner["owner_id"],
-        extra={
+    token = _issue_actor_token(
+        {
             "actor_type": "owner",
-            "role": "OWNER",
             "owner_id": owner["owner_id"],
             "gym_id": owner["gym_id"],
-        },
+        }
     )
-    return {"token": token, "user": _owner_out(owner)}
+    return {"token": token, "user": _owner_out(owner).model_dump()}
 
 
 async def _login_employee(email: str, password: str) -> dict | None:
     db = get_db()
-    employee = await db.employees.find_one(
-        {"email": email.lower().strip(), "is_active": True}, {"_id": 0}
+    candidates = (
+        await db.employees.find(
+            {"email": email.lower().strip(), "is_active": True},
+            {"_id": 0},
+        )
+        .limit(25)
+        .to_list(25)
     )
-    if not employee:
+    if not candidates:
         return None
-    if not verify_password(password, employee["password_hash"]):
+
+    valid_employees = [
+        employee
+        for employee in candidates
+        if employee.get("password_hash") and verify_password(password, employee["password_hash"])
+    ]
+    if not valid_employees:
         return None
+    if len(valid_employees) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Login ambiguo para este funcionario. Contate o suporte da plataforma.",
+        )
+
+    employee = valid_employees[0]
 
     subscription = await db.subscriptions.find_one({"owner_id": employee["owner_id"]}, {"_id": 0})
     if not subscription_allows_login(subscription):
@@ -461,14 +568,14 @@ async def _login_employee(email: str, password: str) -> dict | None:
             headers={"X-Error-Code": "PAYMENT_REQUIRED"},
         )
 
-    token = create_access_token(
-        employee["employee_id"],
-        extra={
+    token = _issue_actor_token(
+        {
             "actor_type": "employee",
+            "employee_id": employee["employee_id"],
             "role": employee["role"],
             "owner_id": employee["owner_id"],
             "gym_id": employee["gym_id"],
-        },
+        }
     )
     return {
         "token": token,
@@ -552,15 +659,13 @@ async def _login_student(identifier: str, password: str) -> dict | None:
             headers={"X-Error-Code": "PAYMENT_REQUIRED"},
         )
 
-    token = create_access_token(
-        student["student_id"],
-        extra={
+    token = _issue_actor_token(
+        {
             "actor_type": "student",
-            "role": "STUDENT",
+            "student_id": student["student_id"],
             "owner_id": owner_id,
             "gym_id": student.get("gym_id"),
-            "student_id": student["student_id"],
-        },
+        }
     )
     return {
         "token": token,
@@ -589,13 +694,12 @@ async def _login_super_admin(email: str, password: str) -> dict | None:
     if not _super_admin_password_matches(password, configured_password):
         return None
 
-    token = create_access_token(
-        configured_email,
-        extra={
+    token = _issue_actor_token(
+        {
             "actor_type": "super_admin",
-            "role": "SUPER_ADMIN",
             "email": configured_email,
-        },
+            "super_admin_email": configured_email,
+        }
     )
     return {
         "token": token,
@@ -612,7 +716,9 @@ async def _login_super_admin(email: str, password: str) -> dict | None:
 
 
 @router.post("/login")
-async def login(payload: LoginIn, request: Request):
+async def login(payload: LoginIn, request: Request, response: Response = None):
+    response = response or Response()
+    _set_auth_response_headers(response)
     settings = get_settings()
     identifier = str(payload.identifier or payload.email or "").strip()
     normalized_email = _try_normalize_email(identifier)
@@ -627,25 +733,69 @@ async def login(payload: LoginIn, request: Request):
     if normalized_email:
         result = await _login_super_admin(normalized_email, payload.password)
         if result:
+            set_auth_cookie(response, result["token"])
+            await _record_auth_audit(
+                event="auth.login",
+                request=request,
+                outcome="success",
+                actor=result.get("user"),
+                identifier=identifier,
+            )
             return result
 
         result = await _login_owner(normalized_email, payload.password)
         if result:
+            set_auth_cookie(response, result["token"])
+            await _record_auth_audit(
+                event="auth.login",
+                request=request,
+                outcome="success",
+                actor=result.get("user"),
+                identifier=identifier,
+            )
             return result
 
         result = await _login_employee(normalized_email, payload.password)
         if result:
+            set_auth_cookie(response, result["token"])
+            await _record_auth_audit(
+                event="auth.login",
+                request=request,
+                outcome="success",
+                actor={**(result.get("user") or {}), "actor_type": "employee"},
+                identifier=identifier,
+            )
             return result
 
     result = await _login_student(identifier, payload.password)
     if result:
+        set_auth_cookie(response, result["token"])
+        await _record_auth_audit(
+            event="auth.login",
+            request=request,
+            outcome="success",
+            actor=result.get("user"),
+            identifier=identifier,
+        )
         return result
 
+    await _record_auth_audit(
+        event="auth.login",
+        request=request,
+        outcome="failure",
+        identifier=identifier,
+        detail="Credenciais invalidas",
+    )
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciais invalidas")
 
 
 @router.get("/me")
-async def me(actor: dict = Depends(get_current_actor)):
+async def me(response: Response = None, actor: dict = Depends(get_current_actor)):
+    response = response or Response()
+    _set_auth_response_headers(response)
+    token = _issue_actor_token(actor)
+    set_auth_cookie(response, token)
+
     if actor.get("actor_type") == "super_admin":
         return {
             "name": actor.get("name") or "Platform Admin",
@@ -655,6 +805,7 @@ async def me(actor: dict = Depends(get_current_actor)):
             "email_verified": True,
             "owner_id": None,
             "gym_id": None,
+            "token": token,
         }
 
     if actor.get("actor_type") == "employee":
@@ -666,6 +817,7 @@ async def me(actor: dict = Depends(get_current_actor)):
             "gym_id": actor["gym_id"],
             "role": actor["role"],
             "email_verified": True,
+            "token": token,
         }
 
     if actor.get("actor_type") == "student":
@@ -678,9 +830,44 @@ async def me(actor: dict = Depends(get_current_actor)):
             "role": "STUDENT",
             "actor_type": "student",
             "email_verified": True,
+            "must_change_password": bool(actor.get("must_change_password", False)),
+            "token": token,
         }
 
-    return _owner_out(actor).model_dump()
+    return {**_owner_out(actor).model_dump(), "token": token}
+
+
+@router.post("/logout")
+async def logout(response: Response, request: Request, actor: dict = Depends(get_current_actor)):
+    _set_auth_response_headers(response)
+    clear_auth_cookie(response)
+
+    now = datetime.now(UTC)
+    db = get_db()
+    actor_type = str(actor.get("actor_type") or "").lower()
+    if actor_type == "owner":
+        await db.owners.update_one(
+            {"owner_id": actor["owner_id"]},
+            {"$set": {"session_revoked_at": now, "updated_at": now}},
+        )
+    elif actor_type == "employee":
+        await db.employees.update_one(
+            {"employee_id": actor["employee_id"], "owner_id": actor["owner_id"]},
+            {"$set": {"session_revoked_at": now, "updated_at": now}},
+        )
+    elif actor_type == "student":
+        await db.students.update_one(
+            {"student_id": actor["student_id"], "owner_id": actor["owner_id"]},
+            {"$set": {"session_revoked_at": now, "updated_at": now}},
+        )
+
+    await _record_auth_audit(
+        event="auth.logout",
+        request=request,
+        outcome="success",
+        actor=actor,
+    )
+    return {"message": "Logout realizado"}
 
 
 @router.get("/profile")

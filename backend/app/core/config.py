@@ -1,8 +1,11 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEFAULT_JWT_SECRET = "change-me-dev-secret"
+DEFAULT_FERNET_KEY = "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="
 
 
 class Settings(BaseSettings):
@@ -15,9 +18,14 @@ class Settings(BaseSettings):
     mongo_uri: str = Field(default="mongodb://localhost:27017")
     db_name: str = Field(default="gymbro")
 
-    jwt_secret: str = Field(default="change-me-dev-secret")
+    jwt_secret: str = Field(default=DEFAULT_JWT_SECRET)
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24 * 7
+    session_cookie_name: str = "gymbro_session"
+    session_cookie_domain: str | None = None
+    session_cookie_path: str = "/"
+    session_cookie_secure: bool = False
+    session_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     super_admin_email: str | None = None
     super_admin_password: str | None = None
     super_admin_name: str = "Platform Admin"
@@ -69,6 +77,8 @@ class Settings(BaseSettings):
     alert_gateway_auth_failures_threshold: int = 10
 
     cors_origins: str = "http://localhost:3000"
+    cors_allow_methods: str = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    cors_allow_headers: str = "Authorization,Content-Type,X-Requested-With,X-Request-ID"
 
     @field_validator("jwt_secret")
     @classmethod
@@ -82,8 +92,28 @@ class Settings(BaseSettings):
     def validate_fernet_key(cls, value: str) -> str:
         if not value:
             # dev fallback key; override in production
-            return "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="
+            return DEFAULT_FERNET_KEY
         return value
+
+    @model_validator(mode="after")
+    def validate_production_security(self):
+        if self.environment != "prod":
+            return self
+
+        if self.jwt_secret == DEFAULT_JWT_SECRET:
+            raise ValueError("JWT_SECRET padrao nao pode ser usado em producao")
+        if self.fernet_key == DEFAULT_FERNET_KEY:
+            raise ValueError("FERNET_KEY padrao nao pode ser usado em producao")
+
+        origins = [item.strip() for item in self.cors_origins.split(",") if item.strip()]
+        if not origins or "*" in origins:
+            raise ValueError("CORS_ORIGINS deve listar origens explicitas em producao")
+
+        if self.session_cookie_samesite == "none" and not self.session_cookie_secure:
+            raise ValueError(
+                "SESSION_COOKIE_SECURE deve ser true quando SESSION_COOKIE_SAMESITE=none"
+            )
+        return self
 
 
 @lru_cache

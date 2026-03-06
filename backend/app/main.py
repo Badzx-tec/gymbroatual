@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
-from app.db.mongo import init_indexes
+from app.db.mongo import get_db, init_indexes
 from app.routes import api_router
 from app.services.billing_reconcile import reconcile_subscriptions
 from app.services.observability import log_event, record_request
@@ -53,12 +53,15 @@ if settings.cors_origins.strip() == "*":
 else:
     allow_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 
+allow_methods = [item.strip().upper() for item in settings.cors_allow_methods.split(",") if item.strip()]
+allow_headers = [item.strip() for item in settings.cors_allow_headers.split(",") if item.strip()]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
     allow_credentials=settings.cors_origins.strip() != "*",
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=allow_methods or ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=allow_headers or ["Authorization", "Content-Type", "X-Requested-With"],
 )
 
 
@@ -89,10 +92,17 @@ async def request_observability_middleware(request: Request, call_next):
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
     response.headers.setdefault(
         "Permissions-Policy",
         "camera=(), microphone=(), geolocation=(), interest-cohort=()",
     )
+    forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    if settings.environment == "prod" and str(forwarded_proto).split(",")[0].strip() == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
     record_request(path=request.url.path, status_code=response.status_code, latency_ms=elapsed_ms)
     log_event(
         "http_request",
@@ -113,6 +123,18 @@ async def health() -> dict:
 @app.get("/api/health")
 async def api_health() -> dict:
     return {"status": "ok", "service": settings.app_name, "version": "3.0.0"}
+
+
+@app.get("/health/ready")
+async def health_ready() -> dict:
+    await get_db().command("ping")
+    return {"status": "ready", "service": settings.app_name, "version": "3.0.0"}
+
+
+@app.get("/api/health/ready")
+async def api_health_ready() -> dict:
+    await get_db().command("ping")
+    return {"status": "ready", "service": settings.app_name, "version": "3.0.0"}
 
 
 @app.exception_handler(RequestValidationError)

@@ -4,11 +4,16 @@ import { toast } from 'sonner';
 import { Plus, Search, Edit2, Trash2, X, User, FileSpreadsheet, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CredentialPanel from '../components/CredentialPanel';
+import Button from '../components/ui/Button';
+import LoadingScreen from '../components/ui/LoadingScreen';
+import PageHeader from '../components/ui/PageHeader';
+import StatCard from '../components/ui/StatCard';
 import {
   clearCredentialHistory,
   loadCredentialHistory,
   pushCredentialHistory,
 } from '../utils/credentialHistory';
+import { getStoredUser } from '../lib/session';
 
 const emptyStudent = { nome: '', email: '', cpf: '', telefone: '', plano_id: '', matricula: '', tag_rfid: '', biometria_id: '', status: 'ativo', data_vencimento: '', peso_kg: '', idade: '', altura_cm: '', treino: '', dias_frequencia: 0, auth_login_enabled: true, password: '', auto_generate_password: false, force_password_reset: false };
 const STUDENT_CREDENTIAL_HISTORY_KEY = 'gymbro_student_credentials_history';
@@ -38,27 +43,27 @@ export default function StudentsPage() {
   const [credentialHistory, setCredentialHistory] = useState(() =>
     loadCredentialHistory(STUDENT_CREDENTIAL_HISTORY_KEY)
   );
-  const user = React.useMemo(() => JSON.parse(localStorage.getItem('gymbro_user') || '{}'), []);
+  const user = React.useMemo(() => getStoredUser(), []);
   const role = String(user.role || '').toUpperCase();
   const canManageStudents = ['OWNER', 'MANAGER', 'RECEPTION'].includes(role);
 
-  useEffect(() => { loadData(); }, []);
-
-  const loadData = async () => {
+  const loadData = React.useCallback(async (nextSearch = search, nextStatus = filterStatus) => {
     try {
-      const [s, p] = await Promise.all([api.listStudents(search, filterStatus), api.listPlans()]);
+      const [s, p] = await Promise.all([api.listStudents(nextSearch, nextStatus), api.listPlans()]);
       setStudents(s);
       setPlans(p);
     } catch {}
     setLoading(false);
-  };
+  }, [filterStatus, search]);
+
+  useEffect(() => { loadData(); }, [loadData]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
-      api.listStudents(search, filterStatus).then(setStudents).catch(() => {});
+      loadData(search, filterStatus);
     }, 300);
     return () => clearTimeout(timeout);
-  }, [search, filterStatus]);
+  }, [filterStatus, loadData, search]);
 
   const openCredentialPanel = (payload) => {
     if (!payload?.fields?.length) return;
@@ -115,15 +120,6 @@ export default function StudentsPage() {
       setSelectedStudent(refreshed);
       loadData();
     } catch (err) { toast.error(err?.message || 'Erro ao salvar aluno'); }
-  };
-
-  const registerPasskey = async (cred) => {
-    try {
-      await api.registerStudentPasskey(selectedStudent.student_id, cred);
-      toast.success('Passkey registrada');
-      const pk = await api.listStudentPasskeys(selectedStudent.student_id);
-      setPasskeys(pk.webauthn_credentials || []);
-    } catch (err) { toast.error(err?.message || 'Erro ao registrar passkey'); }
   };
 
   const handleSave = async (e) => {
@@ -199,31 +195,53 @@ export default function StudentsPage() {
     }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-[#ccff00] border-t-transparent rounded-full animate-spin" /></div>;
+  const studentStats = React.useMemo(() => {
+    const active = students.filter((student) => String(student.status || '').toLowerCase() === 'ativo').length;
+    const inactive = students.filter((student) => String(student.status || '').toLowerCase() === 'inativo').length;
+    const withLogin = students.filter((student) => student.auth_login_enabled !== false).length;
+    return { active, inactive, withLogin };
+  }, [students]);
+
+  if (loading) return <LoadingScreen label="Carregando alunos..." />;
 
   return (
     <div data-testid="students-page" className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Alunos</h1>
-          <p className="text-zinc-400 mt-1">{students.length} alunos cadastrados</p>
-        </div>
-        <div className="flex gap-2">
-          <button data-testid="export-students-excel-btn" onClick={() => { api.exportStudentsExcel(); toast.success('Exportando Excel...'); }}
-            className="flex items-center gap-2 bg-zinc-800 text-white text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-sm hover:bg-zinc-700">
-            <FileSpreadsheet className="w-4 h-4 text-green-500" /> Excel
-          </button>
-          <button data-testid="export-students-pdf-btn" onClick={() => { api.exportStudentsPdf(); toast.success('Exportando PDF...'); }}
-            className="flex items-center gap-2 bg-zinc-800 text-white text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-sm hover:bg-zinc-700">
-            <FileText className="w-4 h-4 text-red-400" /> PDF
-          </button>
-          {canManageStudents && (
-            <button data-testid="add-student-btn" onClick={openCreate}
-              className="flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-6 py-2.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-0.5">
-              <Plus className="w-4 h-4" /> Novo Aluno
-            </button>
-          )}
-        </div>
+      <PageHeader
+        eyebrow="Operacao"
+        title="Alunos"
+        subtitle={`${students.length} alunos carregados para operacao rapida`}
+        actions={
+          <>
+            <Button
+              data-testid="export-students-excel-btn"
+              onClick={() => { api.exportStudentsExcel(); toast.success('Exportando Excel...'); }}
+              size="sm"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-green-500" />
+              Excel
+            </Button>
+            <Button
+              data-testid="export-students-pdf-btn"
+              onClick={() => { api.exportStudentsPdf(); toast.success('Exportando PDF...'); }}
+              size="sm"
+            >
+              <FileText className="w-4 h-4 text-red-400" />
+              PDF
+            </Button>
+            {canManageStudents ? (
+              <Button data-testid="add-student-btn" onClick={openCreate} size="sm" variant="primary">
+                <Plus className="w-4 h-4" />
+                Novo Aluno
+              </Button>
+            ) : null}
+          </>
+        }
+      />
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatCard label="Ativos" value={studentStats.active} icon={User} accent="success" />
+        <StatCard label="Inativos" value={studentStats.inactive} icon={User} accent="danger" />
+        <StatCard label="Login liberado" value={studentStats.withLogin} icon={User} accent="info" />
       </div>
 
       {credentialPanel && (

@@ -4,6 +4,7 @@ import { LayoutDashboard, Users, Tag, ScanLine, Menu, X, LogOut, Dumbbell, Bell,
 import { toast } from 'sonner';
 import { api } from '../api';
 import { applyBrandingToDocument, loadBranding, saveBranding } from '../branding';
+import { clearSession, getStoredUser, updateStoredUser } from '../lib/session';
 
 const navItems = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
@@ -36,7 +37,7 @@ export default function AdminLayout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('gymbro_user') || '{}'));
+  const [user, setUser] = useState(() => getStoredUser());
   const [branding, setBranding] = useState(() => loadBranding());
   const helpUrl = buildHelpUrl({ user, pathname: location.pathname });
   const role = (user.role || 'OWNER').toUpperCase();
@@ -68,16 +69,15 @@ export default function AdminLayout() {
         saveBranding(normalized);
       }
       if (profile?.name || profile?.email) {
-        const updatedUser = {
-          ...JSON.parse(localStorage.getItem('gymbro_user') || '{}'),
-          name: profile.name || user.name,
-          email: profile.email || user.email,
-        };
-        localStorage.setItem('gymbro_user', JSON.stringify(updatedUser));
+        const updatedUser = updateStoredUser((current) => ({
+          ...current,
+          name: profile.name || current.name || user.name,
+          email: profile.email || current.email || user.email,
+        }));
         setUser(updatedUser);
       }
     }).catch(() => {});
-  }, []);
+  }, [user.email, user.name]);
 
   useEffect(() => {
     api.listNotifications(50).then(notifs => {
@@ -87,8 +87,7 @@ export default function AdminLayout() {
 
   const handleLogout = async () => {
     try { await api.logout(); } catch {}
-    localStorage.removeItem('gymbro_token');
-    localStorage.removeItem('gymbro_user');
+    clearSession();
     toast.success('Logout realizado');
     navigate('/login');
   };

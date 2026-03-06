@@ -29,6 +29,11 @@ import {
 import { toast } from 'sonner';
 
 import { api, connectWebSocket } from '../api';
+import Button from '../components/ui/Button';
+import LoadingScreen from '../components/ui/LoadingScreen';
+import PageHeader from '../components/ui/PageHeader';
+import StatCard from '../components/ui/StatCard';
+import { getStoredUser } from '../lib/session';
 
 const CHART_COLORS = ['#ccff00', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ef4444'];
 
@@ -88,12 +93,12 @@ export default function Dashboard() {
     return 60;
   });
 
-  const role = String(JSON.parse(localStorage.getItem('gymbro_user') || '{}')?.role || '').toUpperCase();
+  const role = String(getStoredUser()?.role || '').toUpperCase();
   const canSeeOps = ['OWNER', 'MANAGER'].includes(role);
   const canExportFinancial = ['OWNER', 'MANAGER'].includes(role);
   const canRunReconcile = ['OWNER', 'MANAGER'].includes(role);
 
-  const loadData = async ({ silent = false, summaryWindow = summaryWindowMinutes } = {}) => {
+  const loadData = React.useCallback(async ({ silent = false, summaryWindow = summaryWindowMinutes } = {}) => {
     if (silent) {
       setRefreshing(true);
     } else {
@@ -130,7 +135,7 @@ export default function Dashboard() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [canSeeOps, summaryWindowMinutes]);
 
   useEffect(() => {
     loadData();
@@ -146,12 +151,12 @@ export default function Dashboard() {
       clearInterval(interval);
       cleanup();
     };
-  }, []);
+  }, [loadData]);
 
   useEffect(() => {
     localStorage.setItem('gymbro_dashboard_summary_window', String(summaryWindowMinutes));
     loadData({ silent: true, summaryWindow: summaryWindowMinutes });
-  }, [summaryWindowMinutes]);
+  }, [loadData, summaryWindowMinutes]);
 
   const runReconcile = async () => {
     if (!canRunReconcile) return;
@@ -227,7 +232,10 @@ export default function Dashboard() {
     [stats]
   );
 
-  const baseLogs = realtimeLogs.length > 0 ? realtimeLogs : stats?.ultimos_acessos || [];
+  const baseLogs = useMemo(
+    () => (realtimeLogs.length > 0 ? realtimeLogs : stats?.ultimos_acessos || []),
+    [realtimeLogs, stats?.ultimos_acessos]
+  );
   const filteredLogs = useMemo(() => {
     if (logFilter === 'allowed') return baseLogs.filter((item) => isAllowedAccess(item));
     if (logFilter === 'denied') return baseLogs.filter((item) => !isAllowedAccess(item));
@@ -250,12 +258,7 @@ export default function Dashboard() {
   };
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-3">
-        <div className="w-8 h-8 border-2 border-[#ccff00] border-t-transparent rounded-full animate-spin" />
-        <p className="text-xs uppercase tracking-wider text-zinc-500">Carregando dashboard...</p>
-      </div>
-    );
+    return <LoadingScreen label="Carregando dashboard..." />;
   }
 
   if (error && !stats) {
@@ -280,67 +283,54 @@ export default function Dashboard() {
 
   return (
     <div data-testid="dashboard-page" className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Dashboard</h1>
-          <p className="text-zinc-400 mt-1">
-            Visao operacional da academia
-            {lastUpdatedAt ? ` - atualizado as ${lastUpdatedAt.toLocaleTimeString('pt-BR')}` : ''}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => loadData({ silent: true })}
-            className="flex items-center gap-2 bg-zinc-800 text-white text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-sm hover:bg-zinc-700 transition-colors"
-          >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-            Atualizar
-          </button>
-          {canRunReconcile && (
-            <button
-              onClick={runReconcile}
-              disabled={reconciling}
-              className="flex items-center gap-2 bg-amber-500/20 text-amber-200 text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-sm hover:bg-amber-500/30 transition-colors disabled:opacity-60"
-            >
-              {reconciling ? 'Processando...' : 'Rodar reconciliacao'}
-            </button>
-          )}
-          {canExportFinancial && (
-            <button
-              data-testid="export-financial-btn"
+      <PageHeader
+        eyebrow="Painel administrativo"
+        title="Dashboard"
+        subtitle={`Visao operacional da academia${lastUpdatedAt ? ` - atualizado as ${lastUpdatedAt.toLocaleTimeString('pt-BR')}` : ''}`}
+        actions={
+          <>
+            <Button onClick={() => loadData({ silent: true })} size="sm">
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Atualizar
+            </Button>
+            {canRunReconcile ? (
+              <Button onClick={runReconcile} disabled={reconciling} variant="ghost" size="sm">
+                {reconciling ? 'Processando...' : 'Rodar reconciliacao'}
+              </Button>
+            ) : null}
+            {canExportFinancial ? (
+              <Button
+                data-testid="export-financial-btn"
+                onClick={() => {
+                  api.exportFinancialExcel();
+                  toast.success('Exportando financeiro...');
+                }}
+                size="sm"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-green-500" />
+                Financeiro
+              </Button>
+            ) : null}
+            <Button
+              data-testid="export-students-pdf-btn"
               onClick={() => {
-                api.exportFinancialExcel();
-                toast.success('Exportando financeiro...');
+                api.exportStudentsPdf();
+                toast.success('Exportando PDF...');
               }}
-              className="flex items-center gap-2 bg-zinc-800 text-white text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-sm hover:bg-zinc-700 transition-colors"
+              size="sm"
             >
-              <FileSpreadsheet className="w-4 h-4 text-green-500" /> Financeiro
-            </button>
-          )}
-          <button
-            data-testid="export-students-pdf-btn"
-            onClick={() => {
-              api.exportStudentsPdf();
-              toast.success('Exportando PDF...');
-            }}
-            className="flex items-center gap-2 bg-zinc-800 text-white text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-sm hover:bg-zinc-700 transition-colors"
-            >
-              <FileText className="w-4 h-4 text-red-400" /> Alunos PDF
-            </button>
-          <button
-            onClick={() => navigate('/admin/contratos')}
-            className="flex items-center gap-2 bg-zinc-800 text-white text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-sm hover:bg-zinc-700 transition-colors"
-          >
-            Contratos
-          </button>
-          <button
-            onClick={() => navigate('/admin/catraca')}
-            className="flex items-center gap-2 bg-zinc-800 text-white text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-sm hover:bg-zinc-700 transition-colors"
-          >
-            Catraca
-          </button>
-        </div>
-      </div>
+              <FileText className="w-4 h-4 text-red-400" />
+              Alunos PDF
+            </Button>
+            <Button onClick={() => navigate('/admin/contratos')} size="sm" variant="ghost">
+              Contratos
+            </Button>
+            <Button onClick={() => navigate('/admin/catraca')} size="sm" variant="ghost">
+              Catraca
+            </Button>
+          </>
+        }
+      />
 
       {error && (
         <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-md p-3 text-xs text-yellow-200">
@@ -356,13 +346,8 @@ export default function Dashboard() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.04 }}
             data-testid={`kpi-card-${index}`}
-            className="bg-zinc-900 border border-zinc-800 rounded-md p-4 hover:border-zinc-700 transition-colors"
           >
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">{kpi.label}</span>
-              <kpi.icon className="w-4 h-4" style={{ color: kpi.color }} />
-            </div>
-            <p className="text-xl md:text-2xl font-bold">{kpi.value}</p>
+            <StatCard label={kpi.label} value={kpi.value} icon={kpi.icon} className="hover:border-zinc-700" />
           </motion.div>
         ))}
       </div>

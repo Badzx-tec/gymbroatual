@@ -175,3 +175,72 @@
   - `/api/admin/contratos/ctr_xxx/pdf`
 - Exportar:
   - `/api/admin/contratos/export?format=xlsx&status=active`
+
+---
+
+# Auditoria Global - 06/03/2026
+
+## Stack real
+- Frontend: React 18 com `react-scripts` (CRA), React Router 6, Tailwind CSS, `sonner`, `lucide-react`, `recharts`, `framer-motion`.
+- Backend: FastAPI 0.110, Motor/PyMongo, Pydantic v2, JWT stateless, MongoDB.
+- Infra: Docker Compose, Nginx reverso, Mongo, gateway Toletus separado.
+
+## P0 encontrados e corrigidos
+- Auth no frontend dependia de `localStorage` persistente para `gymbro_token`.
+- Backend nao tinha logout real em `/api/auth/logout`; havia apenas um stub legado.
+- Login de funcionario buscava por e-mail sem resolver ambiguidade multi-tenant.
+- `get_current_actor` aceitava apenas bearer header; nao havia sessao `httpOnly` para reduzir exposicao.
+- Healthcheck de producao validava apenas `health`, sem readiness real de banco.
+- Dashboard tinha bug real no KPI de faturamento e o baseline de testes ja acusava isso.
+
+## P1/P2 atacados nesta rodada
+- Route-level code splitting no frontend com `React.lazy` + `Suspense`.
+- Mini design system interno inicial em `frontend/src/components/ui`.
+- Dashboard e Alunos com hierarquia visual e componentes padronizados.
+- Headers de seguranca no Nginx e propagacao de `X-Request-ID`.
+- Indices adicionais e auditoria persistente em `audit_logs`.
+- Overview financeiro de contratos deixou de percorrer/refreshar todos os contratos em memoria.
+
+## Mudancas principais desta rodada
+- Backend:
+  - cookie de sessao `httpOnly` com renovacao controlada
+  - `/api/auth/logout` real com revogacao por `session_revoked_at`
+  - `/health/ready` e `/api/health/ready`
+  - auditoria de auth em `audit_logs`
+  - CORS configuravel por metodos/headers
+  - validacoes de seguranca para producao em `Settings`
+  - protecao contra login ambiguo de funcionario
+  - dashboard com receita dos ultimos 30 dias
+  - `student-billing/overview` otimizado por `count_documents`
+- Frontend:
+  - sessao centralizada em `frontend/src/lib/session.js`
+  - token migrado de `localStorage` legado para `sessionStorage`, mantendo compatibilidade
+  - `App.js` refatorado com lazy routes
+  - `api.js` centralizado com `clearSession()` e `X-Requested-With`
+  - novos componentes: `Button`, `PageHeader`, `StatCard`, `LoadingScreen`, `EmptyState`, `TextField`, `SelectField`
+  - Dashboard e Alunos atualizados para usar a base visual nova
+  - warnings de lint eliminados
+
+## Validacao atual
+- `python -m pytest backend/tests -q` -> **88 passed**
+- `npm --prefix frontend run lint` -> **passa sem warnings**
+- `npm --prefix frontend run build` -> **passa**
+
+## Como validar manualmente
+1. Login no painel admin com owner, funcionario e aluno.
+2. Recarregar a pagina e confirmar que a sessao continua valida sem depender de `localStorage`.
+3. Abrir DevTools > Application e verificar:
+   - token nao persistido em `localStorage`
+   - cookie de sessao presente via backend/nginx
+4. Testar logout e confirmar revogacao imediata.
+5. Abrir `/admin` e conferir:
+   - dashboard carregando com chunks separados
+   - cards e acoes do topo
+   - KPI financeiro coerente com ultimos 30 dias
+6. Abrir `/admin/alunos` e conferir:
+   - header novo
+   - cards resumo
+   - filtros/busca/exportacao
+7. Validar readiness:
+   - `/health/ready`
+   - `/api/health/ready`

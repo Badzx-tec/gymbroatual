@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import { clearSession } from '../lib/session';
 
 function formatDate(value) {
   if (!value) return '-';
@@ -50,14 +51,6 @@ export default function PlatformAdminPage() {
   const [sourceFilter, setSourceFilter] = useState('');
   const [refreshingLogs, setRefreshingLogs] = useState(false);
   const [ownerActionLoading, setOwnerActionLoading] = useState('');
-
-  const user = useMemo(() => {
-    try {
-      return JSON.parse(localStorage.getItem('gymbro_user') || '{}');
-    } catch {
-      return {};
-    }
-  }, []);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -110,8 +103,7 @@ export default function PlatformAdminPage() {
     } catch {
       // noop
     }
-    localStorage.removeItem('gymbro_token');
-    localStorage.removeItem('gymbro_user');
+    clearSession();
     navigate('/login');
   };
 
@@ -200,9 +192,7 @@ export default function PlatformAdminPage() {
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
           <div>
             <h2 className="font-heading text-3xl font-bold uppercase">Visao da Plataforma</h2>
-            <p className="text-zinc-400 text-sm mt-1">
-              Admin: {user?.name || 'Platform Admin'} - {user?.email || 'sem email'}
-            </p>
+            <p className="text-zinc-400 text-sm mt-1">Operacao central de owners, faturamento e logs.</p>
           </div>
           <p className="text-xs text-zinc-500">
             Atualizado em: {formatDate(overview?.generated_at || finance?.generated_at)}

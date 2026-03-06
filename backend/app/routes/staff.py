@@ -1,6 +1,6 @@
+import logging
 import secrets
 from datetime import datetime, timedelta
-import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pymongo.errors import DuplicateKeyError

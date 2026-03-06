@@ -114,9 +114,9 @@ async def dashboard(
     )
     sem_treino = await db.students.count_documents({**base, "$or": [{"treino": {"$exists": False}}, {"treino": ""}]})
 
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    revenue_window_start = now - timedelta(days=30)
     paid_charges = await db.student_charges.find(
-        {"owner_id": owner_id, "status": "paid", "paid_at": {"$gte": month_start}},
+        {"owner_id": owner_id, "status": "paid", "paid_at": {"$gte": revenue_window_start}},
         {"_id": 0, "amount": 1, "amount_received": 1},
     ).to_list(5000)
     faturamento_mensal = sum(

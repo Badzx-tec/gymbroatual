@@ -6,6 +6,9 @@
   --brand-primary: #ccff00;
   --brand-primary-hover: #b3e600;
   --brand-primary-rgb: 204 255 0;
+  --surface-base: #09090b;
+  --surface-raised: #111113;
+  --surface-border: #27272a;
 }
 
 * {
@@ -16,9 +19,12 @@
 
 body {
   font-family: 'Manrope', sans-serif;
-  background: #09090b;
+  background:
+    radial-gradient(circle at top left, rgba(204, 255, 0, 0.06), transparent 24%),
+    linear-gradient(180deg, #09090b 0%, #0b0b0f 100%);
   color: #fafafa;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -42,6 +48,40 @@ h1, h2, h3, h4, h5, h6 {
 input:-webkit-autofill {
   -webkit-box-shadow: 0 0 0 1000px #09090b inset !important;
   -webkit-text-fill-color: #fafafa !important;
+}
+
+a,
+button,
+input,
+select,
+textarea {
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgb(var(--brand-primary-rgb) / 0.24);
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .bg-\[\#ccff00\] {

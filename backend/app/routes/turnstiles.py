@@ -780,6 +780,8 @@ async def create_device(payload: dict, actor: dict = Depends(require_roles("OWNE
     device_id = str(payload.get("device_id") or f"dev_{secrets.token_hex(6)}").strip()
     if not device_id:
         raise HTTPException(status_code=400, detail="device_id invalido")
+    if await db.turnstile_devices.find_one({"device_id": device_id}, {"_id": 0, "device_id": 1}):
+        raise HTTPException(status_code=409, detail="device_id ja cadastrado")
 
     device = {
         "device_id": device_id,

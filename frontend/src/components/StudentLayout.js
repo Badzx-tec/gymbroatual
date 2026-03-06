@@ -4,6 +4,7 @@ import { LogOut, User, LayoutDashboard, Dumbbell, CreditCard } from 'lucide-reac
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import { clearSession, getStoredUser } from '../lib/session';
 
 const navItems = [
   { to: '/aluno', label: 'Meu Painel', icon: LayoutDashboard, end: true },
@@ -13,14 +14,13 @@ const navItems = [
 
 export default function StudentLayout() {
   const navigate = useNavigate();
-  const user = React.useMemo(() => JSON.parse(localStorage.getItem('gymbro_user') || '{}'), []);
+  const user = React.useMemo(() => getStoredUser(), []);
 
   const handleLogout = async () => {
     try {
       await api.logout();
     } catch {}
-    localStorage.removeItem('gymbro_token');
-    localStorage.removeItem('gymbro_user');
+    clearSession();
     toast.success('Logout realizado');
     navigate('/login');
   };

@@ -308,31 +308,27 @@ async def overview(actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECE
     now = utc_now()
     next_7d = now + timedelta(days=7)
     owner_id = actor["owner_id"]
-
-    raw_contracts = await db.student_contracts.find({"owner_id": owner_id}, {"_id": 0}).to_list(5000)
-    contracts: list[dict] = []
-    for item in raw_contracts:
-        refreshed, events, changed = await refresh_contract_state(db, item)
-        if changed:
-            for auto_event in events:
-                await _record_event(
-                    owner_id=refreshed["owner_id"],
-                    gym_id=refreshed["gym_id"],
-                    contract_id=refreshed["contract_id"],
-                    event_type=auto_event["event_type"],
-                    payload=auto_event.get("payload") or {},
-                    actor={"actor_type": "system", "role": "SYSTEM"},
-                )
-        contracts.append(refreshed)
-
-    active_contracts = sum(
-        1
-        for item in contracts
-        if str(item.get("contract_status") or "").lower() in ACTIVE_LIKE_CONTRACT_STATUSES
+    total_contracts = await db.student_contracts.count_documents({"owner_id": owner_id})
+    active_contracts = await db.student_contracts.count_documents(
+        {"owner_id": owner_id, "contract_status": {"$in": sorted(ACTIVE_LIKE_CONTRACT_STATUSES)}}
     )
-    frozen_contracts = sum(
-        1 for item in contracts if str(item.get("contract_status") or "").lower() == "frozen"
+    frozen_contracts = await db.student_contracts.count_documents(
+        {"owner_id": owner_id, "contract_status": "frozen"}
     )
+    past_due_contracts = await db.student_contracts.count_documents(
+        {"owner_id": owner_id, "financial_status": {"$in": ["overdue", "failed"]}}
+    )
+    expiring_next_7d = await db.student_contracts.count_documents(
+        {
+            "owner_id": owner_id,
+            "contract_status": {"$in": sorted(ACTIVE_LIKE_CONTRACT_STATUSES)},
+            "current_period_end": {"$gte": now, "$lte": next_7d},
+        }
+    )
+    scheduled_docs = await db.student_contracts.find(
+        {"owner_id": owner_id, "scheduled_actions.status": "pending"},
+        {"_id": 0, "scheduled_actions": 1},
+    ).to_list(1000)
     scheduled_actions = sum(
         len(
             [
@@ -341,17 +337,7 @@ async def overview(actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECE
                 if str(action.get("status") or "").lower() == "pending"
             ]
         )
-        for item in contracts
-    )
-    past_due_contracts = sum(
-        1 for item in contracts if str(item.get("financial_status") or "").lower() in {"overdue", "failed"}
-    )
-    expiring_next_7d = sum(
-        1
-        for item in contracts
-        if str(item.get("contract_status") or "").lower() in ACTIVE_LIKE_CONTRACT_STATUSES
-        and (coerce_datetime_utc(item.get("current_period_end")) or now) >= now
-        and (coerce_datetime_utc(item.get("current_period_end")) or now) <= next_7d
+        for item in scheduled_docs
     )
 
     overdue_charges = await db.student_charges.count_documents(
@@ -379,7 +365,7 @@ async def overview(actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECE
     )
 
     return BillingOverviewOut(
-        total_contracts=len(contracts),
+        total_contracts=total_contracts,
         active_contracts=active_contracts,
         frozen_contracts=frozen_contracts,
         scheduled_actions=scheduled_actions,

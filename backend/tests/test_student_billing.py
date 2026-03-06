@@ -4,7 +4,12 @@ import pytest
 from fastapi import HTTPException
 
 from app.core.deps import require_roles
-from app.models.student_billing import ChargeCleanupIn, ChargeMarkPaidIn, ChargeMarkUnpaidIn, ContractCreateIn
+from app.models.student_billing import (
+    ChargeCleanupIn,
+    ChargeMarkPaidIn,
+    ChargeMarkUnpaidIn,
+    ContractCreateIn,
+)
 from app.routes import student_billing
 from app.services.student_contracts import refresh_contract_state
 

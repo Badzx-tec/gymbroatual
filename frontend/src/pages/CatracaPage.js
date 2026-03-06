@@ -9,6 +9,7 @@ import {
   loadCredentialHistory,
   pushCredentialHistory,
 } from '../utils/credentialHistory';
+import { getStoredUser } from '../lib/session';
 import { directionLabel, roleLabel, subjectTypeLabel } from '../utils/labels';
 
 const REASON_LABELS = {
@@ -127,7 +128,7 @@ function normalizeControlState(state) {
 }
 
 export default function CatracaPage() {
-  const user = useMemo(() => JSON.parse(localStorage.getItem('gymbro_user') || '{}'), []);
+  const user = useMemo(() => getStoredUser(), []);
   const role = String(user.role || '').toUpperCase();
   const canManageDevices = ['OWNER', 'MANAGER'].includes(role);
   const canIssueCommands = ['OWNER', 'MANAGER', 'RECEPTION'].includes(role);
@@ -172,7 +173,7 @@ export default function CatracaPage() {
     toast.success('Historico de tokens limpo.');
   };
 
-  const load = async ({ silent = false } = {}) => {
+  const load = React.useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
     try {
       const [cmds, access, devs, summaryData, controlData, opsAlerts] = await Promise.all([
@@ -194,18 +195,18 @@ export default function CatracaPage() {
     } finally {
       if (!silent) setLoading(false);
     }
-  };
+  }, [canViewOpsAlerts, filters]);
 
   useEffect(() => {
     load();
-  }, [filters.decision, filters.subject_type, filters.reason, filters.since_minutes, filters.limit]);
+  }, [load]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       load({ silent: true });
     }, 8000);
     return () => clearInterval(interval);
-  }, [filters.decision, filters.subject_type, filters.reason, filters.since_minutes, filters.limit]);
+  }, [load]);
 
   const createDevice = async () => {
     if (!canManageDevices) {

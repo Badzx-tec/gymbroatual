@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from datetime import datetime
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 
 from app.core.config import get_settings
 from app.core.security import safe_jwt_decode
@@ -51,16 +51,39 @@ def _ensure_session_not_revoked(payload: dict, actor: dict) -> None:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Sessao expirada. Faca login novamente.",
         )
+async def get_current_actor(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    settings = get_settings()
+    if not isinstance(authorization, str):
+        authorization = None
+    token: str | None = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ", 1)[1]
+    else:
+        cookie_token = request.cookies.get(settings.session_cookie_name)
+        if cookie_token:
+            if request.method.upper() not in {"GET", "HEAD", "OPTIONS"} and request.url.path != (
+                f"{settings.api_prefix}/auth/logout"
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Sessao precisa ser renovada. Atualize a pagina.",
+                    headers={"X-Error-Code": "AUTH_COOKIE_RENEWAL_REQUIRED"},
+                )
+            token = cookie_token
 
-
-async def get_current_actor(authorization: str | None = Header(default=None)) -> dict:
-    if not authorization or not authorization.startswith("Bearer "):
+    if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Nao autenticado")
 
-    token = authorization.split(" ", 1)[1]
     payload = safe_jwt_decode(token)
     if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalido")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token invalido",
+            headers={"X-Error-Code": "AUTH_INVALID_TOKEN"},
+        )
 
     db = get_db()
     actor_type = payload.get("actor_type", "owner")

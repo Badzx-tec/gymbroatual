@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import { getStoredUser } from '../lib/session';
 import ContractDetailsDrawer from './contracts/ContractDetailsDrawer';
 import ContractsFilters from './contracts/ContractsFilters';
 import ContractsOverview from './contracts/ContractsOverview';
@@ -131,7 +132,7 @@ export default function StudentContractsPage() {
   const [createForm, setCreateForm] = useState(createFormDefault);
   const [manualEndEdited, setManualEndEdited] = useState(false);
 
-  const user = useMemo(() => JSON.parse(localStorage.getItem('gymbro_user') || '{}'), []);
+  const user = useMemo(() => getStoredUser(), []);
   const role = String(user.role || '').toUpperCase();
   const canCreateContracts = ['OWNER', 'MANAGER', 'RECEPTION'].includes(role);
   const canManageContractRules = ['OWNER', 'MANAGER'].includes(role);

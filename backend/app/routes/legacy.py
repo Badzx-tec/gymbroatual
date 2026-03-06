@@ -30,11 +30,6 @@ def _clean_doc(doc: dict) -> dict:
     return sanitized
 
 
-@router.post("/auth/logout")
-async def logout() -> dict:
-    return {"message": "ok"}
-
-
 @router.get("/dashboard")
 async def dashboard(actor: dict = Depends(require_admin_actor())):
     return await gym_routes.dashboard(actor)

@@ -24,4 +24,6 @@ export function randomChallenge(len = 32) {
   return arr;
 }
 
-export default { bufferToBase64, strToUint8Array, randomChallenge };
+const webauthnUtils = { bufferToBase64, strToUint8Array, randomChallenge };
+
+export default webauthnUtils;

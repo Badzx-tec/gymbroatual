@@ -4,6 +4,7 @@ import { Dumbbell, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import { clearSession, storeSession } from '../lib/session';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -92,8 +93,7 @@ export default function LoginPage() {
     setPaymentRequired(null);
     try {
       const result = await api.login({ identifier: loginIdentifier, password });
-      localStorage.setItem('gymbro_token', result.token);
-      localStorage.setItem('gymbro_user', JSON.stringify(result.user));
+      storeSession(result.token, result.user);
       const role = String(result?.user?.role || '').toUpperCase();
 
       if (role === 'SUPER_ADMIN') {
@@ -108,8 +108,7 @@ export default function LoginPage() {
       }
 
       if (isPlatformSubdomain) {
-        localStorage.removeItem('gymbro_token');
-        localStorage.removeItem('gymbro_user');
+        clearSession();
         toast.error('Esse subdominio e exclusivo para o super admin.');
         return;
       }

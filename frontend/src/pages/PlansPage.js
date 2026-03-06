@@ -3,6 +3,7 @@ import { api } from '../api';
 import { toast } from 'sonner';
 import { Plus, Edit2, Trash2, X, Tag } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getStoredUser } from '../lib/session';
 
 const emptyPlan = { nome: '', valor: '', duracao_dias: '', descricao: '', ativo: true };
 
@@ -13,7 +14,7 @@ export default function PlansPage() {
   const [form, setForm] = useState(emptyPlan);
   const [editId, setEditId] = useState('');
   const [saving, setSaving] = useState(false);
-  const user = React.useMemo(() => JSON.parse(localStorage.getItem('gymbro_user') || '{}'), []);
+  const user = React.useMemo(() => getStoredUser(), []);
   const role = String(user.role || '').toUpperCase();
   const canManagePlans = ['OWNER', 'MANAGER'].includes(role);
 

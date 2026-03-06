@@ -1,39 +1,129 @@
 import React from 'react';
-import { apiUrl } from './config';
-import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
-import LandingPage from './pages/LandingPage';
-import LoginPage from './pages/LoginPage';
-import AuthCallback from './pages/AuthCallback';
-import Dashboard from './pages/Dashboard';
-import StudentsPage from './pages/StudentsPage';
-import PlansPage from './pages/PlansPage';
-import AccessLogsPage from './pages/AccessLogsPage';
-import NotificationsPage from './pages/NotificationsPage';
-import CatracaPage from './pages/CatracaPage';
-import SubscriptionPage from './pages/SubscriptionPage';
-import BillingCenterPage from './pages/BillingCenterPage';
-import StaffPage from './pages/StaffPage';
-import ProfilePage from './pages/ProfilePage';
-import PlatformAdminPage from './pages/PlatformAdminPage';
+
+import { api } from './api';
 import AdminLayout from './components/AdminLayout';
 import StudentLayout from './components/StudentLayout';
-import StudentContractsPage from './pages/StudentContractsPage';
-import StudentDashboardPage from './pages/StudentDashboardPage';
-import StudentBillingPage from './pages/StudentBillingPage';
+import LoadingScreen from './components/ui/LoadingScreen';
+import { clearSession, getSessionToken, getStoredUser, migrateLegacySession, storeSession } from './lib/session';
+
+const LandingPage = React.lazy(() => import('./pages/LandingPage'));
+const LoginPage = React.lazy(() => import('./pages/LoginPage'));
+const AuthCallback = React.lazy(() => import('./pages/AuthCallback'));
+const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const StudentsPage = React.lazy(() => import('./pages/StudentsPage'));
+const PlansPage = React.lazy(() => import('./pages/PlansPage'));
+const AccessLogsPage = React.lazy(() => import('./pages/AccessLogsPage'));
+const NotificationsPage = React.lazy(() => import('./pages/NotificationsPage'));
+const CatracaPage = React.lazy(() => import('./pages/CatracaPage'));
+const SubscriptionPage = React.lazy(() => import('./pages/SubscriptionPage'));
+const BillingCenterPage = React.lazy(() => import('./pages/BillingCenterPage'));
+const StaffPage = React.lazy(() => import('./pages/StaffPage'));
+const ProfilePage = React.lazy(() => import('./pages/ProfilePage'));
+const PlatformAdminPage = React.lazy(() => import('./pages/PlatformAdminPage'));
+const StudentContractsPage = React.lazy(() => import('./pages/StudentContractsPage'));
+const StudentDashboardPage = React.lazy(() => import('./pages/StudentDashboardPage'));
+const StudentBillingPage = React.lazy(() => import('./pages/StudentBillingPage'));
+
+function SignupRedirect() {
+  const location = useLocation();
+  const params = new URLSearchParams(location.search || '');
+  params.set('mode', 'register');
+  return <Navigate to={`/login?${params.toString()}`} replace />;
+}
+
+function ProtectedRoute({ children }) {
+  const token = getSessionToken();
+  const [checking, setChecking] = React.useState(true);
+  const [ok, setOk] = React.useState(false);
+
+  React.useEffect(() => {
+    let active = true;
+
+    const checkSession = async () => {
+      try {
+        const data = await api.me();
+        const { token: refreshedToken, ...user } = data || {};
+        storeSession(refreshedToken || token, user);
+        if (active) {
+          setOk(true);
+        }
+      } catch {
+        clearSession();
+        if (active) {
+          setOk(false);
+        }
+      } finally {
+        if (active) {
+          setChecking(false);
+        }
+      }
+    };
+
+    checkSession();
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
+  if (checking) {
+    return <LoadingScreen fullscreen label="Validando sessao..." />;
+  }
+  if (!ok) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+}
+
+function RoleRoute({ children, roles }) {
+  const role = String(getStoredUser().role || '').toUpperCase();
+  if (!role) return <Navigate to="/login" replace />;
+  if (!roles.includes(role)) return <Navigate to={role === 'STUDENT' ? '/aluno' : '/admin'} replace />;
+  return children;
+}
+
+function AdminPortalRoute({ children }) {
+  const role = String(getStoredUser().role || '').toUpperCase();
+  if (role === 'SUPER_ADMIN') return <Navigate to="/platform" replace />;
+  if (role === 'STUDENT') return <Navigate to="/aluno" replace />;
+  return children;
+}
+
+function SuperAdminRoute({ children }) {
+  const role = String(getStoredUser().role || '').toUpperCase();
+  if (role !== 'SUPER_ADMIN') return <Navigate to={role === 'STUDENT' ? '/aluno' : '/admin'} replace />;
+  return children;
+}
+
+function StudentPortalRoute({ children }) {
+  const role = String(getStoredUser().role || '').toUpperCase();
+  if (role === 'SUPER_ADMIN') return <Navigate to="/platform" replace />;
+  if (role !== 'STUDENT') return <Navigate to="/admin" replace />;
+  return children;
+}
 
 function AppRouter() {
   const location = useLocation();
-  // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
   if (location.hash?.includes('session_id=')) {
     return <AuthCallback />;
   }
+
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/signup" element={<SignupRedirect />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/admin" element={<ProtectedRoute><AdminPortalRoute><AdminLayout /></AdminPortalRoute></ProtectedRoute>}>
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute>
+            <AdminPortalRoute>
+              <AdminLayout />
+            </AdminPortalRoute>
+          </ProtectedRoute>
+        }
+      >
         <Route index element={<Dashboard />} />
         <Route path="alunos" element={<StudentsPage />} />
         <Route path="contratos" element={<RoleRoute roles={['OWNER', 'MANAGER', 'RECEPTION']}><StudentContractsPage /></RoleRoute>} />
@@ -46,7 +136,16 @@ function AppRouter() {
         <Route path="assinatura" element={<RoleRoute roles={['OWNER', 'MANAGER']}><SubscriptionPage /></RoleRoute>} />
         <Route path="cobranca" element={<RoleRoute roles={['OWNER', 'MANAGER']}><BillingCenterPage /></RoleRoute>} />
       </Route>
-      <Route path="/aluno" element={<ProtectedRoute><StudentPortalRoute><StudentLayout /></StudentPortalRoute></ProtectedRoute>}>
+      <Route
+        path="/aluno"
+        element={
+          <ProtectedRoute>
+            <StudentPortalRoute>
+              <StudentLayout />
+            </StudentPortalRoute>
+          </ProtectedRoute>
+        }
+      >
         <Route index element={<StudentDashboardPage />} />
         <Route path="financeiro" element={<StudentBillingPage />} />
         <Route path="perfil" element={<ProfilePage />} />
@@ -66,88 +165,17 @@ function AppRouter() {
   );
 }
 
-function SignupRedirect() {
-  const location = useLocation();
-  const params = new URLSearchParams(location.search || '');
-  params.set('mode', 'register');
-  return <Navigate to={`/login?${params.toString()}`} replace />;
-}
-
-function ProtectedRoute({ children }) {
-  const token = localStorage.getItem('gymbro_token');
-  const [checking, setChecking] = React.useState(true);
-  const [ok, setOk] = React.useState(false);
-
-  React.useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
-        const res = await fetch(apiUrl('/api/auth/me'), { credentials: 'include', headers });
-        if (res.ok) {
-          const data = await res.json();
-          localStorage.setItem('gymbro_user', JSON.stringify(data));
-          if (!token && data?.token) {
-            localStorage.setItem('gymbro_token', data.token);
-          }
-          setOk(true);
-        } else {
-          localStorage.removeItem('gymbro_token');
-          localStorage.removeItem('gymbro_user');
-          setOk(false);
-        }
-      } catch {
-        setOk(false);
-      }
-      setChecking(false);
-    };
-    checkSession();
-  }, [token]);
-
-  if (checking) return (
-    <div className="min-h-screen bg-[#09090b] flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-lime-400 border-t-transparent rounded-full animate-spin" />
-    </div>
-  );
-  if (!ok) return <Navigate to="/login" replace />;
-  return children;
-}
-
-function RoleRoute({ children, roles }) {
-  const user = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
-  const role = String(user.role || '').toUpperCase();
-  if (!role) return <Navigate to="/login" replace />;
-  if (!roles.includes(role)) return <Navigate to={role === 'STUDENT' ? '/aluno' : '/admin'} replace />;
-  return children;
-}
-
-function AdminPortalRoute({ children }) {
-  const user = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
-  const role = String(user.role || '').toUpperCase();
-  if (role === 'SUPER_ADMIN') return <Navigate to="/platform" replace />;
-  if (role === 'STUDENT') return <Navigate to="/aluno" replace />;
-  return children;
-}
-
-function SuperAdminRoute({ children }) {
-  const user = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
-  const role = String(user.role || '').toUpperCase();
-  if (role !== 'SUPER_ADMIN') return <Navigate to={role === 'STUDENT' ? '/aluno' : '/admin'} replace />;
-  return children;
-}
-
-function StudentPortalRoute({ children }) {
-  const user = JSON.parse(localStorage.getItem('gymbro_user') || '{}');
-  const role = String(user.role || '').toUpperCase();
-  if (role === 'SUPER_ADMIN') return <Navigate to="/platform" replace />;
-  if (role !== 'STUDENT') return <Navigate to="/admin" replace />;
-  return children;
-}
-
 export default function App() {
+  React.useEffect(() => {
+    migrateLegacySession();
+  }, []);
+
   return (
     <BrowserRouter>
       <Toaster position="top-right" richColors theme="dark" />
-      <AppRouter />
+      <React.Suspense fallback={<LoadingScreen fullscreen label="Carregando aplicacao..." />}>
+        <AppRouter />
+      </React.Suspense>
     </BrowserRouter>
   );
 }

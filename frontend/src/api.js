@@ -1,4 +1,5 @@
 import { apiUrl, API_BASE } from './config';
+import { clearSession, getSessionToken } from './lib/session';
 
 function stringifyDetail(detail) {
   if (typeof detail === 'string') return detail;
@@ -69,10 +70,13 @@ function shouldLogoutOnUnauthorized(path, detail, code) {
 }
 
 async function request(path, options = {}) {
-  const token = localStorage.getItem('gymbro_token');
+  const token = getSessionToken();
   const headers = { ...(options.headers || {}) };
   if (!options.isBlob && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
+  }
+  if (!headers['X-Requested-With']) {
+    headers['X-Requested-With'] = 'XMLHttpRequest';
   }
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -85,8 +89,7 @@ async function request(path, options = {}) {
   if (!res.ok) {
     const err = await parseError(res);
     if (err.status === 401 && shouldLogoutOnUnauthorized(path, err.detail, err.code)) {
-      localStorage.removeItem('gymbro_token');
-      localStorage.removeItem('gymbro_user');
+      clearSession();
       if (!path.includes('/auth/')) window.location.href = '/login';
     }
     const e = new Error(err.detail);
