@@ -401,3 +401,38 @@
 - `npm --prefix frontend run lint` -> **passa**
 - `npm --prefix frontend run build` -> **passa**
 - `python -m pytest backend/tests -q` -> **92 passed**
+
+## Cobranca do aluno - clareza de atraso, carencia e bloqueio
+- `GET /api/student/billing` agora retorna um resumo mais util sem quebrar compatibilidade:
+  - `charge_status_totals`
+  - `contract_financial_totals`
+  - `contract_access_totals`
+  - `current_contract_id`
+  - `current_contract_status`
+  - `current_financial_status`
+  - `current_access_status`
+  - `blocked_reason`
+  - `grace_until`
+  - `next_retry_at`
+  - `dunning_level`
+- `StudentBillingPage` foi refeita para deixar explicito:
+  - quando o aluno esta em dia
+  - quando esta em carencia
+  - quando o acesso ja foi bloqueado
+  - quais cobrancas estao em aberto, atrasadas e pagas
+  - qual contrato esta dirigindo o acesso atual
+- A tela ganhou:
+  - `PageHeader`
+  - `Banner` com semantica operacional
+  - `StatCard`
+  - `SectionCard`
+  - `SidePanel` para detalhe de cobranca
+  - `EmptyState`
+  - badges de status consistentes
+- A semantica de status foi extraida para `frontend/src/features/student-billing/studentBillingUtils.js`.
+
+### Validacao desta etapa
+- `npm --prefix frontend run lint` -> **passa**
+- `npm --prefix frontend run build` -> **passa**
+- `python -m pytest backend/tests/test_student_auth_and_portal.py -q` -> **6 passed**
+- `python -m pytest backend/tests -q` -> **92 passed**

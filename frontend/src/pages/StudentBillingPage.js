@@ -1,56 +1,82 @@
 import React from 'react';
-import { CalendarClock, CreditCard, FileClock, RefreshCw, AlertTriangle } from 'lucide-react';
+import {
+  AlertTriangle,
+  CalendarClock,
+  Clock3,
+  CreditCard,
+  FileClock,
+  Receipt,
+  RefreshCw,
+  ShieldAlert,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import Banner from '../components/ui/Banner';
+import Button from '../components/ui/Button';
+import EmptyState from '../components/ui/EmptyState';
+import LoadingScreen from '../components/ui/LoadingScreen';
+import PageHeader from '../components/ui/PageHeader';
+import SectionCard from '../components/ui/SectionCard';
+import SidePanel from '../components/ui/SidePanel';
+import StatCard from '../components/ui/StatCard';
+import StatusBadge from '../components/ui/StatusBadge';
+import {
+  formatBillingDate,
+  formatBillingMoney,
+  getBillingBanner,
+  getBillingEventLabel,
+  getBlockedReasonLabel,
+  getChargeFilterOptions,
+  getStatusMeta,
+} from '../features/student-billing/studentBillingUtils';
 
-function formatDate(value) {
-  if (!value) return '-';
-  try {
-    return new Date(value).toLocaleString('pt-BR');
-  } catch {
-    return '-';
-  }
+function DetailItem({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
+      <p className="mt-1 text-sm text-zinc-100">{value}</p>
+    </div>
+  );
 }
 
-function formatMoney(value) {
-  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
+function ContractCard({ contract, isCurrent }) {
+  const contractMeta = getStatusMeta(contract.contract_status || contract.status);
+  const financialMeta = getStatusMeta(contract.financial_status);
+  const accessMeta = getStatusMeta(contract.access_status);
 
-function statusClass(status) {
-  const normalized = String(status || '').toLowerCase();
-  if (['paid', 'active', 'allowed'].includes(normalized)) {
-    return 'bg-green-500/15 border-green-500/30 text-green-300';
-  }
-  if (['pending', 'open', 'scheduled_cancel', 'grace_period'].includes(normalized)) {
-    return 'bg-blue-500/15 border-blue-500/30 text-blue-300';
-  }
-  if (['overdue', 'failed', 'frozen', 'suspended', 'partially_paid'].includes(normalized)) {
-    return 'bg-yellow-500/15 border-yellow-500/30 text-yellow-300';
-  }
-  return 'bg-red-500/15 border-red-500/30 text-red-300';
-}
+  return (
+    <article className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-zinc-100">
+              {contract.plan_name || contract.plan_id || 'Contrato sem plano'}
+            </h3>
+            {isCurrent ? <StatusBadge label="Atual" tone="info" size="sm" /> : null}
+          </div>
+          <p className="mt-1 text-xs text-zinc-500">
+            Vigencia: {formatBillingDate(contract.current_period_start)} ate {formatBillingDate(contract.current_period_end)}
+          </p>
+        </div>
+        <p className="text-sm font-semibold text-zinc-100">{formatBillingMoney(contract.amount)}</p>
+      </div>
 
-function statusLabel(status) {
-  const normalized = String(status || '').toLowerCase();
-  if (normalized === 'grace_period') return 'Carencia';
-  if (normalized === 'overdue') return 'Atrasado';
-  if (normalized === 'failed') return 'Falha';
-  if (normalized === 'partially_paid') return 'Parcial';
-  if (normalized === 'paid') return 'Pago';
-  if (normalized === 'open') return 'Aberto';
-  return status || '-';
-}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <StatusBadge label={`Contrato ${contractMeta.label}`} tone={contractMeta.tone} />
+        <StatusBadge label={`Financeiro ${financialMeta.label}`} tone={financialMeta.tone} />
+        <StatusBadge label={`Acesso ${accessMeta.label}`} tone={accessMeta.tone} />
+      </div>
 
-function eventLabel(eventType) {
-  const type = String(eventType || '').toLowerCase();
-  if (type === 'charge_overdue_marked') return 'Cobranca marcada como vencida';
-  if (type === 'dunning_step_advanced') return 'Etapa de cobranca avancou';
-  if (type === 'grace_started') return 'Periodo de carencia iniciado';
-  if (type === 'grace_expired_access_blocked') return 'Carencia encerrada e acesso bloqueado';
-  if (type === 'charge_paid') return 'Pagamento registrado';
-  if (type === 'contract_renewed') return 'Contrato renovado';
-  return eventType || 'Evento';
+      {(contract.grace_until || contract.next_retry_at || Number(contract.dunning_level || 0) > 0) ? (
+        <div className="mt-3 space-y-1 text-xs text-zinc-400">
+          {contract.grace_until ? <p>Carencia ate {formatBillingDate(contract.grace_until)}</p> : null}
+          {contract.next_retry_at ? <p>Proxima tentativa prevista em {formatBillingDate(contract.next_retry_at)}</p> : null}
+          {Number(contract.dunning_level || 0) > 0 ? <p>Nivel de cobranca atual: {Number(contract.dunning_level || 0)}</p> : null}
+        </div>
+      ) : null}
+    </article>
+  );
 }
 
 export default function StudentBillingPage() {
@@ -58,6 +84,7 @@ export default function StudentBillingPage() {
   const [refreshing, setRefreshing] = React.useState(false);
   const [error, setError] = React.useState('');
   const [chargeFilter, setChargeFilter] = React.useState('all');
+  const [selectedChargeId, setSelectedChargeId] = React.useState('');
   const [data, setData] = React.useState({ contracts: [], charges: [], events: [], summary: {} });
 
   const load = React.useCallback(async ({ silent = false } = {}) => {
@@ -71,11 +98,11 @@ export default function StudentBillingPage() {
       const response = await api.studentPortalBilling({
         limitContracts: 40,
         limitCharges: 200,
-        limitEvents: 200,
+        limitEvents: 120,
       });
       setData(response || { contracts: [], charges: [], events: [], summary: {} });
     } catch (err) {
-      const message = err?.message || 'Erro ao carregar financeiro';
+      const message = err?.message || 'Falha ao carregar sua cobranca.';
       setError(message);
       toast.error(message);
     } finally {
@@ -88,196 +115,315 @@ export default function StudentBillingPage() {
     load();
   }, [load]);
 
+  const summary = React.useMemo(() => data?.summary || {}, [data]);
+  const contracts = React.useMemo(() => data?.contracts || [], [data]);
+  const charges = React.useMemo(() => data?.charges || [], [data]);
+  const events = React.useMemo(() => data?.events || [], [data]);
+
+  const currentContract = React.useMemo(() => {
+    const currentId = String(summary.current_contract_id || '').trim();
+    if (currentId) {
+      const match = contracts.find((item) => item.contract_id === currentId);
+      if (match) return match;
+    }
+    return contracts[0] || null;
+  }, [contracts, summary.current_contract_id]);
+
+  const filteredCharges = React.useMemo(() => {
+    if (chargeFilter === 'all') return charges;
+    if (chargeFilter === 'overdue') {
+      return charges.filter((charge) => ['overdue', 'failed'].includes(String(charge.status || '').toLowerCase()));
+    }
+    return charges.filter((charge) => String(charge.status || '').toLowerCase() === chargeFilter);
+  }, [chargeFilter, charges]);
+
+  const selectedCharge = React.useMemo(() => {
+    return charges.find((item) => item.charge_id === selectedChargeId) || null;
+  }, [charges, selectedChargeId]);
+
+  const banner = React.useMemo(() => getBillingBanner(summary), [summary]);
+  const accessMeta = React.useMemo(() => getStatusMeta(summary.current_access_status), [summary.current_access_status]);
+  const financialMeta = React.useMemo(() => getStatusMeta(summary.current_financial_status), [summary.current_financial_status]);
+  const chargeFilterOptions = React.useMemo(() => getChargeFilterOptions(summary), [summary]);
+
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-48">
-        <div className="w-8 h-8 border-2 border-[#ccff00] border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <LoadingScreen label="Carregando sua cobranca..." />;
   }
 
-  const filteredCharges = (data.charges || []).filter((charge) => {
-    if (chargeFilter === 'all') return true;
-    return String(charge.status || '').toLowerCase() === chargeFilter;
-  });
-
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-2xl md:text-3xl font-bold uppercase tracking-tight">Financeiro</h1>
-          <p className="text-zinc-400 text-sm mt-1">Consulte seus contratos, cobrancas e eventos.</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => load({ silent: true })}
-          className="h-9 px-3 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-xs uppercase tracking-wide inline-flex items-center gap-2"
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Portal do aluno"
+        title="Cobranca"
+        subtitle="Acompanhe vencimentos, carencia, bloqueio por inadimplencia e historico financeiro com mais clareza."
+        actions={(
+          <Button type="button" onClick={() => load({ silent: true })} variant="secondary" size="sm">
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Atualizar
+          </Button>
+        )}
+      />
+
+      {error ? (
+        <Banner
+          tone="danger"
+          title="Falha ao carregar cobranca"
+          description={error}
+          actions={(
+            <Button type="button" onClick={() => load()} variant="danger" size="sm">
+              Tentar novamente
+            </Button>
+          )}
+        />
+      ) : null}
+
+      <Banner tone={banner.tone} title={banner.title} description={banner.description} />
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <StatCard
+          label="Acesso atual"
+          value={accessMeta.label}
+          hint={summary.grace_until ? `Carencia ate ${formatBillingDate(summary.grace_until)}` : (
+            summary.blocked_reason ? getBlockedReasonLabel(summary.blocked_reason) : 'Sem restricoes no momento.'
+          )}
+          icon={ShieldAlert}
+          accent={accessMeta.tone}
+        />
+        <StatCard
+          label="Financeiro atual"
+          value={financialMeta.label}
+          hint={Number(summary.dunning_level || 0) > 0 ? `Nivel de cobranca ${Number(summary.dunning_level || 0)}` : 'Sem escalonamento de cobranca.'}
+          icon={CreditCard}
+          accent={financialMeta.tone}
+        />
+        <StatCard
+          label="Em aberto"
+          value={Number(summary.open_charges || 0)}
+          hint="Titulos aguardando pagamento."
+          icon={Receipt}
+          accent={Number(summary.open_charges || 0) > 0 ? 'info' : 'default'}
+        />
+        <StatCard
+          label="Em atraso"
+          value={Number(summary.overdue_charges || 0)}
+          hint={Number(summary.overdue_charges || 0) > 0 ? 'Regularize para evitar bloqueio.' : 'Nenhuma cobranca vencida.'}
+          icon={AlertTriangle}
+          accent={Number(summary.overdue_charges || 0) > 0 ? 'danger' : 'success'}
+        />
+        <StatCard
+          label="Proximo vencimento"
+          value={formatBillingDate(summary.next_due_at)}
+          hint="Data da proxima cobranca em aberto."
+          icon={CalendarClock}
+          accent={summary.next_due_at ? 'info' : 'default'}
+        />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <SectionCard
+          title="Situacao atual"
+          description="Esta leitura combina contrato, financeiro e acesso para deixar claro quando a catraca continua liberada ou sera bloqueada."
         >
-          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          Atualizar
-        </button>
-      </div>
-
-      {error && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-md p-3 text-xs text-yellow-200">
-          {error}
-        </div>
-      )}
-
-      {(data.summary?.overdue_charges || 0) > 0 && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-md p-3 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 text-yellow-300 mt-0.5" />
-          <p className="text-xs text-yellow-200">
-            Voce possui {data.summary.overdue_charges} cobranca(s) em atraso. Procure a recepcao para regularizar.
-          </p>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <p className="text-xs uppercase tracking-wide text-zinc-500 inline-flex items-center gap-1">
-            <CreditCard className="w-3.5 h-3.5" /> Cobrancas em aberto
-          </p>
-          <p className="text-2xl font-bold mt-2">{data.summary?.open_charges || 0}</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <p className="text-xs uppercase tracking-wide text-zinc-500 inline-flex items-center gap-1">
-            <CalendarClock className="w-3.5 h-3.5" /> Proximo vencimento
-          </p>
-          <p className="text-sm font-semibold mt-2">{formatDate(data.summary?.next_due_at)}</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <p className="text-xs uppercase tracking-wide text-zinc-500 inline-flex items-center gap-1">
-            <FileClock className="w-3.5 h-3.5" /> Contratos
-          </p>
-          <p className="text-2xl font-bold mt-2">{data.summary?.total_contracts || 0}</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <p className="text-xs uppercase tracking-wide text-zinc-500 inline-flex items-center gap-1">
-            <AlertTriangle className="w-3.5 h-3.5" /> Em atraso
-          </p>
-          <p className="text-2xl font-bold mt-2">{data.summary?.overdue_charges || 0}</p>
-        </div>
-      </div>
-
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4 space-y-3">
-        <h2 className="font-semibold uppercase text-sm tracking-wide">Meus contratos</h2>
-        <div className="grid grid-cols-1 gap-2">
-          {data.contracts.map((contract) => (
-            <div key={contract.contract_id} className="border border-zinc-800 rounded-sm p-3 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-semibold">{contract.plan_name || contract.plan_id || 'Contrato'}</p>
-                <span className={`px-2 py-1 rounded-sm border text-xs uppercase font-semibold ${statusClass(contract.contract_status)}`}>
-                  {statusLabel(contract.contract_status)}
-                </span>
+          {currentContract ? (
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <StatusBadge label={`Contrato ${getStatusMeta(currentContract.contract_status || currentContract.status).label}`} tone={getStatusMeta(currentContract.contract_status || currentContract.status).tone} />
+                <StatusBadge label={`Financeiro ${financialMeta.label}`} tone={financialMeta.tone} />
+                <StatusBadge label={`Acesso ${accessMeta.label}`} tone={accessMeta.tone} />
               </div>
-              <p className="text-zinc-400 text-xs mt-1">
-                Vigencia: {formatDate(contract.current_period_start)} ate {formatDate(contract.current_period_end)}
-              </p>
-              <div className="flex flex-wrap gap-2 mt-2">
-                <span className={`px-2 py-1 rounded-sm border text-xs uppercase font-semibold ${statusClass(contract.financial_status)}`}>
-                  Financeiro: {statusLabel(contract.financial_status)}
-                </span>
-                <span className={`px-2 py-1 rounded-sm border text-xs uppercase font-semibold ${statusClass(contract.access_status)}`}>
-                  Acesso: {statusLabel(contract.access_status)}
-                </span>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <DetailItem label="Plano" value={currentContract.plan_name || currentContract.plan_id || '-'} />
+                <DetailItem label="Valor" value={formatBillingMoney(currentContract.amount)} />
+                <DetailItem label="Inicio" value={formatBillingDate(currentContract.current_period_start)} />
+                <DetailItem label="Fim" value={formatBillingDate(currentContract.current_period_end)} />
               </div>
-              {(contract.grace_until || contract.next_retry_at || Number(contract.dunning_level || 0) > 0) && (
-                <div className="mt-2 text-xs text-zinc-500 space-y-1">
-                  {contract.grace_until && <p>Carencia ate: {formatDate(contract.grace_until)}</p>}
-                  {contract.next_retry_at && <p>Proxima tentativa: {formatDate(contract.next_retry_at)}</p>}
-                  {Number(contract.dunning_level || 0) > 0 && <p>Nivel de cobranca: {Number(contract.dunning_level || 0)}</p>}
+
+              <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-4 text-sm text-zinc-300">
+                <p className="font-semibold text-zinc-100">Como a liberacao funciona</p>
+                <ul className="mt-3 space-y-2 text-sm text-zinc-400">
+                  <li>Em dia: acesso continua liberado normalmente.</li>
+                  <li>Em carencia: acesso segue liberado ate o prazo de carencia expirar.</li>
+                  <li>Bloqueado: apos o fim da carencia, a inadimplencia bloqueia a catraca ate a regularizacao.</li>
+                </ul>
+              </div>
+
+              {(summary.next_retry_at || summary.grace_until || Number(summary.dunning_level || 0) > 0 || summary.blocked_reason) ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {summary.grace_until ? <DetailItem label="Carencia ate" value={formatBillingDate(summary.grace_until)} /> : null}
+                  {summary.next_retry_at ? <DetailItem label="Proxima tentativa" value={formatBillingDate(summary.next_retry_at)} /> : null}
+                  {summary.blocked_reason ? <DetailItem label="Motivo do bloqueio" value={getBlockedReasonLabel(summary.blocked_reason)} /> : null}
+                  {Number(summary.dunning_level || 0) > 0 ? <DetailItem label="Nivel de cobranca" value={String(Number(summary.dunning_level || 0))} /> : null}
                 </div>
-              )}
+              ) : null}
             </div>
-          ))}
-          {!data.contracts.length && <p className="text-zinc-500 text-sm">Nenhum contrato encontrado.</p>}
-        </div>
+          ) : (
+            <EmptyState
+              icon={FileClock}
+              title="Nenhum contrato vinculado"
+              description="Quando a academia associar um contrato ao seu cadastro, o resumo financeiro aparecera aqui."
+            />
+          )}
+        </SectionCard>
+
+        <SectionCard title="Historico financeiro" description="Eventos de cobranca e mudancas de status mais recentes.">
+          {events.length ? (
+            <ul className="space-y-2">
+              {events.slice(0, 12).map((item) => (
+                <li key={item.event_id} className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-3">
+                  <p className="text-sm font-semibold text-zinc-100">{getBillingEventLabel(item.event_type)}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{formatBillingDate(item.created_at)}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState
+              icon={Clock3}
+              title="Sem eventos financeiros"
+              description="Seu historico de cobranca vai aparecer aqui conforme pagamentos, atrasos e regularizacoes forem registrados."
+            />
+          )}
+        </SectionCard>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md overflow-x-auto">
-        <div className="px-4 py-3 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <h2 className="font-semibold uppercase text-sm tracking-wide">Minhas cobrancas</h2>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setChargeFilter('all')}
-              className={`h-8 px-3 rounded-sm text-xs font-semibold uppercase tracking-wide ${
-                chargeFilter === 'all' ? 'bg-[#ccff00] text-black' : 'bg-zinc-800 text-zinc-300'
-              }`}
-            >
-              Todas
-            </button>
-            <button
-              onClick={() => setChargeFilter('open')}
-              className={`h-8 px-3 rounded-sm text-xs font-semibold uppercase tracking-wide ${
-                chargeFilter === 'open' ? 'bg-[#ccff00] text-black' : 'bg-zinc-800 text-zinc-300'
-              }`}
-            >
-              Abertas
-            </button>
-            <button
-              onClick={() => setChargeFilter('overdue')}
-              className={`h-8 px-3 rounded-sm text-xs font-semibold uppercase tracking-wide ${
-                chargeFilter === 'overdue' ? 'bg-[#ccff00] text-black' : 'bg-zinc-800 text-zinc-300'
-              }`}
-            >
-              Atrasadas
-            </button>
-            <button
-              onClick={() => setChargeFilter('paid')}
-              className={`h-8 px-3 rounded-sm text-xs font-semibold uppercase tracking-wide ${
-                chargeFilter === 'paid' ? 'bg-[#ccff00] text-black' : 'bg-zinc-800 text-zinc-300'
-              }`}
-            >
-              Pagas
-            </button>
-          </div>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
-              <th className="text-left px-4 py-3">Vencimento</th>
-              <th className="text-left px-4 py-3">Valor</th>
-              <th className="text-left px-4 py-3">Status</th>
-              <th className="text-left px-4 py-3">Pagamento</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredCharges.map((charge) => (
-              <tr key={charge.charge_id} className="border-b border-zinc-800/50">
-                <td className="px-4 py-3 text-zinc-300">{formatDate(charge.due_at)}</td>
-                <td className="px-4 py-3">{formatMoney(charge.amount)}</td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-1 rounded-sm border text-xs uppercase font-semibold ${statusClass(charge.status)}`}>
-                    {statusLabel(charge.status)}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-zinc-400">{formatDate(charge.paid_at)}</td>
-              </tr>
+      <SectionCard title="Contratos vinculados" description="Lista completa dos contratos associados ao seu cadastro.">
+        {contracts.length ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {contracts.map((contract) => (
+              <ContractCard
+                key={contract.contract_id}
+                contract={contract}
+                isCurrent={contract.contract_id === summary.current_contract_id}
+              />
             ))}
-            {!filteredCharges.length && (
-              <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-zinc-500">
-                  Sem cobrancas no filtro selecionado.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          </div>
+        ) : (
+          <EmptyState
+            icon={FileClock}
+            title="Sem contratos visiveis"
+            description="Nao encontramos contratos associados ao seu usuario no momento."
+          />
+        )}
+      </SectionCard>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-        <h2 className="font-semibold uppercase text-sm tracking-wide mb-3">Historico de eventos</h2>
-        <ul className="space-y-2 max-h-56 overflow-auto pr-1 text-sm">
-          {(data.events || []).map((item) => (
-            <li key={item.event_id} className="border border-zinc-800 rounded-sm p-2">
-              <p className="font-medium">{eventLabel(item.event_type)}</p>
-              <p className="text-zinc-500 text-xs">{formatDate(item.created_at)}</p>
-            </li>
-          ))}
-          {!(data.events || []).length && <li className="text-zinc-500">Sem eventos registrados.</li>}
-        </ul>
-      </div>
+      <SectionCard
+        title="Minhas cobrancas"
+        description="Veja quais titulos ja foram pagos, quais ainda estao em aberto e quais ja entraram em atraso."
+        actions={(
+          <div className="flex flex-wrap gap-2">
+            {chargeFilterOptions.map((option) => (
+              <Button
+                key={option.key}
+                type="button"
+                variant={chargeFilter === option.key ? 'primary' : 'ghost'}
+                size="sm"
+                onClick={() => setChargeFilter(option.key)}
+              >
+                {option.label}
+                {option.count !== null ? ` (${option.count})` : ''}
+              </Button>
+            ))}
+          </div>
+        )}
+        bodyClassName="p-0"
+      >
+        {charges.length ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-[860px] w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-900 text-left text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                  <th className="px-5 py-3">Vencimento</th>
+                  <th className="px-5 py-3">Valor</th>
+                  <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3">Contrato</th>
+                  <th className="px-5 py-3">Pagamento</th>
+                  <th className="px-5 py-3 text-right">Detalhe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredCharges.length ? filteredCharges.map((charge) => {
+                  const statusMeta = getStatusMeta(charge.status);
+                  const contract = contracts.find((item) => item.contract_id === charge.contract_id);
+                  return (
+                    <tr key={charge.charge_id} className="border-b border-zinc-900/70">
+                      <td className="px-5 py-4 text-zinc-300">{formatBillingDate(charge.due_at)}</td>
+                      <td className="px-5 py-4 text-zinc-100">{formatBillingMoney(charge.amount)}</td>
+                      <td className="px-5 py-4">
+                        <StatusBadge label={statusMeta.label} tone={statusMeta.tone} />
+                      </td>
+                      <td className="px-5 py-4 text-zinc-400">{contract?.plan_name || contract?.plan_id || charge.contract_id}</td>
+                      <td className="px-5 py-4 text-zinc-400">{formatBillingDate(charge.paid_at)}</td>
+                      <td className="px-5 py-4 text-right">
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedChargeId(charge.charge_id)}>
+                          Ver detalhe
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                }) : (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-8">
+                      <EmptyState
+                        icon={Receipt}
+                        title="Sem cobrancas neste filtro"
+                        description="Troque o filtro acima para consultar outros status de cobranca."
+                      />
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="p-5">
+            <EmptyState
+              icon={Receipt}
+              title="Nenhuma cobranca registrada"
+              description="Quando a academia gerar titulos para o seu contrato, eles ficarao disponiveis aqui."
+            />
+          </div>
+        )}
+      </SectionCard>
+
+      <SidePanel
+        open={Boolean(selectedCharge)}
+        onClose={() => setSelectedChargeId('')}
+        title="Detalhe da cobranca"
+        description="Resumo do titulo financeiro selecionado."
+        actions={(
+          <Button type="button" variant="ghost" onClick={() => setSelectedChargeId('')}>
+            Fechar
+          </Button>
+        )}
+      >
+        {selectedCharge ? (
+          <div className="space-y-4">
+            <Banner
+              tone={getStatusMeta(selectedCharge.status).tone}
+              title={getStatusMeta(selectedCharge.status).label}
+              description={
+                ['overdue', 'failed'].includes(String(selectedCharge.status || '').toLowerCase())
+                  ? 'Esta cobranca esta em atraso. Regularize na recepcao para evitar ou remover bloqueio.'
+                  : String(selectedCharge.status || '').toLowerCase() === 'paid'
+                    ? 'Pagamento registrado com sucesso.'
+                    : 'Acompanhe os dados desta cobranca abaixo.'
+              }
+            />
+
+            <div className="grid gap-3">
+              <DetailItem label="Valor" value={formatBillingMoney(selectedCharge.amount)} />
+              <DetailItem label="Vencimento" value={formatBillingDate(selectedCharge.due_at)} />
+              <DetailItem label="Status" value={getStatusMeta(selectedCharge.status).label} />
+              <DetailItem label="Pago em" value={formatBillingDate(selectedCharge.paid_at)} />
+              <DetailItem label="Forma de pagamento" value={selectedCharge.payment_method || '-'} />
+              <DetailItem label="Referencia externa" value={selectedCharge.external_reference || '-'} />
+              <DetailItem label="Periodo inicial" value={formatBillingDate(selectedCharge.period_start)} />
+              <DetailItem label="Periodo final" value={formatBillingDate(selectedCharge.period_end)} />
+              <DetailItem label="Observacoes" value={selectedCharge.notes || '-'} />
+            </div>
+          </div>
+        ) : null}
+      </SidePanel>
     </div>
   );
 }

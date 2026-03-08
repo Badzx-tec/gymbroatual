@@ -41,6 +41,18 @@ def _sanitize_event_for_student(event: dict) -> dict:
     return cleaned
 
 
+def _status_totals(items: list[dict], field: str, *, expected: list[str] | None = None) -> dict:
+    totals: dict[str, int] = {}
+    for item in items:
+        key = str(item.get(field) or "").strip().lower()
+        if not key:
+            continue
+        totals[key] = totals.get(key, 0) + 1
+    for key in expected or []:
+        totals.setdefault(key, 0)
+    return totals
+
+
 def _mask_credential(raw_value: str | None) -> str | None:
     value = str(raw_value or "").strip()
     if not value:
@@ -293,6 +305,8 @@ async def student_billing(
     actor: dict = Depends(require_student_actor),
 ):
     db = get_db()
+    now = datetime.now(UTC)
+    student = await _load_student(actor)
     contracts_raw = (
         await db.student_contracts.find(
             {"owner_id": actor["owner_id"], "student_id": actor["student_id"]},
@@ -352,6 +366,10 @@ async def student_billing(
         if sanitized:
             sanitized_contracts.append(sanitized)
 
+    current_contract = contracts[0] if contracts else None
+    current_access_status = _access_status(student, current_contract, now)
+    current_access_context = _access_context(student, current_contract, current_access_status)
+
     return {
         "contracts": sanitized_contracts,
         "charges": [_sanitize_charge_for_student(item) for item in charges],
@@ -364,5 +382,30 @@ async def student_billing(
                 [item for item in charges if str(item.get("status") or "").lower() in {"overdue", "failed"}]
             ),
             "next_due_at": next_due,
+            "charge_status_totals": _status_totals(
+                charges,
+                "status",
+                expected=["open", "overdue", "paid", "failed", "partially_paid", "canceled", "refunded"],
+            ),
+            "contract_financial_totals": _status_totals(
+                contracts,
+                "financial_status",
+                expected=["paid", "pending", "overdue", "failed", "partially_paid", "refunded"],
+            ),
+            "contract_access_totals": _status_totals(
+                contracts,
+                "access_status",
+                expected=["allowed", "grace_period", "blocked", "suspended"],
+            ),
+            "current_contract_id": current_contract.get("contract_id") if current_contract else None,
+            "current_contract_status": (
+                current_contract.get("contract_status") or current_contract.get("status")
+            ) if current_contract else None,
+            "current_financial_status": current_contract.get("financial_status") if current_contract else None,
+            "current_access_status": current_access_status,
+            "blocked_reason": current_access_context.get("blocked_reason"),
+            "grace_until": current_access_context.get("grace_until"),
+            "next_retry_at": current_access_context.get("next_retry_at"),
+            "dunning_level": int(current_access_context.get("dunning_level") or 0),
         },
     }

@@ -270,6 +270,11 @@ async def test_student_portal_billing_returns_only_own_contract_data(monkeypatch
     assert all(item["contract_id"] == "ctr_1" for item in response["events"])
     assert all("internal_notes" not in item for item in response["contracts"])
     assert all("actor_id" not in item for item in response["events"])
+    assert response["summary"]["current_contract_id"] == "ctr_1"
+    assert response["summary"]["current_contract_status"] == "expired"
+    assert response["summary"]["current_access_status"] == "blocked"
+    assert response["summary"]["charge_status_totals"]["open"] == 1
+    assert response["summary"]["charge_status_totals"]["paid"] == 0
 
 
 @pytest.mark.asyncio
