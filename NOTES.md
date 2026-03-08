@@ -319,3 +319,85 @@
   - se encontrar pagamento aprovado recente, atualiza assinatura para `active` e reabre o painel
 - Validacao:
   - `python -m pytest backend/tests -q` -> **92 passed**
+
+---
+
+# Visual System, Login, Equipe e Catraca - 08/03/2026
+
+## Escopo entregue
+- Shell administrativo premium com sidebar, topbar e branding mais coerentes.
+- Tela de login refeita com hierarquia melhor, contexto comercial e confianca visual.
+- Credenciais sensiveis migradas para dialogo reutilizavel.
+- Tela de equipe refeita com:
+  - cards KPI
+  - formularios padronizados
+  - busca e filtros
+  - side panels para editar, credenciais e biometria
+  - confirm dialog no lugar de `window.confirm`
+  - eliminacao de `window.prompt`
+- Tela de catraca refeita com:
+  - cards de resumo
+  - painel de controle direcional mais claro
+  - filtros melhores
+  - detalhe lateral por acesso
+  - dispositivos e historico de tokens mais operacionais
+
+## Bugs e debt corrigidos nesta rodada
+- `StaffPage` dependia de `prompt/confirm`, gerando UX fragil e pouco auditavel.
+- `StaffPage.load()` acionava loading cheio mesmo em refresh silencioso.
+- `CredentialPanel` era apenas um bloco inline; agora virou dialogo reutilizavel.
+- `LoginPage` tinha import morto e branding fraco.
+- `CatracaPage` nao tinha detalhe lateral por acesso e misturava leitura critica com cards MVP.
+
+## Validacao desta rodada
+- `npm --prefix frontend run lint` -> **passa**
+- `npm --prefix frontend run build` -> **passa**
+
+## Validacao manual sugerida
+1. Abrir `/login` e validar visual, estados e mensagens.
+2. Abrir `/admin/funcionarios`:
+   - criar funcionario
+   - abrir credenciais
+   - editar em side panel
+   - cadastrar biometria em duas etapas
+   - cancelar convite
+3. Abrir `/admin/catraca`:
+   - aplicar travas por escopo
+   - abrir detalhes de um acesso
+   - criar dispositivo
+   - rotacionar token
+
+## Dashboard, Alunos e Contratos - alinhamento visual adicional
+- `Dashboard` harmonizado com `SectionCard`, `Banner`, `StatusBadge` e uso do token de marca nas visualizacoes.
+- `Alunos` refeito sobre a base nova com:
+  - filtros melhores
+  - confirm dialog para exclusao
+  - side panel para detalhe
+  - dialog padronizado para criar/editar
+  - historico de credenciais consistente
+- `Contratos` harmonizado com:
+  - `PageHeader`, `SectionCard`, `SearchInput`, `Button`
+  - `ContractsFilters` movido para `SidePanel`
+  - `ContractDetailsDrawer` migrado para a base visual nova
+  - badges/status usando o mesmo padrao das outras telas
+
+### Validacao complementar
+- `npm --prefix frontend run lint` -> **passa**
+- `npm --prefix frontend run build` -> **passa**
+- `python -m pytest backend/tests -q` -> **92 passed**
+
+## Contratos - cleanup de dialogs operacionais
+- `StudentContractsPage` nao usa mais `window.confirm` e `window.prompt` para:
+  - cancelar pagamento
+  - colocar contrato em dia
+  - pausar contrato
+  - cancelar contrato
+  - cancelar contratos em lote
+  - remover cancelados
+- Todas essas acoes agora usam `Dialog` com contexto, descricao curta e campos quando necessario.
+- O fluxo de `Novo contrato` tambem foi migrado para o `Dialog` padrao com `TextField` e `SelectField`.
+
+### Validacao desta etapa
+- `npm --prefix frontend run lint` -> **passa**
+- `npm --prefix frontend run build` -> **passa**
+- `python -m pytest backend/tests -q` -> **92 passed**

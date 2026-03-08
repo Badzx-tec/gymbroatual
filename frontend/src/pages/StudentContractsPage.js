@@ -1,10 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, Filter, Plus, Search } from 'lucide-react';
+import { Download, Filter, Plus } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import Button from '../components/ui/Button';
+import Dialog from '../components/ui/Dialog';
 import { getStoredUser } from '../lib/session';
+import PageHeader from '../components/ui/PageHeader';
+import SearchInput from '../components/ui/SearchInput';
+import SelectField from '../components/ui/SelectField';
+import SectionCard from '../components/ui/SectionCard';
+import TextField from '../components/ui/TextField';
 import ContractDetailsDrawer from './contracts/ContractDetailsDrawer';
 import ContractsFilters from './contracts/ContractsFilters';
 import ContractsOverview from './contracts/ContractsOverview';
@@ -131,6 +138,7 @@ export default function StudentContractsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState(createFormDefault);
   const [manualEndEdited, setManualEndEdited] = useState(false);
+  const [actionDialog, setActionDialog] = useState(null);
 
   const user = useMemo(() => getStoredUser(), []);
   const role = String(user.role || '').toUpperCase();
@@ -350,11 +358,27 @@ export default function StudentContractsPage() {
       if (contractIdToReload) {
         await loadDetail(contractIdToReload);
       }
+      return true;
     } catch (err) {
       toast.error(err?.message || 'Falha ao executar acao.');
+      return false;
     } finally {
       setBusyAction(false);
     }
+  };
+
+  const closeActionDialog = () => setActionDialog(null);
+
+  const openActionDialog = (kind, payload = {}) => {
+    const defaults = {
+      kind,
+      payload,
+      pauseDays: '7',
+      includeFutureOpen: false,
+      cancelMode: 'end_of_cycle',
+    };
+    if (kind === 'cancel') defaults.cancelMode = 'immediate';
+    setActionDialog(defaults);
   };
 
   const onRowAction = async (action, row) => {
@@ -410,13 +434,7 @@ export default function StudentContractsPage() {
         toast.error('Cobranca invalida.');
         return;
       }
-      const confirmed = window.confirm('Cancelar este pagamento e voltar a cobranca para pendente/atrasada?');
-      if (!confirmed) return;
-      await runMutation(
-        () => api.markStudentChargeUnpaid(chargeId, { reason: 'reversao manual na central de contratos' }),
-        'Pagamento cancelado com sucesso.',
-        contractId
-      );
+      openActionDialog(action, row);
       return;
     }
     if (action === 'settle') {
@@ -424,34 +442,7 @@ export default function StudentContractsPage() {
         toast.error('Sem permissao para colocar contrato em dia.');
         return;
       }
-      const confirmed = window.confirm(
-        'Registrar pagamento das pendencias vencidas deste contrato e recalcular acesso?'
-      );
-      if (!confirmed) return;
-      const includeFutureOpen = window.confirm(
-        'Incluir tambem cobrancas futuras em aberto?\n\nOK = sim\nCancelar = quitar apenas atrasadas/vencidas'
-      );
-
-      setBusyAction(true);
-      try {
-        const response = await api.adminSettleOverdueContract(contractId, {
-          payment_method: 'other',
-          include_future_open: includeFutureOpen,
-          reason: 'baixa manual na central de contratos',
-        });
-        const updatedCharges = Number(response?.updated_charges || 0);
-        if (updatedCharges > 0) {
-          toast.success(`Contrato atualizado. Cobrancas baixadas: ${updatedCharges}.`);
-        } else {
-          toast.success('Nenhuma cobranca pendente para baixa.');
-        }
-        await loadContracts();
-        await loadDetail(contractId);
-      } catch (err) {
-        toast.error(err?.message || 'Falha ao colocar contrato em dia.');
-      } finally {
-        setBusyAction(false);
-      }
+      openActionDialog(action, row);
       return;
     }
     if (action === 'renew') {
@@ -467,18 +458,7 @@ export default function StudentContractsPage() {
         toast.error('Somente Dono da academia ou Diretor pode pausar contrato.');
         return;
       }
-      const daysInput = window.prompt('Pausar por quantos dias?', '7');
-      if (!daysInput) return;
-      const days = Number(daysInput);
-      if (!Number.isFinite(days) || days <= 0) {
-        toast.error('Informe um numero de dias valido.');
-        return;
-      }
-      await runMutation(
-        () => api.adminPauseContract(contractId, { days }),
-        'Contrato pausado.',
-        contractId
-      );
+      openActionDialog(action, row);
       return;
     }
     if (action === 'cancel') {
@@ -486,13 +466,7 @@ export default function StudentContractsPage() {
         toast.error('Somente Dono da academia ou Diretor pode cancelar contrato.');
         return;
       }
-      const immediate = window.confirm('Clique em OK para cancelar imediatamente. Clique em Cancelar para agendar no fim do ciclo.');
-      const mode = immediate ? 'immediate' : 'end_of_cycle';
-      await runMutation(
-        () => api.adminCancelContract(contractId, { mode, reason: 'cancelamento administrativo' }),
-        mode === 'immediate' ? 'Contrato cancelado.' : 'Cancelamento agendado.',
-        contractId
-      );
+      openActionDialog(action, row);
     }
   };
 
@@ -538,23 +512,7 @@ export default function StudentContractsPage() {
       toast.error('Somente Dono da academia ou Diretor pode cancelar em lote.');
       return;
     }
-    if (!window.confirm(`Cancelar ${selectedIds.length} contrato(s) no fim do ciclo?`)) return;
-    setBusyAction(true);
-    try {
-      const results = await Promise.allSettled(
-        selectedIds.map((id) => api.adminCancelContract(id, { mode: 'end_of_cycle', reason: 'cancelamento em lote' }))
-      );
-      const success = results.filter((item) => item.status === 'fulfilled').length;
-      const failed = results.length - success;
-      toast.success(`Lote concluido. Sucesso: ${success} • Falhas: ${failed}`);
-      setSelectedIds([]);
-      await loadContracts();
-      if (queryState.contractId) await loadDetail(queryState.contractId);
-    } catch (err) {
-      toast.error(err?.message || 'Falha ao processar lote.');
-    } finally {
-      setBusyAction(false);
-    }
+    openActionDialog('bulkCancel', { count: selectedIds.length });
   };
 
   const runExport = async (ids = []) => {
@@ -581,28 +539,275 @@ export default function StudentContractsPage() {
       toast.error('Somente Dono da academia ou Diretor pode remover cancelados.');
       return;
     }
-    const confirmed = window.confirm(
-      'Remover todos os contratos cancelados?\n\nEsta acao e permanente e apaga historico financeiro/auditoria destes contratos.'
-    );
-    if (!confirmed) return;
+    openActionDialog('removeCanceled');
+  };
 
-    setBusyAction(true);
-    try {
-      const response = await api.adminRemoveCanceledContracts({ older_than_days: 0 });
-      const removed = Number(response?.removed_contracts || 0);
-      toast.success(
-        `Cancelados removidos: ${removed}. Cobrancas: ${Number(response?.removed_charges || 0)}.`
+  const confirmActionDialog = async () => {
+    if (!actionDialog?.kind) return;
+    const payload = actionDialog.payload || {};
+    const contractId = String(payload.contract_id || '').trim();
+
+    if (actionDialog.kind === 'unpayCharge') {
+      const chargeId = String(payload.charge_id || '').trim();
+      if (!chargeId || !contractId) {
+        toast.error('Cobranca invalida.');
+        return;
+      }
+      const success = await runMutation(
+        () => api.markStudentChargeUnpaid(chargeId, { reason: 'reversao manual na central de contratos' }),
+        'Pagamento cancelado com sucesso.',
+        contractId
       );
-      setSelectedIds([]);
-      setDetailOpen(false);
-      setDetailData(null);
-      setContractInUrl('');
-      await loadContracts();
-    } catch (err) {
-      toast.error(err?.message || 'Falha ao remover contratos cancelados.');
-    } finally {
-      setBusyAction(false);
+      if (success) closeActionDialog();
+      return;
     }
+
+    if (actionDialog.kind === 'settle') {
+      if (!contractId) {
+        toast.error('Contrato invalido.');
+        return;
+      }
+      setBusyAction(true);
+      try {
+        const response = await api.adminSettleOverdueContract(contractId, {
+          payment_method: 'other',
+          include_future_open: Boolean(actionDialog.includeFutureOpen),
+          reason: 'baixa manual na central de contratos',
+        });
+        const updatedCharges = Number(response?.updated_charges || 0);
+        if (updatedCharges > 0) {
+          toast.success(`Contrato atualizado. Cobrancas baixadas: ${updatedCharges}.`);
+        } else {
+          toast.success('Nenhuma cobranca pendente para baixa.');
+        }
+        await loadContracts();
+        await loadDetail(contractId);
+        closeActionDialog();
+      } catch (err) {
+        toast.error(err?.message || 'Falha ao colocar contrato em dia.');
+      } finally {
+        setBusyAction(false);
+      }
+      return;
+    }
+
+    if (actionDialog.kind === 'pause') {
+      const days = Number(actionDialog.pauseDays);
+      if (!contractId) {
+        toast.error('Contrato invalido.');
+        return;
+      }
+      if (!Number.isFinite(days) || days <= 0) {
+        toast.error('Informe um numero de dias valido.');
+        return;
+      }
+      const success = await runMutation(
+        () => api.adminPauseContract(contractId, { days }),
+        'Contrato pausado.',
+        contractId
+      );
+      if (success) closeActionDialog();
+      return;
+    }
+
+    if (actionDialog.kind === 'cancel') {
+      if (!contractId) {
+        toast.error('Contrato invalido.');
+        return;
+      }
+      const mode = actionDialog.cancelMode === 'end_of_cycle' ? 'end_of_cycle' : 'immediate';
+      const success = await runMutation(
+        () => api.adminCancelContract(contractId, { mode, reason: 'cancelamento administrativo' }),
+        mode === 'immediate' ? 'Contrato cancelado.' : 'Cancelamento agendado.',
+        contractId
+      );
+      if (success) closeActionDialog();
+      return;
+    }
+
+    if (actionDialog.kind === 'bulkCancel') {
+      setBusyAction(true);
+      try {
+        const results = await Promise.allSettled(
+          selectedIds.map((id) => api.adminCancelContract(id, { mode: 'end_of_cycle', reason: 'cancelamento em lote' }))
+        );
+        const success = results.filter((item) => item.status === 'fulfilled').length;
+        const failed = results.length - success;
+        toast.success(`Lote concluido. Sucesso: ${success} • Falhas: ${failed}`);
+        setSelectedIds([]);
+        await loadContracts();
+        if (queryState.contractId) await loadDetail(queryState.contractId);
+        closeActionDialog();
+      } catch (err) {
+        toast.error(err?.message || 'Falha ao processar lote.');
+      } finally {
+        setBusyAction(false);
+      }
+      return;
+    }
+
+    if (actionDialog.kind === 'removeCanceled') {
+      setBusyAction(true);
+      try {
+        const response = await api.adminRemoveCanceledContracts({ older_than_days: 0 });
+        const removed = Number(response?.removed_contracts || 0);
+        toast.success(
+          `Cancelados removidos: ${removed}. Cobrancas: ${Number(response?.removed_charges || 0)}.`
+        );
+        setSelectedIds([]);
+        setDetailOpen(false);
+        setDetailData(null);
+        setContractInUrl('');
+        await loadContracts();
+        closeActionDialog();
+      } catch (err) {
+        toast.error(err?.message || 'Falha ao remover contratos cancelados.');
+      } finally {
+        setBusyAction(false);
+      }
+    }
+  };
+
+  const actionDialogMeta = useMemo(() => {
+    if (!actionDialog?.kind) return null;
+    if (actionDialog.kind === 'unpayCharge') {
+      return {
+        title: 'Cancelar pagamento',
+        description: 'A cobranca volta para pendente ou atrasada conforme o vencimento.',
+        confirmLabel: 'Cancelar pagamento',
+        confirmVariant: 'danger',
+      };
+    }
+    if (actionDialog.kind === 'settle') {
+      return {
+        title: 'Colocar contrato em dia',
+        description: 'Baixe as pendencias deste contrato e recalcule o acesso do aluno.',
+        confirmLabel: 'Confirmar baixa',
+        confirmVariant: 'primary',
+      };
+    }
+    if (actionDialog.kind === 'pause') {
+      return {
+        title: 'Pausar contrato',
+        description: 'Defina quantos dias a vigencia deve ser empurrada para frente.',
+        confirmLabel: 'Aplicar pausa',
+        confirmVariant: 'primary',
+      };
+    }
+    if (actionDialog.kind === 'cancel') {
+      return {
+        title: 'Cancelar contrato',
+        description: 'Escolha se o cancelamento corta o acesso agora ou no fim do ciclo atual.',
+        confirmLabel: 'Confirmar cancelamento',
+        confirmVariant: 'danger',
+      };
+    }
+    if (actionDialog.kind === 'bulkCancel') {
+      return {
+        title: 'Cancelar contratos selecionados',
+        description: 'Todos os contratos selecionados serao programados para encerramento no fim do ciclo.',
+        confirmLabel: 'Cancelar selecionados',
+        confirmVariant: 'danger',
+      };
+    }
+    if (actionDialog.kind === 'removeCanceled') {
+      return {
+        title: 'Remover contratos cancelados',
+        description: 'Essa limpeza apaga definitivamente contratos cancelados e seus titulos vinculados.',
+        confirmLabel: 'Remover cancelados',
+        confirmVariant: 'danger',
+      };
+    }
+    return null;
+  }, [actionDialog]);
+
+  const renderActionDialogBody = () => {
+    if (!actionDialog?.kind) return null;
+    if (actionDialog.kind === 'settle') {
+      return (
+        <div className="space-y-4">
+          <p className="text-sm text-zinc-400">
+            Registre o pagamento das cobrancas vencidas e recalcule a liberacao da catraca.
+          </p>
+          <label className="flex items-start gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300">
+            <input
+              type="checkbox"
+              className="mt-1 accent-[var(--brand-primary)]"
+              checked={Boolean(actionDialog.includeFutureOpen)}
+              onChange={(event) => setActionDialog((current) => ({
+                ...current,
+                includeFutureOpen: event.target.checked,
+              }))}
+            />
+            <span>
+              Incluir tambem cobrancas futuras que ainda estao em aberto.
+            </span>
+          </label>
+        </div>
+      );
+    }
+    if (actionDialog.kind === 'pause') {
+      return (
+        <TextField
+          label="Dias de pausa"
+          type="number"
+          min="1"
+          step="1"
+          value={actionDialog.pauseDays}
+          onChange={(event) => setActionDialog((current) => ({
+            ...current,
+            pauseDays: event.target.value,
+          }))}
+          placeholder="7"
+        />
+      );
+    }
+    if (actionDialog.kind === 'cancel') {
+      return (
+        <div className="space-y-4">
+          <SelectField
+            label="Quando aplicar"
+            value={actionDialog.cancelMode}
+            onChange={(event) => setActionDialog((current) => ({
+              ...current,
+              cancelMode: event.target.value,
+            }))}
+          >
+            <option value="immediate">Cancelar imediatamente</option>
+            <option value="end_of_cycle">Cancelar no fim do ciclo</option>
+          </SelectField>
+          <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-400">
+            {actionDialog.cancelMode === 'immediate'
+              ? 'O acesso sera cortado agora e o contrato encerrado imediatamente.'
+              : 'O contrato fica ativo ate o fim da vigencia atual e depois encerra automaticamente.'}
+          </div>
+        </div>
+      );
+    }
+    if (actionDialog.kind === 'bulkCancel') {
+      return (
+        <p className="text-sm text-zinc-400">
+          {selectedIds.length} contrato(s) selecionado(s) serao programados para cancelamento no fim do ciclo.
+        </p>
+      );
+    }
+    if (actionDialog.kind === 'removeCanceled') {
+      return (
+        <div className="space-y-3">
+          <p className="text-sm text-zinc-400">
+            Essa limpeza remove historico financeiro e auditoria dos contratos cancelados.
+          </p>
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            Use apenas quando tiver certeza de que esses contratos nao precisam mais ficar visiveis.
+          </div>
+        </div>
+      );
+    }
+    return (
+      <p className="text-sm text-zinc-400">
+        Confirme esta acao para seguir com a atualizacao do contrato.
+      </p>
+    );
   };
 
   const recalcCreateEndAt = useCallback((nextForm) => {
@@ -656,51 +861,32 @@ export default function StudentContractsPage() {
 
   return (
     <div className="space-y-6">
-      <header className="rounded-xl border border-zinc-800 bg-gradient-to-br from-zinc-900 via-zinc-900 to-zinc-950 p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Contratos</h1>
-            <p className="mt-1 text-sm text-zinc-400">Gerencie contratos, renovacoes e pendencias</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={openCreateModal}
-              disabled={!canCreateContracts}
-              className="inline-flex h-10 items-center gap-2 rounded-md bg-[#ccff00] px-4 text-xs font-bold uppercase tracking-wide text-black hover:bg-[#b3e600] disabled:opacity-40"
-            >
+      <PageHeader
+        eyebrow="Operacao"
+        title="Contratos"
+        subtitle="Gerencie contratos, renovacoes, pendencias e cobrancas em uma superficie mais operacional."
+        actions={
+          <>
+            <Button type="button" onClick={openCreateModal} disabled={!canCreateContracts} variant="primary" size="sm">
               <Plus className="h-4 w-4" />
               Novo contrato
-            </button>
-            <button
-              type="button"
-              onClick={() => runExport([])}
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-700 bg-zinc-800 px-4 text-xs font-semibold uppercase tracking-wide hover:bg-zinc-700"
-            >
+            </Button>
+            <Button type="button" onClick={() => runExport([])} variant="secondary" size="sm">
               <Download className="h-4 w-4" />
               Exportar
-            </button>
-            <button
-              type="button"
-              onClick={openFilters}
-              className="inline-flex h-10 items-center gap-2 rounded-md border border-zinc-700 bg-zinc-800 px-4 text-xs font-semibold uppercase tracking-wide hover:bg-zinc-700"
-            >
+            </Button>
+            <Button type="button" onClick={openFilters} variant="ghost" size="sm">
               <Filter className="h-4 w-4" />
               Filtros
-            </button>
+            </Button>
             {canManageContractRules ? (
-              <button
-                type="button"
-                onClick={runRemoveCanceled}
-                disabled={busyAction}
-                className="inline-flex h-10 items-center gap-2 rounded-md border border-red-500/40 bg-red-500/15 px-4 text-xs font-semibold uppercase tracking-wide text-red-300 hover:bg-red-500/20 disabled:opacity-60"
-              >
+              <Button type="button" onClick={runRemoveCanceled} disabled={busyAction} variant="danger" size="sm">
                 Remover cancelados
-              </button>
+              </Button>
             ) : null}
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <ContractsOverview
         overview={overview}
@@ -708,67 +894,46 @@ export default function StudentContractsPage() {
         onQuickFilter={toggleQuickFilter}
       />
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/80 p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="relative w-full max-w-xl">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-            <input
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Buscar por aluno, ID, plano ou contrato"
-              className="h-10 w-full rounded-md border border-zinc-800 bg-zinc-950 pl-9 pr-3 text-sm"
-              aria-label="Busca global de contratos"
-            />
-          </div>
+      <SectionCard
+        title="Busca e leitura rapida"
+        description="Combine busca global, filtros salvos e atualizacao manual sem sair da tabela."
+        actions={
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={restoreSavedView}
-              className="h-9 rounded-md border border-zinc-700 bg-zinc-800 px-3 text-xs font-semibold uppercase tracking-wide"
-            >
+            <Button type="button" onClick={restoreSavedView} variant="secondary" size="sm">
               Restaurar visao
-            </button>
-            <button
-              type="button"
-              onClick={() => loadContracts()}
-              className="h-9 rounded-md border border-zinc-700 bg-zinc-800 px-3 text-xs font-semibold uppercase tracking-wide"
-            >
+            </Button>
+            <Button type="button" onClick={() => loadContracts()} variant="ghost" size="sm">
               Atualizar
-            </button>
+            </Button>
           </div>
+        }
+      >
+        <div className="max-w-xl">
+          <SearchInput
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Buscar por aluno, ID, plano ou contrato"
+            aria-label="Busca global de contratos"
+          />
         </div>
-      </section>
+      </SectionCard>
 
       {selectedIds.length ? (
-        <section className="rounded-xl border border-zinc-700 bg-zinc-900/90 p-3">
+        <SectionCard title="Acoes em lote" description={`${selectedIds.length} contrato(s) selecionado(s).`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-zinc-300">{selectedIds.length} contrato(s) selecionado(s)</p>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={runBulkCancel}
-                disabled={busyAction}
-                className="h-9 rounded-md border border-red-500/40 bg-red-500/15 px-3 text-xs font-semibold uppercase text-red-300 disabled:opacity-50"
-              >
+              <Button type="button" onClick={runBulkCancel} disabled={busyAction} variant="danger" size="sm">
                 Cancelar selecionados
-              </button>
-              <button
-                type="button"
-                onClick={() => runExport(selectedIds)}
-                className="h-9 rounded-md border border-zinc-700 bg-zinc-800 px-3 text-xs font-semibold uppercase"
-              >
+              </Button>
+              <Button type="button" onClick={() => runExport(selectedIds)} variant="secondary" size="sm">
                 Exportar selecionados
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedIds([])}
-                className="h-9 rounded-md border border-zinc-700 bg-zinc-800 px-3 text-xs font-semibold uppercase"
-              >
+              </Button>
+              <Button type="button" onClick={() => setSelectedIds([])} variant="ghost" size="sm">
                 Limpar selecao
-              </button>
+              </Button>
             </div>
           </div>
-        </section>
+        </SectionCard>
       ) : null}
 
       <ContractsTable
@@ -821,59 +986,156 @@ export default function StudentContractsPage() {
         canSettleOverdue={canSettleOverdue}
       />
 
-      {createOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-3xl rounded-xl border border-zinc-800 bg-zinc-900 p-5" onClick={(event) => event.stopPropagation()}>
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <h3 className="font-heading text-2xl font-bold uppercase">Novo contrato</h3>
-                <p className="text-xs text-zinc-500">Cadastro rapido com calculo automatico de vigencia.</p>
-              </div>
-              <button type="button" onClick={() => setCreateOpen(false)} className="h-9 rounded-md border border-zinc-700 bg-zinc-800 px-3 text-xs font-semibold uppercase">Fechar</button>
-            </div>
+      <Dialog
+        open={Boolean(actionDialog)}
+        onClose={busyAction ? undefined : closeActionDialog}
+        title={actionDialogMeta?.title}
+        description={actionDialogMeta?.description}
+        size="md"
+        actions={
+          <>
+            <Button type="button" onClick={closeActionDialog} variant="ghost" disabled={busyAction}>
+              Voltar
+            </Button>
+            <Button
+              type="button"
+              onClick={confirmActionDialog}
+              disabled={busyAction}
+              variant={actionDialogMeta?.confirmVariant || 'primary'}
+            >
+              {actionDialogMeta?.confirmLabel || 'Confirmar'}
+            </Button>
+          </>
+        }
+      >
+        {renderActionDialogBody()}
+      </Dialog>
 
-            <form onSubmit={handleCreate} className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              <select required value={createForm.student_id} onChange={(event) => setCreateForm((prev) => ({ ...prev, student_id: event.target.value }))} className="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm md:col-span-2">
-                <option value="">Aluno</option>
-                {students.map((student) => (
-                  <option key={student.student_id} value={student.student_id}>{student.nome}</option>
-                ))}
-              </select>
-              <select
-                value={createForm.plan_id}
-                onChange={(event) => {
-                  const next = { ...createForm, plan_id: event.target.value };
-                  const plan = plansById.get(event.target.value);
-                  if (plan?.duracao_dias && !createForm.duration_days) next.duration_days = String(plan.duracao_dias);
-                  if (plan?.valor && !createForm.amount) next.amount = String(plan.valor);
-                  setCreateForm(recalcCreateEndAt(next));
-                }}
-                className="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm"
-              >
-                <option value="">Plano</option>
-                {plans.map((plan) => (
-                  <option key={plan.plan_id} value={plan.plan_id}>{plan.nome}</option>
-                ))}
-              </select>
-              <select value={createForm.payment_method} onChange={(event) => setCreateForm((prev) => ({ ...prev, payment_method: event.target.value }))} className="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm">
-                {paymentMethods.map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-              <input type="number" min="0.01" step="0.01" placeholder="Valor" value={createForm.amount} onChange={(event) => setCreateForm((prev) => ({ ...prev, amount: event.target.value }))} className="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm" />
-              <input type="number" min="1" placeholder="Duracao (dias)" value={createForm.duration_days} onChange={(event) => setCreateForm((prev) => recalcCreateEndAt({ ...prev, duration_days: event.target.value }))} className="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm" />
-              <input type="datetime-local" value={createForm.start_at} onChange={(event) => setCreateForm((prev) => recalcCreateEndAt({ ...prev, start_at: event.target.value }))} className="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm" />
-              <input type="datetime-local" value={createForm.end_at} onChange={(event) => { setManualEndEdited(Boolean(event.target.value)); setCreateForm((prev) => ({ ...prev, end_at: event.target.value })); }} className="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm" />
-              <label className="inline-flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" className="accent-[#ccff00]" checked={createForm.auto_renew} onChange={(event) => setCreateForm((prev) => ({ ...prev, auto_renew: event.target.checked }))} />Renovacao automatica</label>
-              <label className="inline-flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" className="accent-[#ccff00]" checked={createForm.create_initial_charge} onChange={(event) => setCreateForm((prev) => ({ ...prev, create_initial_charge: event.target.checked }))} />Criar cobranca inicial</label>
-              <div className="md:col-span-2 flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setCreateOpen(false)} className="h-10 rounded-md border border-zinc-700 bg-zinc-800 px-4 text-xs font-semibold uppercase">Cancelar</button>
-                <button type="submit" disabled={busyAction} className="h-10 rounded-md bg-[#ccff00] px-4 text-xs font-bold uppercase text-black disabled:opacity-60">Criar contrato</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
+      <Dialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Novo contrato"
+        description="Cadastro rapido com calculo automatico de vigencia e configuracao da primeira cobranca."
+        size="lg"
+        actions={
+          <>
+            <Button type="button" onClick={() => setCreateOpen(false)} variant="ghost">
+              Cancelar
+            </Button>
+            <Button type="submit" form="contract-create-form" disabled={busyAction} variant="primary">
+              Criar contrato
+            </Button>
+          </>
+        }
+      >
+        <form id="contract-create-form" onSubmit={handleCreate} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <SelectField
+            label="Aluno"
+            required
+            className="md:col-span-2"
+            value={createForm.student_id}
+            onChange={(event) => setCreateForm((prev) => ({ ...prev, student_id: event.target.value }))}
+          >
+            <option value="">Selecione um aluno</option>
+            {students.map((student) => (
+              <option key={student.student_id} value={student.student_id}>
+                {student.nome}
+              </option>
+            ))}
+          </SelectField>
+
+          <SelectField
+            label="Plano"
+            value={createForm.plan_id}
+            onChange={(event) => {
+              const next = { ...createForm, plan_id: event.target.value };
+              const plan = plansById.get(event.target.value);
+              if (plan?.duracao_dias && !createForm.duration_days) next.duration_days = String(plan.duracao_dias);
+              if (plan?.valor && !createForm.amount) next.amount = String(plan.valor);
+              setCreateForm(recalcCreateEndAt(next));
+            }}
+          >
+            <option value="">Sem plano vinculado</option>
+            {plans.map((plan) => (
+              <option key={plan.plan_id} value={plan.plan_id}>
+                {plan.nome}
+              </option>
+            ))}
+          </SelectField>
+
+          <SelectField
+            label="Forma de pagamento"
+            value={createForm.payment_method}
+            onChange={(event) => setCreateForm((prev) => ({ ...prev, payment_method: event.target.value }))}
+          >
+            {paymentMethods.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </SelectField>
+
+          <TextField
+            label="Valor"
+            type="number"
+            min="0.01"
+            step="0.01"
+            value={createForm.amount}
+            onChange={(event) => setCreateForm((prev) => ({ ...prev, amount: event.target.value }))}
+            placeholder="0,00"
+          />
+
+          <TextField
+            label="Duracao em dias"
+            type="number"
+            min="1"
+            value={createForm.duration_days}
+            onChange={(event) => setCreateForm((prev) => recalcCreateEndAt({ ...prev, duration_days: event.target.value }))}
+            placeholder="30"
+          />
+
+          <TextField
+            label="Inicio"
+            type="datetime-local"
+            value={createForm.start_at}
+            onChange={(event) => setCreateForm((prev) => recalcCreateEndAt({ ...prev, start_at: event.target.value }))}
+          />
+
+          <TextField
+            label="Fim"
+            type="datetime-local"
+            value={createForm.end_at}
+            onChange={(event) => {
+              setManualEndEdited(Boolean(event.target.value));
+              setCreateForm((prev) => ({ ...prev, end_at: event.target.value }));
+            }}
+          />
+
+          <label className="flex items-start gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300">
+            <input
+              type="checkbox"
+              className="mt-1 accent-[var(--brand-primary)]"
+              checked={createForm.auto_renew}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, auto_renew: event.target.checked }))}
+            />
+            <span>
+              Renovacao automatica
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300">
+            <input
+              type="checkbox"
+              className="mt-1 accent-[var(--brand-primary)]"
+              checked={createForm.create_initial_charge}
+              onChange={(event) => setCreateForm((prev) => ({ ...prev, create_initial_charge: event.target.checked }))}
+            />
+            <span>
+              Criar cobranca inicial ao salvar
+            </span>
+          </label>
+        </form>
+      </Dialog>
     </div>
   );
 }

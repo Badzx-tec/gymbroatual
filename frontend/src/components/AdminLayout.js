@@ -1,27 +1,48 @@
-import React, { useState, useEffect } from 'react';
-import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, Tag, ScanLine, Menu, X, LogOut, Dumbbell, Bell, Wifi, CreditCard, UserCog, FileText, MessageCircle, Settings } from 'lucide-react';
+import React from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import {
+  Bell,
+  CreditCard,
+  FileText,
+  HelpCircle,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  ScanLine,
+  Settings,
+  Tag,
+  UserCog,
+  Users,
+  Wifi,
+} from 'lucide-react';
 import { toast } from 'sonner';
+
 import { api } from '../api';
 import { applyBrandingToDocument, loadBranding, saveBranding } from '../branding';
 import { clearSession, getStoredUser, updateStoredUser } from '../lib/session';
+import { roleLabel } from '../utils/labels';
+import BrandMark from './ui/BrandMark';
+import IconButton from './ui/IconButton';
 
 const navItems = [
-  { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
-  { to: '/admin/alunos', icon: Users, label: 'Alunos' },
-  { to: '/admin/contratos', icon: FileText, label: 'Contratos' },
-  { to: '/admin/planos', icon: Tag, label: 'Planos' },
-  { to: '/admin/acessos', icon: ScanLine, label: 'Acessos' },
-  { to: '/admin/assinatura', icon: CreditCard, label: 'Assinatura' },
-  { to: '/admin/cobranca', icon: FileText, label: 'Cobranca' },
-  { to: '/admin/notificacoes', icon: Bell, label: 'Notificacoes' },
-  { to: '/admin/catraca', icon: Wifi, label: 'Catraca' },
-  { to: '/admin/funcionarios', icon: UserCog, label: 'Funcionarios' },
+  { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true, group: 'Visao geral' },
+  { to: '/admin/alunos', icon: Users, label: 'Alunos', group: 'Operacao' },
+  { to: '/admin/contratos', icon: FileText, label: 'Contratos', group: 'Operacao' },
+  { to: '/admin/planos', icon: Tag, label: 'Planos', group: 'Operacao' },
+  { to: '/admin/acessos', icon: ScanLine, label: 'Acessos', group: 'Operacao' },
+  { to: '/admin/catraca', icon: Wifi, label: 'Catraca', group: 'Operacao' },
+  { to: '/admin/funcionarios', icon: UserCog, label: 'Equipe', group: 'Operacao' },
+  { to: '/admin/assinatura', icon: CreditCard, label: 'Assinatura', group: 'Receita' },
+  { to: '/admin/cobranca', icon: FileText, label: 'Cobranca', group: 'Receita' },
+  { to: '/admin/notificacoes', icon: Bell, label: 'Notificacoes', group: 'Sistema' },
 ];
 
 const SUPPORT_WHATSAPP = '5533988515895';
 
-const buildHelpUrl = ({ user, pathname }) => {
+const groupOrder = ['Visao geral', 'Operacao', 'Receita', 'Sistema'];
+
+function buildHelpUrl({ user, pathname }) {
   const helpMessage = [
     'Ola! Preciso de ajuda no GymBro.',
     `Usuario: ${user.name || 'Nao informado'}`,
@@ -30,160 +51,302 @@ const buildHelpUrl = ({ user, pathname }) => {
     `Data: ${new Date().toLocaleString('pt-BR')}`,
   ].join('\n');
   return `https://wa.me/${SUPPORT_WHATSAPP}?text=${encodeURIComponent(helpMessage)}`;
-};
+}
+
+function buildPageCopy(pathname) {
+  if (pathname === '/admin') {
+    return {
+      title: 'Operacao da academia',
+      subtitle: 'Acompanhe receita, contratos, acesso e equipe em um unico shell operacional.',
+    };
+  }
+
+  const segments = pathname.split('/').filter(Boolean);
+  const last = segments[segments.length - 1] || 'dashboard';
+  const label = navItems.find((item) => item.to === pathname)?.label || last.replaceAll('-', ' ');
+  return {
+    title: label,
+    subtitle: 'Fluxo administrativo com contexto, acoes rapidas e leitura de status mais clara.',
+  };
+}
 
 export default function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [user, setUser] = useState(() => getStoredUser());
-  const [branding, setBranding] = useState(() => loadBranding());
+  const reduceMotion = useReducedMotion();
+
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [unreadCount, setUnreadCount] = React.useState(0);
+  const [user, setUser] = React.useState(() => getStoredUser());
+  const [branding, setBranding] = React.useState(() => loadBranding());
+
+  const role = String(user.role || 'OWNER').toUpperCase();
   const helpUrl = buildHelpUrl({ user, pathname: location.pathname });
-  const role = (user.role || 'OWNER').toUpperCase();
+  const pageCopy = React.useMemo(() => buildPageCopy(location.pathname), [location.pathname]);
+
   const canSeeBilling = ['OWNER', 'MANAGER'].includes(role);
   const canSeeStaff = ['OWNER', 'MANAGER'].includes(role);
   const canSeeContracts = ['OWNER', 'MANAGER', 'RECEPTION'].includes(role);
   const canSeeTurnstile = ['OWNER', 'MANAGER', 'RECEPTION'].includes(role);
-  const visibleNavItems = navItems.filter((item) => {
-    if (item.to === '/admin/assinatura') return canSeeBilling;
-    if (item.to === '/admin/cobranca') return canSeeBilling;
-    if (item.to === '/admin/funcionarios') return canSeeStaff;
-    if (item.to === '/admin/contratos') return canSeeContracts;
-    if (item.to === '/admin/catraca') return canSeeTurnstile;
-    return true;
-  });
 
-  useEffect(() => {
+  const visibleNavItems = React.useMemo(
+    () =>
+      navItems.filter((item) => {
+        if (item.to === '/admin/assinatura') return canSeeBilling;
+        if (item.to === '/admin/cobranca') return canSeeBilling;
+        if (item.to === '/admin/funcionarios') return canSeeStaff;
+        if (item.to === '/admin/contratos') return canSeeContracts;
+        if (item.to === '/admin/catraca') return canSeeTurnstile;
+        return true;
+      }),
+    [canSeeBilling, canSeeContracts, canSeeStaff, canSeeTurnstile]
+  );
+
+  const groupedItems = React.useMemo(() => {
+    const groups = new Map();
+    visibleNavItems.forEach((item) => {
+      const current = groups.get(item.group) || [];
+      current.push(item);
+      groups.set(item.group, current);
+    });
+    return groupOrder
+      .map((group) => ({
+        group,
+        items: groups.get(group) || [],
+      }))
+      .filter((entry) => entry.items.length > 0);
+  }, [visibleNavItems]);
+
+  React.useEffect(() => {
     applyBrandingToDocument(branding);
   }, [branding]);
 
-  useEffect(() => {
-    api.profileMe().then((profile) => {
-      if (profile?.branding) {
-        const normalized = {
-          theme_key: profile.branding.theme_key,
-          logo_data_url: profile.branding.logo_data_url || null,
-        };
-        setBranding(normalized);
-        saveBranding(normalized);
-      }
-      if (profile?.name || profile?.email) {
-        const updatedUser = updateStoredUser((current) => ({
-          ...current,
-          name: profile.name || current.name || user.name,
-          email: profile.email || current.email || user.email,
-        }));
-        setUser(updatedUser);
-      }
-    }).catch(() => {});
+  React.useEffect(() => {
+    api
+      .profileMe()
+      .then((profile) => {
+        if (profile?.branding) {
+          const normalized = {
+            theme_key: profile.branding.theme_key,
+            logo_data_url: profile.branding.logo_data_url || null,
+          };
+          setBranding(normalized);
+          saveBranding(normalized);
+        }
+        if (profile?.name || profile?.email) {
+          const updatedUser = updateStoredUser((current) => ({
+            ...current,
+            name: profile.name || current.name || user.name,
+            email: profile.email || current.email || user.email,
+          }));
+          setUser(updatedUser);
+        }
+      })
+      .catch(() => {});
   }, [user.email, user.name]);
 
-  useEffect(() => {
-    api.listNotifications(50).then(notifs => {
-      setUnreadCount(notifs.filter(n => !n.lida).length);
-    }).catch(() => {});
+  React.useEffect(() => {
+    api
+      .listNotifications(50)
+      .then((notifs) => {
+        setUnreadCount(notifs.filter((n) => !n.lida).length);
+      })
+      .catch(() => {});
   }, []);
 
   const handleLogout = async () => {
-    try { await api.logout(); } catch {}
+    try {
+      await api.logout();
+    } catch {}
     clearSession();
     toast.success('Logout realizado');
     navigate('/login');
   };
 
-  const SidebarContent = ({ onNavClick }) => (
-    <>
-      <div className="flex items-center gap-2 px-6 h-16 border-b border-zinc-800 shrink-0">
-        {branding.logo_data_url ? (
-          <img src={branding.logo_data_url} alt="Logo da academia" className="w-8 h-8 rounded-sm object-cover border border-zinc-700" />
-        ) : (
-          <Dumbbell className="w-6 h-6 text-[#ccff00]" />
-        )}
-        <span className="font-heading text-xl font-bold tracking-tight uppercase">GymBro</span>
+  const sidebarContent = (
+    <div className="flex h-full flex-col">
+      <div className="border-b border-zinc-900 px-5 py-5">
+        <BrandMark compact={false} caption="Gestao, acesso e recorrencia" />
       </div>
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        {visibleNavItems.map(item => (
-          <NavLink key={item.to} to={item.to} end={item.end} onClick={onNavClick}
-            data-testid={`nav-${item.label.toLowerCase()}`}
-            className={({ isActive }) => `flex items-center gap-3 px-4 py-2.5 rounded-sm text-sm font-medium transition-colors relative ${isActive ? 'bg-[#ccff00]/10 text-[#ccff00]' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}>
-            <item.icon className="w-5 h-5" />
-            {item.label}
-            {item.label === 'Notificacoes' && unreadCount > 0 && (
-              <span className="absolute right-3 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{unreadCount}</span>
-            )}
-          </NavLink>
-        ))}
-      </nav>
-      <div className="p-4 border-t border-zinc-800 shrink-0">
-        <div className="flex items-center gap-3 px-4 py-2 mb-2">
-          <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-[#ccff00]">
-            {(user.name || 'A')[0].toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-medium truncate">{user.name || 'Admin'}</p>
-            <p className="text-xs text-zinc-500 truncate">{user.email || ''}</p>
-          </div>
-          <button
-            data-testid="profile-link-btn"
-            onClick={() => {
-              navigate('/admin/perfil');
-              if (onNavClick) onNavClick();
-            }}
-            className="ml-auto text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-sm p-2 transition-colors"
-            title="Perfil"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
+
+      <nav className="flex-1 overflow-y-auto px-4 py-5">
+        <div className="space-y-5">
+          {groupedItems.map((entry) => (
+            <div key={entry.group}>
+              <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-600">
+                {entry.group}
+              </p>
+              <div className="mt-2 space-y-1">
+                {entry.items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    onClick={() => setSidebarOpen(false)}
+                    data-testid={`nav-${item.label.toLowerCase()}`}
+                    className={({ isActive }) =>
+                      `group flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition ${
+                        isActive
+                          ? 'bg-[linear-gradient(135deg,rgba(var(--brand-primary-rgb),0.18),rgba(96,165,250,0.08))] text-zinc-50 shadow-[0_18px_50px_-38px_rgba(0,0,0,0.8)]'
+                          : 'text-zinc-400 hover:bg-zinc-900/80 hover:text-zinc-100'
+                      }`
+                    }
+                  >
+                    <div className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/80 text-zinc-400 transition group-hover:text-zinc-100">
+                      <item.icon className="h-4 w-4" />
+                      {item.label === 'Notificacoes' && unreadCount > 0 ? (
+                        <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[var(--status-danger)] px-1 text-[10px] font-bold text-white">
+                          {unreadCount}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate">{item.label}</p>
+                      <p className="truncate text-xs text-zinc-600 group-hover:text-zinc-500">
+                        {item.group}
+                      </p>
+                    </div>
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
-        <button data-testid="logout-btn" onClick={handleLogout}
-          className="flex items-center gap-3 px-4 py-2.5 rounded-sm text-sm font-medium text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors w-full">
-          <LogOut className="w-5 h-5" /> Sair
-        </button>
+      </nav>
+
+      <div className="border-t border-zinc-900 px-4 py-4">
+        <div className="rounded-[var(--radius-md)] border border-zinc-900 bg-zinc-950/80 p-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-sm font-bold text-[var(--brand-primary)]">
+              {(user.name || 'A')[0].toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-zinc-100">{user.name || 'Administrador'}</p>
+              <p className="truncate text-xs text-zinc-500">{roleLabel(role)}</p>
+            </div>
+            <IconButton
+              variant="ghost"
+              onClick={() => navigate('/admin/perfil')}
+              aria-label="Abrir perfil"
+            >
+              <Settings className="h-4 w-4" />
+            </IconButton>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <a
+              href={helpUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800"
+            >
+              <HelpCircle className="h-4 w-4" />
+              Ajuda
+            </a>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-red-200 hover:bg-red-500/15"
+            >
+              <LogOut className="h-4 w-4" />
+              Sair
+            </button>
+          </div>
+        </div>
       </div>
-    </>
+    </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#09090b] flex">
-      <aside data-testid="admin-sidebar" className="hidden lg:flex flex-col w-64 bg-zinc-900 border-r border-zinc-800 fixed h-screen">
-        <SidebarContent />
-      </aside>
+    <div className="min-h-screen bg-[var(--surface-base)]">
+      <div className="mx-auto flex min-h-screen w-full max-w-[1680px]">
+        <aside className="hidden w-[308px] shrink-0 p-4 xl:block">
+          <div className="surface-panel sticky top-4 h-[calc(100vh-32px)] overflow-hidden rounded-[28px]">
+            {sidebarContent}
+          </div>
+        </aside>
 
-      {sidebarOpen && (
-        <div className="lg:hidden fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
-          <aside className="relative w-64 bg-zinc-900 h-full flex flex-col">
-            <div className="absolute top-4 right-4 z-10">
-              <button onClick={() => setSidebarOpen(false)}><X className="w-5 h-5" /></button>
+        <AnimatePresence>
+          {sidebarOpen ? (
+            <motion.div
+              className="fixed inset-0 z-[120] xl:hidden"
+              initial={reduceMotion ? false : { opacity: 0 }}
+              animate={reduceMotion ? {} : { opacity: 1 }}
+              exit={reduceMotion ? {} : { opacity: 0 }}
+            >
+              <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
+              <motion.aside
+                className="surface-panel relative h-full w-[88vw] max-w-[320px] rounded-none"
+                initial={reduceMotion ? false : { x: -24, opacity: 0 }}
+                animate={reduceMotion ? {} : { x: 0, opacity: 1 }}
+                exit={reduceMotion ? {} : { x: -24, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                {sidebarContent}
+              </motion.aside>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        <div className="flex min-w-0 flex-1 flex-col px-3 pb-6 pt-3 sm:px-4 lg:px-6">
+          <header className="surface-panel sticky top-3 z-40 rounded-[26px] px-4 py-3 sm:px-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <IconButton
+                  className="xl:hidden"
+                  onClick={() => setSidebarOpen(true)}
+                  aria-label="Abrir menu lateral"
+                >
+                  <Menu className="h-4 w-4" />
+                </IconButton>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                    Painel administrativo
+                  </p>
+                  <h1 className="truncate text-lg font-semibold text-zinc-50">{pageCopy.title}</h1>
+                  <p className="hidden truncate text-sm text-zinc-500 md:block">{pageCopy.subtitle}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/notificacoes')}
+                  className="relative inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200 hover:border-zinc-700 hover:bg-zinc-900"
+                >
+                  <Bell className="h-4 w-4" />
+                  <span className="hidden sm:inline">Alertas</span>
+                  {unreadCount > 0 ? (
+                    <span className="ml-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[var(--status-danger)] px-1 text-[10px] font-bold text-white">
+                      {unreadCount}
+                    </span>
+                  ) : null}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/perfil')}
+                  className="inline-flex items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/80 px-3 py-2 text-left hover:border-zinc-700 hover:bg-zinc-900"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-sm font-bold text-[var(--brand-primary)]">
+                    {(user.name || 'A')[0].toUpperCase()}
+                  </div>
+                  <div className="hidden min-w-0 sm:block">
+                    <p className="truncate text-sm font-semibold text-zinc-100">{user.name || 'Administrador'}</p>
+                    <p className="truncate text-xs text-zinc-500">{user.email || 'Sem e-mail'}</p>
+                  </div>
+                </button>
+              </div>
             </div>
-            <SidebarContent onNavClick={() => setSidebarOpen(false)} />
-          </aside>
+          </header>
+
+          <main className="flex-1 pt-6">
+            <div className="mx-auto w-full max-w-[1460px]">
+              <Outlet />
+            </div>
+          </main>
         </div>
-      )}
-
-      <div className="flex-1 lg:ml-64">
-        <header className="h-16 bg-zinc-900/50 backdrop-blur-md border-b border-zinc-800 flex items-center px-4 lg:px-8 sticky top-0 z-40">
-          <button data-testid="mobile-menu-btn" onClick={() => setSidebarOpen(true)} className="lg:hidden p-2 hover:bg-zinc-800 rounded-sm mr-3">
-            <Menu className="w-5 h-5" />
-          </button>
-          <h2 className="font-heading text-lg font-semibold uppercase tracking-wide text-zinc-300">Painel Administrativo</h2>
-        </header>
-        <main className="p-4 lg:p-8">
-          <Outlet />
-        </main>
       </div>
-
-      <a
-        data-testid="help-whatsapp-btn"
-        href={helpUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-full bg-[#25D366] text-black font-bold text-sm px-4 py-3 shadow-lg hover:brightness-110 transition"
-      >
-        <MessageCircle className="w-4 h-4" />
-        Ajuda
-      </a>
     </div>
   );
 }

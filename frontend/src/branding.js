@@ -1,13 +1,19 @@
 export const BRAND_THEMES = [
-  { key: 'lime', label: 'Lime', primary: '#ccff00', hover: '#b3e600', rgb: '204 255 0' },
-  { key: 'blue', label: 'Azul', primary: '#3b82f6', hover: '#2563eb', rgb: '59 130 246' },
-  { key: 'emerald', label: 'Esmeralda', primary: '#10b981', hover: '#059669', rgb: '16 185 129' },
-  { key: 'amber', label: 'Amber', primary: '#f59e0b', hover: '#d97706', rgb: '245 158 11' },
-  { key: 'rose', label: 'Rose', primary: '#f43f5e', hover: '#e11d48', rgb: '244 63 94' },
+  { key: 'lime', label: 'Lima', primary: '#c8f169', hover: '#b4dd56', rgb: '200 241 105' },
+  { key: 'blue', label: 'Azul', primary: '#60a5fa', hover: '#3b82f6', rgb: '96 165 250' },
+  { key: 'emerald', label: 'Esmeralda', primary: '#34d399', hover: '#10b981', rgb: '52 211 153' },
+  { key: 'amber', label: 'Amber', primary: '#fbbf24', hover: '#f59e0b', rgb: '251 191 36' },
+  { key: 'rose', label: 'Rose', primary: '#fb7185', hover: '#f43f5e', rgb: '251 113 133' },
 ];
 
 const DEFAULT_THEME_KEY = 'lime';
 const BRANDING_STORAGE_KEY = 'gymbro_branding';
+export const APP_BRAND = {
+  name: 'GymBro',
+  shortName: 'GB',
+  tagline: 'Performance operacional para academias',
+  productLine: 'Gestao, acesso e recorrencia em uma unica operacao.',
+};
 
 export function getThemeByKey(themeKey) {
   return BRAND_THEMES.find((item) => item.key === themeKey) || BRAND_THEMES[0];

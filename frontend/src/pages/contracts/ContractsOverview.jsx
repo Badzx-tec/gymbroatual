@@ -8,7 +8,9 @@ function Card({ icon: Icon, title, value, tone = 'default', active = false, onCl
       type="button"
       onClick={onClick}
       className={`rounded-xl border p-4 text-left transition ${
-        active ? 'border-[#ccff00]/70 bg-[#ccff00]/10' : 'border-zinc-800 bg-zinc-900/80 hover:border-zinc-700'
+        active
+          ? 'border-[color:rgb(var(--brand-primary-rgb)/0.55)] bg-[color:rgb(var(--brand-primary-rgb)/0.10)]'
+          : 'border-zinc-900 bg-zinc-950/72 hover:border-zinc-700'
       }`}
       aria-pressed={active}
     >

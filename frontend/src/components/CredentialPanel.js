@@ -1,5 +1,11 @@
 import React from 'react';
 import { toast } from 'sonner';
+import { Download, Copy } from 'lucide-react';
+
+import Button from './ui/Button';
+import Dialog from './ui/Dialog';
+import IconButton from './ui/IconButton';
+import StatusBadge from './ui/StatusBadge';
 
 function fallbackCopy(text) {
   const element = document.createElement('textarea');
@@ -76,56 +82,63 @@ export default function CredentialPanel({ title, description, fields, onClose })
   if (!fields?.length) return null;
 
   return (
-    <div className="bg-amber-500/10 border border-amber-500/30 rounded-md p-4 space-y-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="font-semibold uppercase text-sm tracking-wide text-amber-200">{title}</h3>
-          {description && <p className="text-xs text-amber-100/80 mt-1">{description}</p>}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => copyAll(title, fields)}
-            className="text-xs uppercase tracking-wide px-2 py-1 rounded-sm bg-zinc-900/70 border border-zinc-700 hover:bg-zinc-800"
-          >
-            Copiar tudo
-          </button>
-          <button
-            type="button"
-            onClick={() => downloadCredentials(title, fields)}
-            className="text-xs uppercase tracking-wide px-2 py-1 rounded-sm bg-zinc-900/70 border border-zinc-700 hover:bg-zinc-800"
-          >
+    <Dialog
+      open
+      onClose={onClose}
+      size="lg"
+      title={title}
+      description={description || 'Copie ou exporte as credenciais antes de fechar.'}
+      actions={
+        <>
+          <Button variant="ghost" onClick={() => downloadCredentials(title, fields)}>
+            <Download className="h-4 w-4" />
             Baixar .txt
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-xs uppercase tracking-wide px-2 py-1 rounded-sm bg-zinc-900/70 border border-zinc-700 hover:bg-zinc-800"
-          >
+          </Button>
+          <Button variant="secondary" onClick={() => copyAll(title, fields)}>
+            <Copy className="h-4 w-4" />
+            Copiar tudo
+          </Button>
+          <Button variant="primary" onClick={onClose}>
             Fechar
-          </button>
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge label="Sensivel" tone="warning" />
+          <p className="text-sm text-zinc-400">
+            Senhas e tokens podem nao aparecer novamente. Guarde em local seguro.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {fields.map((field) => (
+            <div
+              key={field.label}
+              className="grid gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-4 md:grid-cols-[180px_1fr_auto]"
+            >
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{field.label}</p>
+              </div>
+              <input
+                readOnly
+                value={field.value || ''}
+                className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 font-mono text-sm text-zinc-100"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <IconButton
+                  variant="secondary"
+                  onClick={() => copyText(field.label, field.value)}
+                  aria-label={`Copiar ${field.label}`}
+                >
+                  <Copy className="h-4 w-4" />
+                </IconButton>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
-
-      <div className="space-y-2">
-        {fields.map((field) => (
-          <div key={field.label} className="grid grid-cols-1 md:grid-cols-[170px_1fr_auto] gap-2 items-center">
-            <span className="text-xs text-zinc-400 uppercase tracking-wide">{field.label}</span>
-            <input
-              readOnly
-              value={field.value || ''}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-9 px-3 font-mono text-xs"
-            />
-            <button
-              type="button"
-              onClick={() => copyText(field.label, field.value)}
-              className="bg-zinc-800 text-white font-semibold text-xs uppercase tracking-wide h-9 px-3 rounded-sm hover:bg-zinc-700"
-            >
-              Copiar
-            </button>
-          </div>
-        ))}
-      </div>
-    </div>
+    </Dialog>
   );
 }

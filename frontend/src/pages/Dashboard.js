@@ -8,7 +8,6 @@ import {
   Activity,
   FileSpreadsheet,
   FileText,
-  AlertTriangle,
   RefreshCw,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -29,13 +28,16 @@ import {
 import { toast } from 'sonner';
 
 import { api, connectWebSocket } from '../api';
+import Banner from '../components/ui/Banner';
 import Button from '../components/ui/Button';
 import LoadingScreen from '../components/ui/LoadingScreen';
 import PageHeader from '../components/ui/PageHeader';
+import SectionCard from '../components/ui/SectionCard';
 import StatCard from '../components/ui/StatCard';
+import StatusBadge from '../components/ui/StatusBadge';
 import { getStoredUser } from '../lib/session';
 
-const CHART_COLORS = ['#ccff00', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ef4444'];
+const CHART_COLORS = ['var(--brand-primary)', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#ef4444'];
 
 function formatMoney(value) {
   return Number(value || 0).toLocaleString('pt-BR', {
@@ -249,7 +251,7 @@ export default function Dashboard() {
       <div className="bg-zinc-800 border border-zinc-700 rounded-sm px-3 py-2 text-xs">
         <p className="text-zinc-300 mb-1">{label}</p>
         {payload.map((item, index) => (
-          <p key={`${item?.name || 'item'}-${index}`} style={{ color: item.color || '#ccff00' }}>
+          <p key={`${item?.name || 'item'}-${index}`} style={{ color: item.color || 'var(--brand-primary)' }}>
             {item.name}: {typeof item.value === 'number' ? item.value.toLocaleString('pt-BR') : item.value}
           </p>
         ))}
@@ -263,21 +265,16 @@ export default function Dashboard() {
 
   if (error && !stats) {
     return (
-      <div className="bg-red-500/10 border border-red-500/30 rounded-md p-5 flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-red-400 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-red-300">Falha ao carregar dashboard</p>
-            <p className="text-xs text-zinc-300 mt-1">{error}</p>
-          </div>
-        </div>
-        <button
-          onClick={() => loadData()}
-          className="h-9 px-4 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold uppercase tracking-wide"
-        >
-          Tentar novamente
-        </button>
-      </div>
+      <Banner
+        tone="danger"
+        title="Falha ao carregar dashboard"
+        description={error}
+        actions={
+          <Button onClick={() => loadData()} size="sm" variant="secondary">
+            Tentar novamente
+          </Button>
+        }
+      />
     );
   }
 
@@ -332,11 +329,7 @@ export default function Dashboard() {
         }
       />
 
-      {error && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-md p-3 text-xs text-yellow-200">
-          {error}
-        </div>
-      )}
+      {error ? <Banner tone="warning" title="Atualizacao parcial" description={error} /> : null}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
         {kpis.map((kpi, index) => (
@@ -370,11 +363,8 @@ export default function Dashboard() {
       )}
 
       {canSeeOps && turnstileSummary && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4 space-y-3">
+        <SectionCard title="Saude operacional de acesso" description="Janela configuravel de negacoes, bloqueios e sinais de dispositivos.">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-zinc-300">
-              Saude Operacional de Acesso
-            </h3>
             <div className="flex items-center gap-2">
               <label className="text-xs uppercase tracking-wider text-zinc-500">Janela</label>
               <select
@@ -404,15 +394,12 @@ export default function Dashboard() {
               {topDenyReasons.map((item) => `${reasonLabel(item.reason)} (${item.count})`).join(' | ')}
             </div>
           )}
-        </div>
+        </SectionCard>
       )}
 
       {canSeeOps && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4 space-y-3">
+        <SectionCard title="Alertas operacionais" description="Eventos com impacto direto em acesso, contratos e operacao da academia.">
           <div className="flex items-center justify-between">
-            <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-zinc-300">
-              Alertas Operacionais
-            </h3>
             <p className="text-[11px] uppercase tracking-wider text-zinc-500">
               {opsAlerts?.generated_at ? `Gerado em ${new Date(opsAlerts.generated_at).toLocaleString('pt-BR')}` : 'Sem dados'}
             </p>
@@ -436,7 +423,7 @@ export default function Dashboard() {
           ) : (
             <p className="text-sm text-zinc-500">Sem alertas criticos no momento.</p>
           )}
-        </div>
+        </SectionCard>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
@@ -493,14 +480,14 @@ export default function Dashboard() {
               <AreaChart data={charts?.acessos_por_hora || []}>
                 <defs>
                   <linearGradient id="colorAccess" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ccff00" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#ccff00" stopOpacity={0} />
+                    <stop offset="5%" stopColor="var(--brand-primary)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="var(--brand-primary)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="hora" tick={{ fill: '#71717a', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#71717a', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <Tooltip content={customTooltip} />
-                <Area type="monotone" dataKey="acessos" stroke="#ccff00" fill="url(#colorAccess)" strokeWidth={2} name="Acessos" />
+                <Area type="monotone" dataKey="acessos" stroke="var(--brand-primary)" fill="url(#colorAccess)" strokeWidth={2} name="Acessos" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -517,53 +504,43 @@ export default function Dashboard() {
               <XAxis dataKey="mes" tick={{ fill: '#71717a', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#71717a', fontSize: 10 }} axisLine={false} tickLine={false} />
               <Tooltip content={customTooltip} />
-              <Bar dataKey="valor" fill="#ccff00" radius={[4, 4, 0, 0]} name="Receita (R$)" />
+              <Bar dataKey="valor" fill="var(--brand-primary)" radius={[4, 4, 0, 0]} name="Receita (R$)" />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md">
+      <SectionCard title="Ultimos acessos" description="Atualizacao em tempo real quando o websocket estiver disponivel." bodyClassName="p-0">
         <div className="p-5 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h3 className="font-heading text-lg font-semibold uppercase">Ultimos Acessos</h3>
-            <p className="text-xs text-zinc-500 uppercase tracking-wider mt-1">
-              Atualizacao em tempo real quando websocket estiver disponivel
-            </p>
-          </div>
           <div className="flex gap-2">
-            <button
+            <Button
               onClick={() => setLogFilter('all')}
-              className={`h-8 px-3 rounded-sm text-xs font-semibold uppercase tracking-wide ${
-                logFilter === 'all' ? 'bg-[#ccff00] text-black' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-              }`}
+              variant={logFilter === 'all' ? 'primary' : 'secondary'}
+              size="sm"
             >
               Todos
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => setLogFilter('allowed')}
-              className={`h-8 px-3 rounded-sm text-xs font-semibold uppercase tracking-wide ${
-                logFilter === 'allowed' ? 'bg-[#ccff00] text-black' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-              }`}
+              variant={logFilter === 'allowed' ? 'primary' : 'secondary'}
+              size="sm"
             >
               Liberados
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => setLogFilter('denied')}
-              className={`h-8 px-3 rounded-sm text-xs font-semibold uppercase tracking-wide ${
-                logFilter === 'denied' ? 'bg-[#ccff00] text-black' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-              }`}
+              variant={logFilter === 'denied' ? 'primary' : 'secondary'}
+              size="sm"
             >
               Negados
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => setLogFilter('critical')}
-              className={`h-8 px-3 rounded-sm text-xs font-semibold uppercase tracking-wide ${
-                logFilter === 'critical' ? 'bg-red-500 text-white' : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-              }`}
+              variant={logFilter === 'critical' ? 'danger' : 'secondary'}
+              size="sm"
             >
               Criticos
-            </button>
+            </Button>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -590,9 +567,7 @@ export default function Dashboard() {
                   >
                     <td className="px-5 py-3 font-medium">{log.student_name || log.employee_name || 'Desconhecido'}</td>
                     <td className="px-5 py-3">
-                      <span className="text-xs uppercase tracking-wider bg-zinc-800 px-2 py-1 rounded-sm">
-                        {log.tipo || log.method || log.subject_type || '-'}
-                      </span>
+                      <StatusBadge label={log.tipo || log.method || log.subject_type || '-'} tone="neutral" size="sm" />
                     </td>
                     <td className="px-5 py-3">
                       <span
@@ -625,7 +600,7 @@ export default function Dashboard() {
             </tbody>
           </table>
         </div>
-      </div>
+      </SectionCard>
     </div>
   );
 }

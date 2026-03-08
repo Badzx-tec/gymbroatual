@@ -1,13 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { api } from '../api';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  FileSpreadsheet,
+  FileText,
+  Fingerprint,
+  Pencil,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  User,
+  Users,
+} from 'lucide-react';
 import { toast } from 'sonner';
-import { Plus, Search, Edit2, Trash2, X, User, FileSpreadsheet, FileText } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+
+import { api } from '../api';
 import CredentialPanel from '../components/CredentialPanel';
+import Banner from '../components/ui/Banner';
 import Button from '../components/ui/Button';
+import Dialog from '../components/ui/Dialog';
+import EmptyState from '../components/ui/EmptyState';
 import LoadingScreen from '../components/ui/LoadingScreen';
 import PageHeader from '../components/ui/PageHeader';
+import SearchInput from '../components/ui/SearchInput';
+import SectionCard from '../components/ui/SectionCard';
+import SelectField from '../components/ui/SelectField';
+import SidePanel from '../components/ui/SidePanel';
 import StatCard from '../components/ui/StatCard';
+import StatusBadge from '../components/ui/StatusBadge';
+import TextField from '../components/ui/TextField';
 import {
   clearCredentialHistory,
   loadCredentialHistory,
@@ -15,7 +34,28 @@ import {
 } from '../utils/credentialHistory';
 import { getStoredUser } from '../lib/session';
 
-const emptyStudent = { nome: '', email: '', cpf: '', telefone: '', plano_id: '', matricula: '', tag_rfid: '', biometria_id: '', status: 'ativo', data_vencimento: '', peso_kg: '', idade: '', altura_cm: '', treino: '', dias_frequencia: 0, auth_login_enabled: true, password: '', auto_generate_password: false, force_password_reset: false };
+const emptyStudent = {
+  nome: '',
+  email: '',
+  cpf: '',
+  telefone: '',
+  plano_id: '',
+  matricula: '',
+  tag_rfid: '',
+  biometria_id: '',
+  status: 'ativo',
+  data_vencimento: '',
+  peso_kg: '',
+  idade: '',
+  altura_cm: '',
+  treino: '',
+  dias_frequencia: 0,
+  auth_login_enabled: true,
+  password: '',
+  auto_generate_password: false,
+  force_password_reset: false,
+};
+
 const STUDENT_CREDENTIAL_HISTORY_KEY = 'gymbro_student_credentials_history';
 
 const normalizeCpfInput = (value) => {
@@ -27,6 +67,191 @@ const normalizeCpfInput = (value) => {
   return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
 };
 
+function statusTone(status) {
+  return String(status || '').toLowerCase() === 'ativo' ? 'success' : 'danger';
+}
+
+function buildStudentForm(student) {
+  return {
+    nome: student?.nome || '',
+    email: student?.email || '',
+    cpf: student?.cpf || '',
+    telefone: student?.telefone || '',
+    plano_id: student?.plano_id || '',
+    matricula: student?.matricula || '',
+    tag_rfid: student?.tag_rfid || '',
+    biometria_id: student?.biometria_id || '',
+    status: student?.status || 'ativo',
+    data_vencimento: student?.data_vencimento ? String(student.data_vencimento).split('T')[0] : '',
+    peso_kg: student?.peso_kg ?? '',
+    idade: student?.idade ?? '',
+    altura_cm: student?.altura_cm ?? '',
+    treino: student?.treino || '',
+    dias_frequencia: student?.dias_frequencia ?? 0,
+    auth_login_enabled: student?.auth_login_enabled !== false,
+    password: '',
+    auto_generate_password: false,
+    force_password_reset: false,
+  };
+}
+
+function StudentFormFields({ form, setForm, plans }) {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <TextField
+          label="Nome"
+          value={form.nome}
+          onChange={(event) => setForm((current) => ({ ...current, nome: event.target.value }))}
+          placeholder="Nome completo do aluno"
+          required
+        />
+        <TextField
+          label="E-mail"
+          type="email"
+          value={form.email}
+          onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+          placeholder="aluno@academia.com"
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <TextField
+          label="CPF"
+          value={form.cpf}
+          onChange={(event) => setForm((current) => ({ ...current, cpf: normalizeCpfInput(event.target.value) }))}
+          placeholder="000.000.000-00"
+          required
+        />
+        <TextField
+          label="Telefone"
+          value={form.telefone}
+          onChange={(event) => setForm((current) => ({ ...current, telefone: event.target.value }))}
+          placeholder="(00) 00000-0000"
+        />
+        <SelectField
+          label="Status"
+          value={form.status}
+          onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
+        >
+          <option value="ativo">Ativo</option>
+          <option value="inativo">Inativo</option>
+        </SelectField>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SelectField
+          label="Plano"
+          value={form.plano_id}
+          onChange={(event) => setForm((current) => ({ ...current, plano_id: event.target.value }))}
+        >
+          <option value="">Selecionar plano</option>
+          {plans.map((plan) => (
+            <option key={plan.plan_id} value={plan.plan_id}>
+              {plan.nome} - R$ {Number(plan.valor || 0).toFixed(2).replace('.', ',')}
+            </option>
+          ))}
+        </SelectField>
+        <TextField
+          label="Vencimento"
+          type="date"
+          value={form.data_vencimento}
+          onChange={(event) => setForm((current) => ({ ...current, data_vencimento: event.target.value }))}
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <TextField
+          label="Matricula"
+          value={form.matricula}
+          onChange={(event) => setForm((current) => ({ ...current, matricula: event.target.value }))}
+          placeholder="ALU0001"
+        />
+        <TextField
+          label="Tag RFID"
+          value={form.tag_rfid}
+          onChange={(event) => setForm((current) => ({ ...current, tag_rfid: event.target.value }))}
+          placeholder="Cartao ou pulseira"
+        />
+        <TextField
+          label="ID biometria"
+          value={form.biometria_id}
+          onChange={(event) => setForm((current) => ({ ...current, biometria_id: event.target.value }))}
+          placeholder="ID retornado pela Toletus"
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-4">
+        <TextField
+          label="Peso (kg)"
+          type="number"
+          step="0.1"
+          value={form.peso_kg}
+          onChange={(event) => setForm((current) => ({ ...current, peso_kg: event.target.value }))}
+        />
+        <TextField
+          label="Idade"
+          type="number"
+          value={form.idade}
+          onChange={(event) => setForm((current) => ({ ...current, idade: event.target.value }))}
+        />
+        <TextField
+          label="Altura (cm)"
+          type="number"
+          step="0.1"
+          value={form.altura_cm}
+          onChange={(event) => setForm((current) => ({ ...current, altura_cm: event.target.value }))}
+        />
+        <TextField
+          label="Frequencia semanal"
+          type="number"
+          value={form.dias_frequencia}
+          onChange={(event) => setForm((current) => ({ ...current, dias_frequencia: event.target.value }))}
+        />
+      </div>
+
+      <label className="block space-y-1.5">
+        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Treino e observacoes</span>
+        <textarea
+          value={form.treino}
+          onChange={(event) => setForm((current) => ({ ...current, treino: event.target.value }))}
+          className="min-h-[112px] w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
+        />
+      </label>
+
+      <div className="grid gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-4 lg:grid-cols-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Login do aluno</p>
+          <p className="mt-2 text-sm text-zinc-400">
+            Defina senha inicial ou deixe em branco para senha temporaria. E-mail, CPF e matricula podem ser usados como login.
+          </p>
+        </div>
+        <div className="space-y-3">
+          <TextField
+            label="Senha inicial"
+            type="password"
+            value={form.password}
+            onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+            placeholder="Opcional"
+          />
+          <label className="flex items-center gap-3 text-sm text-zinc-300">
+            <input type="checkbox" checked={form.auth_login_enabled} onChange={(event) => setForm((current) => ({ ...current, auth_login_enabled: event.target.checked }))} className="accent-[var(--brand-primary)]" />
+            Permitir login do aluno
+          </label>
+          <label className="flex items-center gap-3 text-sm text-zinc-300">
+            <input type="checkbox" checked={form.auto_generate_password} onChange={(event) => setForm((current) => ({ ...current, auto_generate_password: event.target.checked }))} className="accent-[var(--brand-primary)]" />
+            Gerar senha temporaria automaticamente
+          </label>
+          <label className="flex items-center gap-3 text-sm text-zinc-300">
+            <input type="checkbox" checked={form.force_password_reset} onChange={(event) => setForm((current) => ({ ...current, force_password_reset: event.target.checked }))} className="accent-[var(--brand-primary)]" />
+            Exigir troca de senha no primeiro acesso
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function StudentsPage() {
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -35,7 +260,7 @@ export default function StudentsPage() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(null); // null | 'create' | 'edit'
+  const [formMode, setFormMode] = useState('');
   const [form, setForm] = useState(emptyStudent);
   const [editId, setEditId] = useState('');
   const [saving, setSaving] = useState(false);
@@ -43,25 +268,34 @@ export default function StudentsPage() {
   const [credentialHistory, setCredentialHistory] = useState(() =>
     loadCredentialHistory(STUDENT_CREDENTIAL_HISTORY_KEY)
   );
-  const user = React.useMemo(() => getStoredUser(), []);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const user = useMemo(() => getStoredUser(), []);
   const role = String(user.role || '').toUpperCase();
   const canManageStudents = ['OWNER', 'MANAGER', 'RECEPTION'].includes(role);
 
-  const loadData = React.useCallback(async (nextSearch = search, nextStatus = filterStatus) => {
+  const loadData = useCallback(async (nextSearch = search, nextStatus = filterStatus) => {
     try {
-      const [s, p] = await Promise.all([api.listStudents(nextSearch, nextStatus), api.listPlans()]);
-      setStudents(s);
-      setPlans(p);
-    } catch {}
-    setLoading(false);
+      const [studentsData, plansData] = await Promise.all([
+        api.listStudents(nextSearch, nextStatus),
+        api.listPlans(),
+      ]);
+      setStudents(Array.isArray(studentsData) ? studentsData : []);
+      setPlans(Array.isArray(plansData) ? plansData : []);
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao carregar alunos.');
+    } finally {
+      setLoading(false);
+    }
   }, [filterStatus, search]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
       loadData(search, filterStatus);
-    }, 300);
+    }, 280);
     return () => clearTimeout(timeout);
   }, [filterStatus, loadData, search]);
 
@@ -89,41 +323,54 @@ export default function StudentsPage() {
     }
     setForm(emptyStudent);
     setEditId('');
-    setModal('create');
+    setFormMode('create');
   };
-  const openEdit = (s) => {
+
+  const openEdit = (student) => {
     if (!canManageStudents) {
       toast.error('Sem permissao para editar aluno.');
       return;
     }
-    setForm({ nome: s.nome, email: s.email, cpf: s.cpf, telefone: s.telefone || '', plano_id: s.plano_id || '', matricula: s.matricula || '', tag_rfid: s.tag_rfid || '', biometria_id: s.biometria_id || '', status: s.status, data_vencimento: s.data_vencimento ? s.data_vencimento.split('T')[0] : '', peso_kg: s.peso_kg ?? '', idade: s.idade ?? '', altura_cm: s.altura_cm ?? '', treino: s.treino || '', dias_frequencia: s.dias_frequencia ?? 0, auth_login_enabled: s.auth_login_enabled !== false, password: '', auto_generate_password: false, force_password_reset: false });
-    setEditId(s.student_id);
-    setModal('edit');
+    setForm(buildStudentForm(student));
+    setEditId(student.student_id);
+    setFormMode('edit');
   };
 
-  const viewStudent = async (s) => {
+  const viewStudent = async (student) => {
     try {
-      const full = await api.getStudent(s.student_id);
+      const full = await api.getStudent(student.student_id);
       setSelectedStudent(full);
-      // fetch passkeys
-      try { const pk = await api.listStudentPasskeys(s.student_id); setPasskeys(pk.webauthn_credentials || []); } catch { setPasskeys([]); }
-    } catch (err) { toast.error('Erro ao carregar aluno'); }
+      try {
+        const pk = await api.listStudentPasskeys(student.student_id);
+        setPasskeys(pk.webauthn_credentials || []);
+      } catch {
+        setPasskeys([]);
+      }
+    } catch (err) {
+      toast.error(err?.message || 'Erro ao carregar aluno.');
+    }
   };
 
-  const closeDetail = () => { setSelectedStudent(null); setPasskeys([]); };
+  const closeDetail = () => {
+    setSelectedStudent(null);
+    setPasskeys([]);
+  };
 
   const saveStudentDetails = async (updates) => {
+    if (!selectedStudent?.student_id) return;
     try {
       await api.updateStudent(selectedStudent.student_id, updates);
-      toast.success('Dados do aluno atualizados');
       const refreshed = await api.getStudent(selectedStudent.student_id);
       setSelectedStudent(refreshed);
+      toast.success('Dados do aluno atualizados.');
       loadData();
-    } catch (err) { toast.error(err?.message || 'Erro ao salvar aluno'); }
+    } catch (err) {
+      toast.error(err?.message || 'Erro ao salvar aluno.');
+    }
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
+  const handleSave = async (event) => {
+    event.preventDefault();
     if (!canManageStudents) {
       toast.error('Sem permissao para salvar aluno.');
       return;
@@ -131,25 +378,21 @@ export default function StudentsPage() {
     setSaving(true);
     try {
       let result;
-      if (modal === 'create') {
+      if (formMode === 'create') {
         result = await api.createStudent(form);
-        toast.success('Aluno cadastrado!');
+        toast.success('Aluno cadastrado.');
       } else {
         result = await api.updateStudent(editId, form);
-        toast.success('Aluno atualizado!');
+        toast.success('Aluno atualizado.');
       }
+
       if (result?.matricula_auto_generated && result?.generated_matricula) {
         toast.success(`Matricula gerada automaticamente: ${result.generated_matricula}`);
       }
       if (result?.temp_password) {
-        toast.success('Senha temporaria do aluno gerada');
         const fields = [];
-        if (result?.email || form.email) {
-          fields.push({ label: 'Login (e-mail)', value: result?.email || form.email });
-        }
-        if (result?.cpf || form.cpf) {
-          fields.push({ label: 'Login (CPF)', value: result?.cpf || form.cpf });
-        }
+        if (result?.email || form.email) fields.push({ label: 'Login (e-mail)', value: result?.email || form.email });
+        if (result?.cpf || form.cpf) fields.push({ label: 'Login (CPF)', value: result?.cpf || form.cpf });
         if (result?.matricula || form.matricula || result?.generated_matricula) {
           fields.push({
             label: 'Login (matricula)',
@@ -163,43 +406,102 @@ export default function StudentsPage() {
           fields,
         });
       }
-      setModal(null);
-      loadData();
-    } catch (err) { toast.error(err?.message || 'Erro ao salvar aluno'); }
-    setSaving(false);
+      setFormMode('');
+      await loadData();
+    } catch (err) {
+      toast.error(err?.message || 'Erro ao salvar aluno.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDelete = async (id, nome) => {
+  const askDelete = (id, nome) => {
     if (!canManageStudents) {
       toast.error('Sem permissao para remover aluno.');
       return;
     }
-    if (!window.confirm(`Remover aluno ${nome}?`)) return;
-    try {
-      await api.deleteStudent(id);
-      toast.success('Aluno removido');
-      loadData();
-    } catch (err) { toast.error(err?.message || 'Erro ao remover aluno'); }
+    setConfirmAction({
+      title: 'Remover aluno',
+      description: `O cadastro de ${nome} sera removido permanentemente.`,
+      actionLabel: 'Remover',
+      run: async () => {
+        await api.deleteStudent(id);
+        toast.success('Aluno removido.');
+        await loadData();
+      },
+    });
   };
 
-  const getPlanName = (pid) => plans.find(p => p.plan_id === pid)?.nome || '-';
+  const getPlanName = (planId) => plans.find((plan) => plan.plan_id === planId)?.nome || '-';
 
   const handleRegisterBiometria = async () => {
-    if (!editId || !form.biometria_id) return toast.error('Informe o ID de biometria');
+    if (!editId || !form.biometria_id) {
+      toast.error('Informe o ID de biometria.');
+      return;
+    }
     try {
       await api.registerBiometria(editId, form.biometria_id);
-      toast.success('Biometria cadastrada com sucesso');
-      loadData();
+      toast.success('Biometria cadastrada com sucesso.');
+      await loadData();
     } catch (err) {
-      toast.error(err?.message || 'Erro ao registrar biometria');
+      toast.error(err?.message || 'Erro ao registrar biometria.');
     }
   };
 
-  const studentStats = React.useMemo(() => {
+  const registerPasskey = async () => {
+    if (!selectedStudent?.student_id) return;
+    if (!window.PublicKeyCredential) {
+      toast.error('WebAuthn nao suportado neste navegador.');
+      return;
+    }
+    try {
+      const { base64ToBuffer, bufferToBase64 } = await import('../webauthn');
+      const optsResp = await api.passkeyRegisterOptions(selectedStudent.student_id);
+      const state_id = optsResp.state_id;
+      const publicKey = optsResp.publicKey;
+      if (publicKey.challenge) publicKey.challenge = base64ToBuffer(publicKey.challenge);
+      if (publicKey.user?.id) publicKey.user.id = base64ToBuffer(publicKey.user.id);
+      if (publicKey.excludeCredentials && Array.isArray(publicKey.excludeCredentials)) {
+        publicKey.excludeCredentials = publicKey.excludeCredentials.map((credential) => ({
+          ...credential,
+          id: base64ToBuffer(credential.id),
+        }));
+      }
+      const cred = await navigator.credentials.create({ publicKey });
+      if (!cred) throw new Error('Falha ao criar credencial.');
+      const payload = {
+        state_id,
+        id: cred.id,
+        rawId: bufferToBase64(cred.rawId),
+        publicKey: bufferToBase64(cred.response.attestationObject),
+        clientDataJSON: bufferToBase64(cred.response.clientDataJSON),
+      };
+      await api.passkeyRegisterVerify(selectedStudent.student_id, payload);
+      const pk = await api.listStudentPasskeys(selectedStudent.student_id);
+      setPasskeys(pk.webauthn_credentials || []);
+      toast.success('Passkey registrada com sucesso.');
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.message || 'Erro no registro WebAuthn.');
+    }
+  };
+
+  const refreshPasskeys = async () => {
+    if (!selectedStudent?.student_id) return;
+    try {
+      const pk = await api.listStudentPasskeys(selectedStudent.student_id);
+      setPasskeys(pk.webauthn_credentials || []);
+    } catch (err) {
+      toast.error(err?.message || 'Erro ao atualizar passkeys.');
+    }
+  };
+
+  const studentStats = useMemo(() => {
     const active = students.filter((student) => String(student.status || '').toLowerCase() === 'ativo').length;
     const inactive = students.filter((student) => String(student.status || '').toLowerCase() === 'inativo').length;
     const withLogin = students.filter((student) => student.auth_login_enabled !== false).length;
-    return { active, inactive, withLogin };
+    const withBiometry = students.filter((student) => Boolean(student.biometria_id)).length;
+    return { active, inactive, withLogin, withBiometry };
   }, [students]);
 
   if (loading) return <LoadingScreen label="Carregando alunos..." />;
@@ -209,408 +511,280 @@ export default function StudentsPage() {
       <PageHeader
         eyebrow="Operacao"
         title="Alunos"
-        subtitle={`${students.length} alunos carregados para operacao rapida`}
+        subtitle={`${students.length} alunos carregados para operacao diaria, credenciais e acesso.`}
         actions={
           <>
-            <Button
-              data-testid="export-students-excel-btn"
-              onClick={() => { api.exportStudentsExcel(); toast.success('Exportando Excel...'); }}
-              size="sm"
-            >
-              <FileSpreadsheet className="w-4 h-4 text-green-500" />
+            <Button data-testid="export-students-excel-btn" onClick={() => { api.exportStudentsExcel(); toast.success('Exportando Excel...'); }} size="sm">
+              <FileSpreadsheet className="h-4 w-4" />
               Excel
             </Button>
-            <Button
-              data-testid="export-students-pdf-btn"
-              onClick={() => { api.exportStudentsPdf(); toast.success('Exportando PDF...'); }}
-              size="sm"
-            >
-              <FileText className="w-4 h-4 text-red-400" />
+            <Button data-testid="export-students-pdf-btn" onClick={() => { api.exportStudentsPdf(); toast.success('Exportando PDF...'); }} size="sm">
+              <FileText className="h-4 w-4" />
               PDF
             </Button>
             {canManageStudents ? (
               <Button data-testid="add-student-btn" onClick={openCreate} size="sm" variant="primary">
-                <Plus className="w-4 h-4" />
-                Novo Aluno
+                <Plus className="h-4 w-4" />
+                Novo aluno
               </Button>
             ) : null}
           </>
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Ativos" value={studentStats.active} icon={User} accent="success" />
         <StatCard label="Inativos" value={studentStats.inactive} icon={User} accent="danger" />
-        <StatCard label="Login liberado" value={studentStats.withLogin} icon={User} accent="info" />
+        <StatCard label="Login liberado" value={studentStats.withLogin} icon={ShieldCheck} accent="info" />
+        <StatCard label="Biometria cadastrada" value={studentStats.withBiometry} icon={Fingerprint} accent="warning" />
       </div>
 
-      {credentialPanel && (
+      {credentialPanel ? (
         <CredentialPanel
           title={credentialPanel.title}
           description={credentialPanel.description}
           fields={credentialPanel.fields}
           onClose={() => setCredentialPanel(null)}
         />
-      )}
+      ) : null}
 
-      {credentialHistory.length > 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="font-semibold uppercase text-sm tracking-wide">Historico de credenciais de alunos</h3>
-              <p className="text-xs text-zinc-500 mt-1">
-                Reabra para copiar login e senha sem depender do popup inicial.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={clearStudentCredentialHistory}
-              className="text-xs uppercase tracking-wide px-3 py-2 rounded-sm bg-zinc-800 hover:bg-zinc-700"
-            >
-              Limpar
-            </button>
+      <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <SectionCard title="Busca e filtros" description="Use busca rapida e status para localizar alunos sem poluir a listagem.">
+          <div className="grid gap-3 md:grid-cols-[minmax(280px,1fr)_220px]">
+            <SearchInput
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar por nome, e-mail, CPF ou RFID"
+            />
+            <SelectField label="" value={filterStatus} onChange={(event) => setFilterStatus(event.target.value)}>
+              <option value="">Todos os status</option>
+              <option value="ativo">Ativos</option>
+              <option value="inativo">Inativos</option>
+            </SelectField>
           </div>
-          <ul className="space-y-2">
-            {credentialHistory.map((item) => (
-              <li
-                key={item.id}
-                className="border border-zinc-800 rounded-sm px-3 py-2 flex items-center justify-between gap-3"
-              >
-                <div>
-                  <p className="text-sm font-medium">{item.title}</p>
-                  <p className="text-xs text-zinc-500">
-                    {item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : '-'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCredentialPanel(item)}
-                  className="text-xs uppercase tracking-wide px-3 py-2 rounded-sm bg-zinc-800 hover:bg-zinc-700"
+        </SectionCard>
+
+        <SectionCard
+          title="Credenciais sensiveis"
+          description="Reabra logins e senhas temporarias geradas recentemente."
+          actions={
+            credentialHistory.length ? (
+              <Button size="sm" variant="secondary" onClick={clearStudentCredentialHistory}>
+                Limpar historico
+              </Button>
+            ) : null
+          }
+        >
+          {credentialHistory.length > 0 ? (
+            <div className="space-y-3">
+              {credentialHistory.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex flex-col gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  Abrir
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-          <input data-testid="student-search-input" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Buscar por nome, email, CPF ou RFID..."
-            className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 pl-10 pr-4 focus:outline-none focus:ring-1 focus:ring-[#ccff00] focus:border-[#ccff00] text-sm" />
-        </div>
-        <select data-testid="student-status-filter" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 text-sm focus:outline-none focus:ring-1 focus:ring-[#ccff00]">
-          <option value="">Todos</option>
-          <option value="ativo">Ativos</option>
-          <option value="inativo">Inativos</option>
-        </select>
-      </div>
-
-      {/* Table */}
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md overflow-x-auto">
-        <table data-testid="students-table" className="w-full text-sm">
-          <thead>
-            <tr className="text-zinc-500 text-xs uppercase tracking-wider border-b border-zinc-800">
-              <th className="text-left px-5 py-3 font-medium">Aluno</th>
-              <th className="text-left px-5 py-3 font-medium hidden md:table-cell">CPF</th>
-              <th className="text-left px-5 py-3 font-medium hidden lg:table-cell">Plano</th>
-              <th className="text-left px-5 py-3 font-medium">Status</th>
-              <th className="text-left px-5 py-3 font-medium hidden lg:table-cell">Vencimento</th>
-              <th className="text-right px-5 py-3 font-medium">Acoes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {students.map((s, i) => (
-              <motion.tr key={s.student_id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-                className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
-                <td className="px-5 py-3" onClick={() => viewStudent(s)} style={{cursor: 'pointer'}}>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center">
-                      <User className="w-4 h-4 text-zinc-400" />
-                    </div>
-                    <div>
-                      <p className="font-medium">{s.nome}</p>
-                      <p className="text-zinc-500 text-xs">{s.email}</p>
-                    </div>
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-100">{item.title}</p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : '-'}
+                    </p>
                   </div>
-                </td>
-                <td className="px-5 py-3 text-zinc-400 hidden md:table-cell">{s.cpf}</td>
-                <td className="px-5 py-3 hidden lg:table-cell">{getPlanName(s.plano_id)}</td>
-                <td className="px-5 py-3">
-                  <span className={`inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-sm border ${s.status === 'ativo' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${s.status === 'ativo' ? 'bg-green-500' : 'bg-red-500'}`} />
-                    {s.status === 'ativo' ? 'Ativo' : 'Inativo'}
-                  </span>
-                </td>
-                <td className="px-5 py-3 text-zinc-400 hidden lg:table-cell">
-                  {s.data_vencimento ? new Date(s.data_vencimento).toLocaleDateString('pt-BR') : '-'}
-                </td>
-                <td className="px-5 py-3 text-right">
-                  {canManageStudents && (
-                    <div className="flex items-center justify-end gap-1">
-                      <button data-testid={`edit-student-${s.student_id}`} onClick={() => openEdit(s)} className="p-2 hover:bg-zinc-800 rounded-sm transition-colors text-zinc-400 hover:text-white">
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button data-testid={`delete-student-${s.student_id}`} onClick={() => handleDelete(s.student_id, s.nome)} className="p-2 hover:bg-red-500/10 rounded-sm transition-colors text-zinc-400 hover:text-red-500">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
-                </td>
-              </motion.tr>
-            ))}
-            {students.length === 0 && (
-              <tr><td colSpan={6} className="px-5 py-8 text-center text-zinc-500">Nenhum aluno encontrado</td></tr>
-            )}
-          </tbody>
-        </table>
+                  <Button size="sm" variant="ghost" onClick={() => setCredentialPanel(item)}>
+                    Abrir
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={ShieldCheck}
+              title="Sem historico de credenciais"
+              description="Senhas temporarias e logins copiados nesta tela ficam disponiveis aqui enquanto a sessao estiver ativa."
+            />
+          )}
+        </SectionCard>
       </div>
 
-      {/* Detail sidebar */}
-      {selectedStudent && (
-        <div className="fixed right-6 top-20 w-[420px] z-50 bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="font-heading text-xl font-semibold">{selectedStudent.nome}</h3>
-              <p className="text-zinc-400 text-sm">{selectedStudent.email} • {selectedStudent.cpf}</p>
-            </div>
-            <button onClick={closeDetail} className="text-zinc-400 hover:text-white">Fechar</button>
-          </div>
-          <div className="mt-4 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-zinc-400">Peso (kg)</label>
-                <input type="number" step="0.1" defaultValue={selectedStudent.peso_kg ?? selectedStudent.peso ?? ''} onBlur={e => saveStudentDetails({ peso_kg: parseFloat(e.target.value) || 0 })}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs text-zinc-400">Idade</label>
-                <input type="number" defaultValue={selectedStudent.idade || ''} onBlur={e => saveStudentDetails({ idade: parseInt(e.target.value) || 0 })}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs text-zinc-400">Altura (cm)</label>
-                <input type="number" step="0.1" defaultValue={selectedStudent.altura_cm ?? selectedStudent.altura ?? ''} onBlur={e => saveStudentDetails({ altura_cm: parseFloat(e.target.value) || 0 })}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs text-zinc-400">Frequência (dias)</label>
-                <input type="number" defaultValue={selectedStudent.dias_frequencia ?? selectedStudent.dias_presenca ?? 0} onBlur={e => saveStudentDetails({ dias_frequencia: parseInt(e.target.value) || 0 })}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-sm h-10 px-3 text-sm" />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs text-zinc-400">Treino / Observações</label>
-              <textarea defaultValue={selectedStudent.treino || ''} onBlur={e => saveStudentDetails({ treino: e.target.value })}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-sm p-3 text-sm h-24" />
-            </div>
-
-            <div>
-              <h4 className="font-medium">Biometria (Passkeys)</h4>
-              <p className="text-zinc-400 text-sm">Credenciais registradas: {passkeys.length}</p>
-              <div className="mt-2 flex gap-2">
-                <button onClick={async () => {
-                  if (!window.PublicKeyCredential) { toast.error('WebAuthn nao suportado neste navegador'); return; }
-                  try {
-                    const { base64ToBuffer, bufferToBase64 } = await import('../webauthn');
-                    // request registration options from server
-                    const optsResp = await api.passkeyRegisterOptions(selectedStudent.student_id);
-                    const state_id = optsResp.state_id;
-                    const publicKey = optsResp.publicKey;
-                    // decode challenge and user.id from base64 -> ArrayBuffer
-                    if (publicKey.challenge) publicKey.challenge = base64ToBuffer(publicKey.challenge);
-                    if (publicKey.user && publicKey.user.id) publicKey.user.id = base64ToBuffer(publicKey.user.id);
-                    // decode any allowCredentials ids
-                    if (publicKey.excludeCredentials && Array.isArray(publicKey.excludeCredentials)) {
-                      publicKey.excludeCredentials = publicKey.excludeCredentials.map(c => ({ ...c, id: base64ToBuffer(c.id) }));
-                    }
-                    const cred = await navigator.credentials.create({ publicKey });
-                    if (!cred) throw new Error('Falha ao criar credencial');
-                    const rawId = cred.rawId;
-                    const attObj = cred.response.attestationObject;
-                    const clientJSON = cred.response.clientDataJSON;
-                    const payload = {
-                      state_id,
-                      id: cred.id,
-                      rawId: bufferToBase64(rawId),
-                      publicKey: bufferToBase64(attObj),
-                      clientDataJSON: bufferToBase64(clientJSON),
-                    };
-                    await api.passkeyRegisterVerify(selectedStudent.student_id, payload);
-                    const pk = await api.listStudentPasskeys(selectedStudent.student_id);
-                    setPasskeys(pk.webauthn_credentials || []);
-                    toast.success('Passkey registrada com sucesso');
-                  } catch (err) {
-                    console.error(err);
-                    toast.error(err.message || 'Erro no registro WebAuthn');
-                  }
-                }} className="bg-[#ccff00] text-black px-3 py-2 rounded-sm">Registrar Passkey</button>
-                <button onClick={async () => { const pk = await api.listStudentPasskeys(selectedStudent.student_id); setPasskeys(pk.webauthn_credentials || []); }} className="bg-zinc-800 text-white px-3 py-2 rounded-sm">Atualizar</button>
-              </div>
-              <ul className="mt-3 text-sm text-zinc-300 space-y-1">
-                {passkeys.map((p, i) => (
-                  <li key={i} className="border border-zinc-800 rounded-sm p-2">ID: {p.id} • Criado: {new Date(p.created_at).toLocaleString()}</li>
+      <SectionCard title="Base de alunos" description="Lista operacional com leitura rapida de plano, status e vencimento." bodyClassName="p-0">
+        {students.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table data-testid="students-table" className="w-full min-w-[980px] text-sm">
+              <thead>
+                <tr className="border-b border-zinc-900 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                  <th className="px-5 py-4">Aluno</th>
+                  <th className="px-5 py-4">CPF</th>
+                  <th className="px-5 py-4">Plano</th>
+                  <th className="px-5 py-4">Status</th>
+                  <th className="px-5 py-4">Vencimento</th>
+                  <th className="px-5 py-4 text-right">Acoes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {students.map((student) => (
+                  <tr key={student.student_id} className="border-b border-zinc-900/70 hover:bg-zinc-950/55">
+                    <td className="px-5 py-4">
+                      <button type="button" onClick={() => viewStudent(student)} className="text-left">
+                        <p className="font-semibold text-zinc-100">{student.nome}</p>
+                        <p className="mt-1 text-xs text-zinc-500">{student.email || 'Sem e-mail'}</p>
+                      </button>
+                    </td>
+                    <td className="px-5 py-4 text-zinc-400">{student.cpf || '-'}</td>
+                    <td className="px-5 py-4 text-zinc-300">{getPlanName(student.plano_id)}</td>
+                    <td className="px-5 py-4">
+                      <StatusBadge label={String(student.status || '').toLowerCase() === 'ativo' ? 'Ativo' : 'Inativo'} tone={statusTone(student.status)} />
+                    </td>
+                    <td className="px-5 py-4 text-zinc-400">
+                      {student.data_vencimento ? new Date(student.data_vencimento).toLocaleDateString('pt-BR') : '-'}
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => viewStudent(student)}>
+                          Ver
+                        </Button>
+                        {canManageStudents ? (
+                          <>
+                            <Button size="sm" variant="ghost" onClick={() => openEdit(student)}>
+                              <Pencil className="h-4 w-4" />
+                              Editar
+                            </Button>
+                            <Button size="sm" variant="danger" onClick={() => askDelete(student.student_id, student.nome)}>
+                              <Trash2 className="h-4 w-4" />
+                              Remover
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
                 ))}
-              </ul>
-            </div>
+              </tbody>
+            </table>
           </div>
-        </div>
-      )}
-
-      {/* Modal */}
-      <AnimatePresence>
-        {modal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-            onClick={() => setModal(null)}>
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-800 rounded-md w-full max-w-lg max-h-[90vh] overflow-y-auto"
-              onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between p-5 border-b border-zinc-800">
-                <h3 className="font-heading text-xl font-semibold uppercase">{modal === 'create' ? 'Novo Aluno' : 'Editar Aluno'}</h3>
-                <button data-testid="close-modal-btn" onClick={() => setModal(null)} className="p-1 hover:bg-zinc-800 rounded-sm"><X className="w-5 h-5" /></button>
-              </div>
-              <form onSubmit={handleSave} className="p-5 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Nome *</label>
-                    <input data-testid="student-nome-input" value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" required />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">E-mail</label>
-                    <input data-testid="student-email-input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">CPF *</label>
-                    <input data-testid="student-cpf-input" value={form.cpf} onChange={e => setForm({ ...form, cpf: normalizeCpfInput(e.target.value) })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" placeholder="000.000.000-00" required />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Telefone</label>
-                    <input data-testid="student-telefone-input" value={form.telefone} onChange={e => setForm({ ...form, telefone: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Plano</label>
-                    <select data-testid="student-plano-select" value={form.plano_id} onChange={e => setForm({ ...form, plano_id: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm">
-                      <option value="">Selecionar plano</option>
-                      {plans.map(p => <option key={p.plan_id} value={p.plan_id}>{p.nome} - R$ {p.valor.toFixed(2).replace('.', ',')}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Matricula</label>
-                    <input value={form.matricula} onChange={e => setForm({ ...form, matricula: e.target.value })}
-                      placeholder="Opcional - ex.: ALU0001"
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Tag RFID</label>
-                    <input data-testid="student-rfid-input" value={form.tag_rfid} onChange={e => setForm({ ...form, tag_rfid: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">ID Biometria</label>
-                    <input data-testid="student-bio-input" value={form.biometria_id} onChange={e => setForm({ ...form, biometria_id: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Peso (kg)</label>
-                    <input type="number" step="0.1" value={form.peso_kg} onChange={e => setForm({ ...form, peso_kg: e.target.value === '' ? '' : Number(e.target.value) })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Idade</label>
-                    <input type="number" value={form.idade} onChange={e => setForm({ ...form, idade: e.target.value === '' ? '' : Number(e.target.value) })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Altura (cm)</label>
-                    <input type="number" step="0.1" value={form.altura_cm} onChange={e => setForm({ ...form, altura_cm: e.target.value === '' ? '' : Number(e.target.value) })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Dias de frequência</label>
-                    <input type="number" value={form.dias_frequencia} onChange={e => setForm({ ...form, dias_frequencia: e.target.value === '' ? 0 : Number(e.target.value) })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Treino</label>
-                    <textarea value={form.treino} onChange={e => setForm({ ...form, treino: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm min-h-20 p-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Status</label>
-                    <select data-testid="student-status-select" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm">
-                      <option value="ativo">Ativo</option>
-                      <option value="inativo">Inativo</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Vencimento</label>
-                    <input data-testid="student-vencimento-input" type="date" value={form.data_vencimento} onChange={e => setForm({ ...form, data_vencimento: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
-                  </div>
-                  <div className="md:col-span-2 border border-zinc-800 rounded-sm p-3 bg-zinc-950/40">
-                    <p className="text-xs text-zinc-400 mb-2">
-                      Matricula e um codigo interno de identificacao. Voce pode informar manualmente ou deixar em branco para geracao automatica.
-                    </p>
-                    <p className="text-xs text-zinc-500 mb-2">
-                      Login do aluno: defina senha inicial ou deixe em branco para gerar senha temporaria segura.
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-sm font-medium text-zinc-400 mb-1 block">Senha inicial do aluno</label>
-                        <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
-                          placeholder={modal === 'create' ? 'Minimo 8 caracteres (opcional)' : 'Preencha para redefinir'}
-                          className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" />
-                      </div>
-                      <div className="flex flex-col justify-center gap-2 text-xs text-zinc-300">
-                        <label className="flex items-center gap-2">
-                          <input type="checkbox" checked={form.auth_login_enabled} onChange={e => setForm({ ...form, auth_login_enabled: e.target.checked })} />
-                          Permitir login do aluno
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input type="checkbox" checked={form.auto_generate_password} onChange={e => setForm({ ...form, auto_generate_password: e.target.checked })} />
-                          Gerar senha temporaria automaticamente
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input type="checkbox" checked={form.force_password_reset} onChange={e => setForm({ ...form, force_password_reset: e.target.checked })} />
-                          Exigir troca de senha no primeiro acesso
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-2">
-                  <button data-testid="save-student-btn" type="submit" disabled={saving}
-                    className="flex-1 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-10 rounded-sm hover:bg-[#b3e600] transition-all disabled:opacity-50">
-                    {saving ? 'Salvando...' : 'Salvar'}
-                  </button>
-                  {modal === 'edit' && (
-                    <button type="button" onClick={handleRegisterBiometria} className="px-4 bg-blue-700 text-white font-semibold uppercase tracking-wide text-xs h-10 rounded-sm hover:bg-blue-600">
-                      Registrar biometria
-                    </button>
-                  )}
-                  <button type="button" onClick={() => setModal(null)} className="px-6 bg-zinc-800 text-white font-semibold uppercase tracking-wide text-sm h-10 rounded-sm hover:bg-zinc-700">
-                    Cancelar
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </motion.div>
+        ) : (
+          <div className="p-5">
+            <EmptyState icon={Users} title="Nenhum aluno encontrado" description="Ajuste os filtros ou cadastre o primeiro aluno para iniciar a operacao." />
+          </div>
         )}
-      </AnimatePresence>
+      </SectionCard>
+
+      <SidePanel
+        open={Boolean(selectedStudent)}
+        onClose={closeDetail}
+        title={selectedStudent ? selectedStudent.nome : 'Detalhes do aluno'}
+        description="Dados fisicos, credenciais e passkeys do aluno sem trocar de contexto."
+        actions={
+          <Button variant="ghost" onClick={closeDetail}>
+            Fechar
+          </Button>
+        }
+      >
+        {selectedStudent ? (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge label={String(selectedStudent.status || '').toLowerCase() === 'ativo' ? 'Ativo' : 'Inativo'} tone={statusTone(selectedStudent.status)} />
+              <StatusBadge label={selectedStudent.auth_login_enabled !== false ? 'Login liberado' : 'Sem login'} tone={selectedStudent.auth_login_enabled !== false ? 'info' : 'neutral'} />
+            </div>
+
+            <div className="grid gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-4 md:grid-cols-2">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Contato</p>
+                <p className="mt-1 text-sm text-zinc-100">{selectedStudent.email || 'Sem e-mail'}</p>
+                <p className="mt-1 text-sm text-zinc-400">{selectedStudent.cpf || '-'}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Plano</p>
+                <p className="mt-1 text-sm text-zinc-100">{getPlanName(selectedStudent.plano_id)}</p>
+                <p className="mt-1 text-sm text-zinc-400">Vence em {selectedStudent.data_vencimento ? new Date(selectedStudent.data_vencimento).toLocaleDateString('pt-BR') : '-'}</p>
+              </div>
+            </div>
+
+            <SectionCard title="Indicadores fisicos" description="Edicao rapida com salvamento por campo ao perder o foco.">
+              <div className="grid gap-4 md:grid-cols-2">
+                <TextField label="Peso (kg)" type="number" step="0.1" defaultValue={selectedStudent.peso_kg ?? selectedStudent.peso ?? ''} onBlur={(event) => saveStudentDetails({ peso_kg: parseFloat(event.target.value) || 0 })} />
+                <TextField label="Idade" type="number" defaultValue={selectedStudent.idade || ''} onBlur={(event) => saveStudentDetails({ idade: parseInt(event.target.value, 10) || 0 })} />
+                <TextField label="Altura (cm)" type="number" step="0.1" defaultValue={selectedStudent.altura_cm ?? selectedStudent.altura ?? ''} onBlur={(event) => saveStudentDetails({ altura_cm: parseFloat(event.target.value) || 0 })} />
+                <TextField label="Frequencia semanal" type="number" defaultValue={selectedStudent.dias_frequencia ?? selectedStudent.dias_presenca ?? 0} onBlur={(event) => saveStudentDetails({ dias_frequencia: parseInt(event.target.value, 10) || 0 })} />
+              </div>
+              <label className="mt-4 block space-y-1.5">
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Treino e observacoes</span>
+                <textarea defaultValue={selectedStudent.treino || ''} onBlur={(event) => saveStudentDetails({ treino: event.target.value })} className="min-h-[112px] w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]" />
+              </label>
+            </SectionCard>
+
+            <SectionCard
+              title="Passkeys e biometria"
+              description="Registro WebAuthn e leitura das credenciais modernas do aluno."
+              actions={
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="primary" onClick={registerPasskey}>Registrar passkey</Button>
+                  <Button size="sm" variant="ghost" onClick={refreshPasskeys}>Atualizar</Button>
+                </div>
+              }
+            >
+              <Banner tone="info" title="Credenciais modernas" description={`Passkeys registradas: ${passkeys.length}. Biometria vinculada: ${selectedStudent.biometria_id || 'nao informada'}.`} />
+              <div className="mt-4 space-y-3">
+                {passkeys.length > 0 ? passkeys.map((passkey, index) => (
+                  <div key={`${passkey.id}-${index}`} className="rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4">
+                    <p className="font-mono text-xs text-zinc-200">{passkey.id}</p>
+                    <p className="mt-1 text-xs text-zinc-500">Criado em {new Date(passkey.created_at).toLocaleString('pt-BR')}</p>
+                  </div>
+                )) : <EmptyState icon={Fingerprint} title="Sem passkeys registradas" description="Registre uma passkey neste painel para habilitar autenticacao moderna do aluno." />}
+              </div>
+            </SectionCard>
+          </div>
+        ) : null}
+      </SidePanel>
+
+      <Dialog
+        open={Boolean(formMode)}
+        onClose={() => setFormMode('')}
+        size="lg"
+        title={formMode === 'create' ? 'Novo aluno' : 'Editar aluno'}
+        description="Cadastre dados cadastrais, credenciais e contexto fisico do aluno em um unico fluxo."
+        actions={
+          <>
+            {formMode === 'edit' ? (
+              <Button type="button" variant="ghost" onClick={handleRegisterBiometria}>
+                Registrar biometria
+              </Button>
+            ) : null}
+            <Button type="button" variant="secondary" onClick={() => setFormMode('')}>
+              Cancelar
+            </Button>
+            <Button type="button" variant="primary" disabled={saving} onClick={() => document.getElementById('student-form')?.requestSubmit()}>
+              {saving ? 'Salvando...' : 'Salvar aluno'}
+            </Button>
+          </>
+        }
+      >
+        <form id="student-form" onSubmit={handleSave} className="space-y-4">
+          <StudentFormFields form={form} setForm={setForm} plans={plans} />
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(confirmAction)}
+        onClose={() => setConfirmAction(null)}
+        size="sm"
+        title={confirmAction?.title}
+        description={confirmAction?.description}
+        actions={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmAction(null)}>Voltar</Button>
+            <Button variant="danger" onClick={async () => {
+              try {
+                await confirmAction?.run?.();
+                setConfirmAction(null);
+              } catch (err) {
+                toast.error(err?.message || 'Falha ao executar acao.');
+              }
+            }}>
+              {confirmAction?.actionLabel || 'Confirmar'}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-zinc-400">A lista sera atualizada automaticamente apos a resposta do backend.</p>
+      </Dialog>
     </div>
   );
 }

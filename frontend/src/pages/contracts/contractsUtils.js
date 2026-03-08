@@ -39,8 +39,16 @@ export function badgeClass(status) {
 }
 
 export function contractBadge(contractStatus) {
+  const normalized = String(contractStatus || '').toLowerCase();
   return {
     className: badgeClass(contractStatus),
+    tone: ['active'].includes(normalized)
+      ? 'success'
+      : ['pending_activation', 'scheduled_cancel', 'scheduled_freeze'].includes(normalized)
+        ? 'info'
+        : ['frozen'].includes(normalized)
+          ? 'warning'
+          : 'danger',
     label: contractStatusLabel(contractStatus),
   };
 }
@@ -49,13 +57,28 @@ export function financialBadge(financialStatus) {
   const normalized = String(financialStatus || '').toLowerCase();
   return {
     className: badgeClass(financialStatus),
+    tone: ['paid'].includes(normalized)
+      ? 'success'
+      : ['pending', 'open'].includes(normalized)
+        ? 'info'
+        : ['overdue', 'failed', 'partially_paid'].includes(normalized)
+          ? 'warning'
+          : 'danger',
     label: normalized === 'paid' ? 'Em dia' : financialStatusLabel(financialStatus),
   };
 }
 
 export function accessBadge(accessStatus) {
+  const normalized = String(accessStatus || '').toLowerCase();
   return {
     className: badgeClass(accessStatus),
+    tone: ['allowed'].includes(normalized)
+      ? 'success'
+      : ['grace_period'].includes(normalized)
+        ? 'info'
+        : ['suspended'].includes(normalized)
+          ? 'warning'
+          : 'danger',
     label: accessStatusLabel(accessStatus),
   };
 }

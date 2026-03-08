@@ -3,12 +3,32 @@
 @tailwind utilities;
 
 :root {
-  --brand-primary: #ccff00;
-  --brand-primary-hover: #b3e600;
-  --brand-primary-rgb: 204 255 0;
-  --surface-base: #09090b;
-  --surface-raised: #111113;
-  --surface-border: #27272a;
+  --brand-primary: #c8f169;
+  --brand-primary-hover: #b4dd56;
+  --brand-primary-rgb: 200 241 105;
+  --surface-base: #090b0c;
+  --surface-canvas: #0d1113;
+  --surface-raised: #11161a;
+  --surface-soft: #171d22;
+  --surface-border: #27313a;
+  --surface-border-strong: #33404d;
+  --text-primary: #f5f7fa;
+  --text-secondary: #cbd5df;
+  --text-muted: #8b9aaa;
+  --status-success: #34d399;
+  --status-warning: #fbbf24;
+  --status-danger: #fb7185;
+  --status-info: #60a5fa;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --shadow-soft: 0 24px 80px -48px rgba(0, 0, 0, 0.7);
+  --shadow-panel: 0 28px 90px -52px rgba(0, 0, 0, 0.82);
+  --layout-max: 1480px;
+  --motion-fast: 160ms;
+  --motion-base: 240ms;
+  --motion-slow: 360ms;
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 * {
@@ -20,11 +40,13 @@
 body {
   font-family: 'Manrope', sans-serif;
   background:
-    radial-gradient(circle at top left, rgba(204, 255, 0, 0.06), transparent 24%),
-    linear-gradient(180deg, #09090b 0%, #0b0b0f 100%);
-  color: #fafafa;
+    radial-gradient(circle at top left, rgba(var(--brand-primary-rgb), 0.08), transparent 22%),
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.08), transparent 18%),
+    linear-gradient(180deg, #090b0c 0%, #0d1113 100%);
+  color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  min-height: 100vh;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -56,11 +78,12 @@ input,
 select,
 textarea {
   transition:
-    color 0.2s ease,
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
-    transform 0.2s ease;
+    color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-base) var(--ease-standard),
+    transform var(--motion-fast) var(--ease-standard),
+    opacity var(--motion-fast) var(--ease-standard);
 }
 
 :focus-visible {
@@ -71,6 +94,26 @@ textarea {
 ::selection {
   background: rgb(var(--brand-primary-rgb) / 0.24);
   color: #fff;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell-grid {
+  width: min(100%, var(--layout-max));
+}
+
+.surface-panel {
+  background: linear-gradient(180deg, rgba(17, 22, 26, 0.92), rgba(12, 16, 19, 0.94));
+  border: 1px solid rgba(39, 49, 58, 0.92);
+  box-shadow: var(--shadow-panel);
+}
+
+.surface-card {
+  background: rgba(17, 22, 26, 0.82);
+  border: 1px solid rgba(39, 49, 58, 0.82);
+  box-shadow: var(--shadow-soft);
 }
 
 @media (prefers-reduced-motion: reduce) {

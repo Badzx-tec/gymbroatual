@@ -116,7 +116,7 @@ export default function ContractsTable({
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-sm text-red-200">
+      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-6 text-sm text-red-200">
         <p>Falha ao carregar contratos: {error}</p>
         <button
           type="button"
@@ -132,7 +132,7 @@ export default function ContractsTable({
 
   if (!loading && !rows.length) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/80 p-10 text-center">
+      <div className="rounded-2xl border border-zinc-900 bg-zinc-950/72 p-10 text-center">
         <p className="text-sm text-zinc-300">
           {isFiltered ? 'Nenhum contrato encontrado para os filtros aplicados.' : 'Nenhum contrato cadastrado ainda.'}
         </p>
@@ -150,7 +150,7 @@ export default function ContractsTable({
             <button
               type="button"
               onClick={onCreateContract}
-              className="h-9 rounded-md bg-[#ccff00] px-3 text-xs font-bold uppercase text-black hover:bg-[#b3e600]"
+              className="h-9 rounded-md bg-[var(--brand-primary)] px-3 text-xs font-bold uppercase text-black hover:bg-[var(--brand-primary-hover)]"
             >
               Criar primeiro contrato
             </button>
@@ -161,7 +161,7 @@ export default function ContractsTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/80">
+    <div className="overflow-hidden rounded-2xl border border-zinc-900 bg-zinc-950/72">
       <div className="overflow-x-auto">
         <table className="min-w-[1080px] w-full text-sm">
           <thead>
@@ -172,7 +172,7 @@ export default function ContractsTable({
                   checked={allSelected}
                   onChange={(event) => onToggleAll(event.target.checked)}
                   aria-label="Selecionar todos"
-                  className="accent-[#ccff00]"
+                  className="accent-[var(--brand-primary)]"
                 />
               </th>
               {sortableHeaders.map((header) => (
@@ -221,7 +221,7 @@ export default function ContractsTable({
                           checked={selectedSet.has(row.contract_id)}
                           onChange={(event) => onToggleRow(row.contract_id, event.target.checked)}
                           aria-label={`Selecionar contrato ${row.contract_id}`}
-                          className="accent-[#ccff00]"
+                          className="accent-[var(--brand-primary)]"
                         />
                       </td>
                       <td className="px-2 py-3">
