@@ -436,3 +436,33 @@
 - `npm --prefix frontend run build` -> **passa**
 - `python -m pytest backend/tests/test_student_auth_and_portal.py -q` -> **6 passed**
 - `python -m pytest backend/tests -q` -> **92 passed**
+
+## Dashboard do aluno, Configuracoes, Plataforma e Cobranca admin
+- `StudentDashboardPage` foi refeita com:
+  - `PageHeader`
+  - banner operacional de acesso
+  - cards de resumo
+  - blocos de contrato, cobrancas pendentes, acessos e avisos
+  - status visuais alinhados com a semantica financeira e de acesso
+- `ProfilePage` foi transformada em uma tela de configuracoes mais clara:
+  - dados da conta
+  - branding da academia
+  - senha
+  - leitura de papel/perfil
+- `PlatformAdminPage` foi refeito para operacao real:
+  - busca de owners
+  - detalhe lateral por owner
+  - dialogs para dar e remover carencia
+  - fim de `window.prompt` e `window.confirm`
+  - melhor leitura de financeiro, owners e logs globais
+- `BillingCenterPage` recebeu melhoria operacional:
+  - banner de risco financeiro
+  - cards mais claros
+  - detalhe lateral para faturas, tentativas e eventos
+  - filtros e acoes mais consistentes
+  - correcoes de copy e encoding visivel
+
+### Validacao desta etapa
+- `npm --prefix frontend run lint` -> **passa**
+- `npm --prefix frontend run build` -> **passa**
+- `python -m pytest backend/tests -q` -> **92 passed**

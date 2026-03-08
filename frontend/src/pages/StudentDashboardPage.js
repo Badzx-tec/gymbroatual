@@ -1,78 +1,98 @@
 import React from 'react';
-import { CalendarClock, ShieldCheck, Bell, ScanLine, AlertTriangle, RefreshCw } from 'lucide-react';
+import {
+  AlertTriangle,
+  Bell,
+  CalendarClock,
+  CreditCard,
+  RefreshCw,
+  ScanLine,
+  ShieldCheck,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import Banner from '../components/ui/Banner';
+import Button from '../components/ui/Button';
+import EmptyState from '../components/ui/EmptyState';
+import LoadingScreen from '../components/ui/LoadingScreen';
+import PageHeader from '../components/ui/PageHeader';
+import SectionCard from '../components/ui/SectionCard';
+import StatCard from '../components/ui/StatCard';
+import StatusBadge from '../components/ui/StatusBadge';
+import {
+  formatBillingDate,
+  formatBillingMoney,
+  getBlockedReasonLabel,
+  getStatusMeta,
+} from '../features/student-billing/studentBillingUtils';
 
-function formatDate(value) {
-  if (!value) return '-';
-  try {
-    return new Date(value).toLocaleString('pt-BR');
-  } catch {
-    return '-';
-  }
-}
-
-function formatMoney(value) {
-  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function statusLabel(value) {
-  const normalized = String(value || '').toLowerCase();
-  if (normalized === 'active') return 'Ativo';
-  if (normalized === 'allowed') return 'Liberado';
-  if (normalized === 'grace_period') return 'Carencia';
-  if (normalized === 'past_due') return 'Em atraso';
-  if (normalized === 'overdue') return 'Atrasado';
-  if (normalized === 'failed') return 'Falha';
-  if (normalized === 'expired') return 'Vencido';
-  if (normalized === 'canceled') return 'Cancelado';
-  if (normalized === 'blocked') return 'Bloqueado';
-  if (normalized === 'suspended') return 'Suspenso';
-  if (normalized === 'frozen') return 'Congelado';
-  if (normalized === 'pending') return 'Pendente';
-  return value || '-';
-}
-
-function statusClass(value) {
-  const normalized = String(value || '').toLowerCase();
-  if (['active', 'allowed', 'paid'].includes(normalized)) {
-    return 'bg-green-500/15 border-green-500/30 text-green-300';
-  }
-  if (['pending', 'open', 'grace_period', 'scheduled_cancel', 'scheduled_freeze'].includes(normalized)) {
-    return 'bg-blue-500/15 border-blue-500/30 text-blue-300';
-  }
-  if (['overdue', 'failed', 'frozen', 'suspended', 'partially_paid'].includes(normalized)) {
-    return 'bg-yellow-500/15 border-yellow-500/30 text-yellow-300';
-  }
-  return 'bg-red-500/15 border-red-500/30 text-red-300';
-}
-
-function accessExplanation(accessStatus, accessContext) {
+function getAccessBanner(accessStatus, accessContext, nextCharge) {
   const status = String(accessStatus || '').toLowerCase();
-  const reason = String(accessContext?.blocked_reason || '').toLowerCase();
-  if (status === 'grace_period') {
-    return accessContext?.grace_until
-      ? `Seu acesso esta em carencia ate ${formatDate(accessContext.grace_until)}.`
-      : 'Seu acesso esta em periodo de carencia.';
-  }
+  const blockedReason = String(accessContext?.blocked_reason || '').toLowerCase();
+
   if (status === 'blocked') {
-    if (reason === 'financial_default_after_grace') {
-      return 'Acesso bloqueado por inadimplencia apos o fim da carencia. Procure a recepcao.';
-    }
-    if (reason === 'manual_block') {
-      return 'Acesso bloqueado manualmente pela academia. Procure a recepcao.';
-    }
-    if (reason === 'contract_ended') {
-      return 'Contrato encerrado. Renove seu plano para voltar a acessar.';
-    }
-    if (reason === 'contract_frozen') {
-      return 'Contrato congelado no momento.';
-    }
-    return 'Acesso temporariamente bloqueado.';
+    return {
+      tone: 'danger',
+      title: 'Acesso bloqueado',
+      description: blockedReason
+        ? `Motivo atual: ${getBlockedReasonLabel(blockedReason)}.`
+        : 'Seu acesso esta bloqueado. Procure a recepcao para regularizar.',
+    };
   }
-  if (status === 'suspended') return 'Seu contrato esta suspenso.';
-  return 'Seu acesso esta liberado.';
+
+  if (status === 'grace_period') {
+    return {
+      tone: 'warning',
+      title: 'Acesso liberado em carencia',
+      description: accessContext?.grace_until
+        ? `Voce ainda pode entrar ate ${formatBillingDate(accessContext.grace_until)}. Regularize antes desse prazo para evitar bloqueio.`
+        : 'Existe carencia ativa. Regularize o financeiro antes do bloqueio.',
+    };
+  }
+
+  if (nextCharge && ['overdue', 'failed', 'partially_paid'].includes(String(nextCharge.status || '').toLowerCase())) {
+    return {
+      tone: 'warning',
+      title: 'Pendencia financeira em aberto',
+      description: 'Existe cobranca com atraso ou falha. Procure a recepcao para manter a catraca liberada.',
+    };
+  }
+
+  return {
+    tone: 'success',
+    title: 'Acesso liberado',
+    description: 'Seu contrato e acesso estao em situacao regular no momento.',
+  };
+}
+
+function AccessLogItem({ item }) {
+  const allowed = Boolean(item.autorizado || item.decision === 'allow');
+  const reason = item.reason || item.motivo || '-';
+
+  return (
+    <li className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-zinc-100">
+            {allowed ? 'Acesso liberado' : 'Acesso negado'}
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">{formatBillingDate(item.timestamp || item.created_at)}</p>
+        </div>
+        <StatusBadge label={allowed ? 'Liberado' : 'Negado'} tone={allowed ? 'success' : 'danger'} size="sm" />
+      </div>
+      <p className="mt-2 text-sm text-zinc-400">{reason}</p>
+    </li>
+  );
+}
+
+function NotificationItem({ item }) {
+  return (
+    <li className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-3">
+      <p className="text-sm font-semibold text-zinc-100">{item.titulo || 'Aviso'}</p>
+      <p className="mt-1 text-sm text-zinc-400">{item.mensagem || '-'}</p>
+      <p className="mt-2 text-xs text-zinc-500">{formatBillingDate(item.created_at)}</p>
+    </li>
+  );
 }
 
 export default function StudentDashboardPage() {
@@ -90,11 +110,13 @@ export default function StudentDashboardPage() {
     }
     try {
       const response = await api.studentPortalDashboard();
-      setData(response);
+      setData(response || null);
+      return response || null;
     } catch (err) {
       const message = err?.message || 'Erro ao carregar painel do aluno';
       setError(message);
       toast.error(message);
+      throw err;
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -102,15 +124,11 @@ export default function StudentDashboardPage() {
   }, []);
 
   React.useEffect(() => {
-    load();
+    load().catch(() => {});
   }, [load]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-48">
-        <div className="w-8 h-8 border-2 border-[#ccff00] border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
+    return <LoadingScreen label="Carregando painel do aluno..." />;
   }
 
   const student = data?.student || {};
@@ -120,145 +138,177 @@ export default function StudentDashboardPage() {
   const logs = data?.recent_access_logs || [];
   const notifications = data?.notifications || [];
   const upcomingCharges = data?.upcoming_charges || [];
-  const nextCharge = upcomingCharges.find((item) => ['open', 'overdue', 'partially_paid', 'failed'].includes(String(item?.status || '').toLowerCase()));
+  const nextCharge = upcomingCharges.find((item) => ['open', 'overdue', 'partially_paid', 'failed'].includes(String(item?.status || '').toLowerCase())) || null;
+  const accessMeta = getStatusMeta(accessStatus);
+  const contractMeta = getStatusMeta(contract?.contract_status || contract?.status);
+  const financialMeta = getStatusMeta(contract?.financial_status);
+  const banner = getAccessBanner(accessStatus, accessContext, nextCharge);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-2xl md:text-3xl font-bold uppercase tracking-tight">Meu Painel</h1>
-          <p className="text-zinc-400 text-sm mt-1">
-            Acompanhe seu plano, situacao de acesso e cobrancas.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => load({ silent: true })}
-          className="h-9 px-3 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-xs uppercase tracking-wide inline-flex items-center gap-2"
-        >
-          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          Atualizar
-        </button>
-      </div>
-
-      {error && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-md p-3 text-xs text-yellow-200">
-          {error}
-        </div>
-      )}
-
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="w-4 h-4 text-[#ccff00] mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold">{statusLabel(accessStatus)}</p>
-            <p className="text-xs text-zinc-400 mt-1">{accessExplanation(accessStatus, accessContext)}</p>
-            {accessContext?.next_retry_at && (
-              <p className="text-xs text-zinc-500 mt-1">
-                Proxima tentativa de cobranca: {formatDate(accessContext.next_retry_at)}
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <p className="text-xs text-zinc-500 uppercase tracking-wide flex items-center gap-1">
-            <ShieldCheck className="w-3.5 h-3.5" /> Situacao de acesso
-          </p>
-          <p className="text-xl font-semibold mt-2">{statusLabel(accessStatus)}</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <p className="text-xs text-zinc-500 uppercase tracking-wide">Plano</p>
-          <p className="text-xl font-semibold mt-2">{contract?.plan_name || student.plan_id || '-'}</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <p className="text-xs text-zinc-500 uppercase tracking-wide flex items-center gap-1">
-            <CalendarClock className="w-3.5 h-3.5" /> Vencimento
-          </p>
-          <p className="text-sm font-semibold mt-2">{formatDate(contract?.current_period_end || student.plan_expires_at)}</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <p className="text-xs text-zinc-500 uppercase tracking-wide">Proxima cobranca</p>
-          <p className="text-sm font-semibold mt-2">
-            {nextCharge ? `${formatDate(nextCharge.due_at)} - ${formatMoney(nextCharge.amount)}` : '-'}
-          </p>
-        </div>
-      </div>
-
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-        <h2 className="font-semibold uppercase text-sm tracking-wide mb-3">Meu contrato atual</h2>
-        {!contract && <p className="text-sm text-zinc-500">Nenhum contrato encontrado.</p>}
-        {contract && (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-              <div>
-                <p className="text-zinc-500">Inicio</p>
-                <p>{formatDate(contract.current_period_start)}</p>
-              </div>
-              <div>
-                <p className="text-zinc-500">Vencimento</p>
-                <p>{formatDate(contract.current_period_end)}</p>
-              </div>
-              <div>
-                <p className="text-zinc-500">Valor</p>
-                <p>{formatMoney(contract.amount)}</p>
-              </div>
-              <div>
-                <p className="text-zinc-500">Matricula</p>
-                <p>{student.matricula || '-'}</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2 mt-3">
-              <span className={`px-2 py-1 rounded-sm border text-xs uppercase font-semibold ${statusClass(contract.contract_status)}`}>
-                Contratual: {statusLabel(contract.contract_status)}
-              </span>
-              <span className={`px-2 py-1 rounded-sm border text-xs uppercase font-semibold ${statusClass(contract.financial_status)}`}>
-                Financeiro: {statusLabel(contract.financial_status)}
-              </span>
-              <span className={`px-2 py-1 rounded-sm border text-xs uppercase font-semibold ${statusClass(contract.access_status)}`}>
-                Acesso: {statusLabel(contract.access_status)}
-              </span>
-            </div>
-          </>
+      <PageHeader
+        eyebrow="Portal do aluno"
+        title="Meu painel"
+        subtitle="Veja rapidamente se sua entrada esta liberada, quando vence o plano e quais cobrancas exigem atencao."
+        actions={(
+          <Button type="button" onClick={() => load({ silent: true })} variant="secondary" size="sm">
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Atualizar
+          </Button>
         )}
+      />
+
+      {error ? (
+        <Banner
+          tone="danger"
+          title="Falha ao carregar o painel"
+          description={error}
+          actions={(
+            <Button type="button" onClick={() => load()} variant="danger" size="sm">
+              Tentar novamente
+            </Button>
+          )}
+        />
+      ) : null}
+
+      <Banner tone={banner.tone} title={banner.title} description={banner.description} />
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Situacao de acesso"
+          value={accessMeta.label}
+          hint={accessContext?.grace_until ? `Carencia ate ${formatBillingDate(accessContext.grace_until)}` : 'Use este status para saber se a catraca libera agora.'}
+          icon={ShieldCheck}
+          accent={accessMeta.tone}
+        />
+        <StatCard
+          label="Plano atual"
+          value={contract?.plan_name || student.plan_id || '-'}
+          hint={`Matricula ${student.matricula || '-'}`}
+          icon={CalendarClock}
+          accent="info"
+        />
+        <StatCard
+          label="Vigencia atual"
+          value={formatBillingDate(contract?.current_period_end || student.plan_expires_at)}
+          hint="Data limite do contrato ou plano em vigor."
+          icon={CalendarClock}
+          accent={contract ? contractMeta.tone : 'default'}
+        />
+        <StatCard
+          label="Proxima cobranca"
+          value={nextCharge ? formatBillingMoney(nextCharge.amount) : '-'}
+          hint={nextCharge ? formatBillingDate(nextCharge.due_at) : 'Nenhuma cobranca pendente.'}
+          icon={CreditCard}
+          accent={nextCharge ? getStatusMeta(nextCharge.status).tone : 'default'}
+        />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <h2 className="font-semibold uppercase text-sm tracking-wide mb-3 flex items-center gap-2">
-            <ScanLine className="w-4 h-4" /> Historico de acessos
-          </h2>
-          <ul className="space-y-2 text-sm max-h-72 overflow-auto pr-1">
-            {logs.map((log) => (
-              <li key={log.log_id || `${log.timestamp || log.created_at}-${log.tipo || log.method || ''}`} className="border border-zinc-800 rounded-sm p-2">
-                <p className="font-medium">
-                  {(log.autorizado || log.decision === 'allow') ? 'Acesso liberado' : 'Acesso negado'}
-                </p>
-                <p className="text-zinc-500 text-xs">{formatDate(log.timestamp || log.created_at)}</p>
-                <p className="text-zinc-500 text-xs">{log.reason || log.motivo || '-'}</p>
-              </li>
-            ))}
-            {logs.length === 0 && <li className="text-zinc-500">Sem acessos registrados.</li>}
-          </ul>
-        </div>
+      <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <SectionCard title="Resumo do contrato" description="Leitura rapida do contrato que hoje dirige seu acesso.">
+          {contract ? (
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <StatusBadge label={`Contrato ${contractMeta.label}`} tone={contractMeta.tone} />
+                <StatusBadge label={`Financeiro ${financialMeta.label}`} tone={financialMeta.tone} />
+                <StatusBadge label={`Acesso ${accessMeta.label}`} tone={accessMeta.tone} />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <InfoTile label="Inicio" value={formatBillingDate(contract.current_period_start)} />
+                <InfoTile label="Fim" value={formatBillingDate(contract.current_period_end)} />
+                <InfoTile label="Valor" value={formatBillingMoney(contract.amount)} />
+                <InfoTile label="Aluno" value={student.name || '-'} />
+              </div>
+              {(accessContext?.next_retry_at || accessContext?.blocked_reason) ? (
+                <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-4 text-sm text-zinc-300">
+                  {accessContext?.next_retry_at ? (
+                    <p>Proxima tentativa de cobranca prevista em {formatBillingDate(accessContext.next_retry_at)}.</p>
+                  ) : null}
+                  {accessContext?.blocked_reason ? (
+                    <p className="mt-2">Motivo operacional: {getBlockedReasonLabel(accessContext.blocked_reason)}.</p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <EmptyState
+              icon={AlertTriangle}
+              title="Sem contrato associado"
+              description="A academia ainda nao vinculou um contrato ativo ao seu cadastro."
+            />
+          )}
+        </SectionCard>
 
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <h2 className="font-semibold uppercase text-sm tracking-wide mb-3 flex items-center gap-2">
-            <Bell className="w-4 h-4" /> Avisos
-          </h2>
-          <ul className="space-y-2 text-sm max-h-72 overflow-auto pr-1">
-            {notifications.map((item) => (
-              <li key={item.notif_id} className="border border-zinc-800 rounded-sm p-2">
-                <p className="font-medium">{item.titulo || 'Aviso'}</p>
-                <p className="text-zinc-400 text-xs">{item.mensagem || '-'}</p>
-              </li>
-            ))}
-            {notifications.length === 0 && <li className="text-zinc-500">Sem avisos no momento.</li>}
-          </ul>
-        </div>
+        <SectionCard title="Cobrancas pendentes" description="Titulos abertos ou vencidos que merecem atencao imediata.">
+          {upcomingCharges.length ? (
+            <ul className="space-y-2">
+              {upcomingCharges.slice(0, 6).map((charge) => {
+                const chargeMeta = getStatusMeta(charge.status);
+                return (
+                  <li key={charge.charge_id} className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-zinc-100">{formatBillingMoney(charge.amount)}</p>
+                        <p className="mt-1 text-xs text-zinc-500">Vencimento: {formatBillingDate(charge.due_at)}</p>
+                      </div>
+                      <StatusBadge label={chargeMeta.label} tone={chargeMeta.tone} size="sm" />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <EmptyState
+              icon={CreditCard}
+              title="Sem cobrancas pendentes"
+              description="Nao encontramos titulos em aberto ou em atraso neste momento."
+            />
+          )}
+        </SectionCard>
       </div>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <SectionCard title="Historico de acessos" description="Ultimos eventos da catraca associados ao seu cadastro.">
+          {logs.length ? (
+            <ul className="space-y-2">
+              {logs.slice(0, 10).map((log) => (
+                <AccessLogItem key={log.log_id || `${log.timestamp || log.created_at}-${log.reason || log.motivo || ''}`} item={log} />
+              ))}
+            </ul>
+          ) : (
+            <EmptyState
+              icon={ScanLine}
+              title="Sem acessos registrados"
+              description="Quando houver leituras de catraca, elas aparecerao aqui."
+            />
+          )}
+        </SectionCard>
+
+        <SectionCard title="Avisos da academia" description="Comunicados e lembretes mais recentes da operacao.">
+          {notifications.length ? (
+            <ul className="space-y-2">
+              {notifications.slice(0, 10).map((item) => (
+                <NotificationItem key={item.notif_id} item={item} />
+              ))}
+            </ul>
+          ) : (
+            <EmptyState
+              icon={Bell}
+              title="Sem avisos no momento"
+              description="Quando a academia publicar um aviso para seu cadastro, ele aparecera aqui."
+            />
+          )}
+        </SectionCard>
+      </div>
+    </div>
+  );
+}
+
+function InfoTile({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
+      <p className="mt-1 text-sm text-zinc-100">{value}</p>
     </div>
   );
 }
