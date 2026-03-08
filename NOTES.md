@@ -402,6 +402,37 @@
 - `npm --prefix frontend run build` -> **passa**
 - `python -m pytest backend/tests -q` -> **92 passed**
 
+## Assinatura, Academias, Planos, Acessos e shell do aluno
+- `SubscriptionPage` foi alinhada ao restante da base visual:
+  - banner operacional por estado da assinatura
+  - cards de vigencia, ultimo pagamento, carencia e faturas em atraso
+  - secoes para leitura da assinatura, proximos passos, faturas e eventos
+  - `SidePanel` para detalhe de fatura e evento
+  - botao real de sincronizacao: `Ja paguei, verificar`
+- `PlansPage` foi refeita:
+  - sem `window.confirm`
+  - cards de resumo
+  - busca e filtro de status
+  - dialog unico para criar e editar plano
+  - confirmacao de exclusao com `Dialog`
+- `AccessLogsPage` ganhou leitura operacional:
+  - cards de resumo
+  - filtros por perfil e decisao
+  - busca local
+  - destaque do principal motivo de negacao
+  - `SidePanel` com detalhe do evento de acesso
+- `StudentLayout` foi elevado para um shell mais premium:
+  - hero superior com contexto da pagina
+  - navegacao em pills
+  - melhor apresentacao do aluno logado
+  - branding mais consistente com o admin
+- `AcademiesPage` tambem foi modernizada no codigo com busca, cards, KPIs e dialogs, mas continua sem rota exposta porque essa tela ja nao estava ligada ao menu nem ao `App.js` antes desta etapa.
+
+### Validacao desta etapa
+- `npm --prefix frontend run lint` -> **passa**
+- `npm --prefix frontend run build` -> **passa**
+- `python -m pytest backend/tests -q` -> **92 passed**
+
 ## Cobranca do aluno - clareza de atraso, carencia e bloqueio
 - `GET /api/student/billing` agora retorna um resumo mais util sem quebrar compatibilidade:
   - `charge_status_totals`

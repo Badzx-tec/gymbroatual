@@ -1,16 +1,77 @@
-import React, { useState, useEffect } from 'react';
-import { api } from '../api';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Plus, Tag, Timer, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
-import { Plus, Edit2, Trash2, X, Tag } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+
+import { api } from '../api';
+import Button from '../components/ui/Button';
+import Dialog from '../components/ui/Dialog';
+import EmptyState from '../components/ui/EmptyState';
+import LoadingScreen from '../components/ui/LoadingScreen';
+import PageHeader from '../components/ui/PageHeader';
+import SearchInput from '../components/ui/SearchInput';
+import SectionCard from '../components/ui/SectionCard';
+import StatCard from '../components/ui/StatCard';
+import TextField from '../components/ui/TextField';
 import { getStoredUser } from '../lib/session';
 
 const emptyPlan = { nome: '', valor: '', duracao_dias: '', descricao: '', ativo: true };
 
+function formatMoney(value) {
+  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function PlanCard({ plan, onEdit, onDelete, canManagePlans }) {
+  return (
+    <article className="rounded-2xl border border-zinc-900 bg-zinc-950/72 p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <div className="rounded-xl border border-zinc-900 bg-zinc-900/70 p-2 text-[var(--brand-primary)]">
+              <Tag className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-zinc-100">{plan.nome}</h3>
+              <p className="text-xs text-zinc-500">{plan.descricao || 'Plano sem descricao operacional.'}</p>
+            </div>
+          </div>
+        </div>
+        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${plan.ativo ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-900 text-zinc-400'}`}>
+          {plan.ativo ? 'Ativo' : 'Inativo'}
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="rounded-xl border border-zinc-900 bg-zinc-900/60 px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Valor</p>
+          <p className="mt-2 text-lg font-semibold text-zinc-100">{formatMoney(plan.valor)}</p>
+        </div>
+        <div className="rounded-xl border border-zinc-900 bg-zinc-900/60 px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Duracao</p>
+          <p className="mt-2 text-lg font-semibold text-zinc-100">{plan.duracao_dias} dias</p>
+        </div>
+      </div>
+
+      {canManagePlans ? (
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Button type="button" variant="secondary" size="sm" onClick={() => onEdit(plan)}>
+            Editar plano
+          </Button>
+          <Button type="button" variant="danger" size="sm" onClick={() => onDelete(plan)}>
+            Remover plano
+          </Button>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 export default function PlansPage() {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [formOpen, setFormOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [form, setForm] = useState(emptyPlan);
   const [editId, setEditId] = useState('');
   const [saving, setSaving] = useState(false);
@@ -18,179 +79,198 @@ export default function PlansPage() {
   const role = String(user.role || '').toUpperCase();
   const canManagePlans = ['OWNER', 'MANAGER'].includes(role);
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+  }, []);
 
   const loadData = async () => {
+    setLoading(true);
     try {
       const data = await api.listPlans();
-      setPlans(data);
-    } catch {}
-    setLoading(false);
+      setPlans(Array.isArray(data) ? data : []);
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao carregar planos.');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const filteredPlans = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return plans.filter((plan) => {
+      const matchesSearch = !term || [plan.nome, plan.descricao]
+        .map((item) => String(item || '').toLowerCase())
+        .join(' ')
+        .includes(term);
+      const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? plan.ativo : !plan.ativo);
+      return matchesSearch && matchesStatus;
+    });
+  }, [plans, search, statusFilter]);
+
+  const summary = useMemo(() => {
+    return plans.reduce((acc, plan) => {
+      acc.total += 1;
+      if (plan.ativo) acc.active += 1;
+      acc.revenue += Number(plan.valor || 0);
+      acc.avgDuration += Number(plan.duracao_dias || 0);
+      return acc;
+    }, { total: 0, active: 0, revenue: 0, avgDuration: 0 });
+  }, [plans]);
 
   const openCreate = () => {
     if (!canManagePlans) {
       toast.error('Sem permissao para criar plano.');
       return;
     }
-    setForm(emptyPlan);
+    setForm({ ...emptyPlan });
     setEditId('');
-    setModal('create');
+    setFormOpen(true);
   };
-  const openEdit = (p) => {
+
+  const openEdit = (plan) => {
     if (!canManagePlans) {
       toast.error('Sem permissao para editar plano.');
       return;
     }
-    setForm({ nome: p.nome, valor: String(p.valor), duracao_dias: String(p.duracao_dias), descricao: p.descricao || '', ativo: p.ativo });
-    setEditId(p.plan_id);
-    setModal('edit');
+    setForm({ nome: plan.nome, valor: String(plan.valor), duracao_dias: String(plan.duracao_dias), descricao: plan.descricao || '', ativo: plan.ativo });
+    setEditId(plan.plan_id);
+    setFormOpen(true);
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
+  const handleSave = async (event) => {
+    event.preventDefault();
     if (!canManagePlans) {
       toast.error('Sem permissao para salvar plano.');
       return;
     }
     setSaving(true);
-    const payload = { ...form, valor: parseFloat(form.valor), duracao_dias: parseInt(form.duracao_dias) };
+    const payload = {
+      ...form,
+      valor: parseFloat(form.valor),
+      duracao_dias: parseInt(form.duracao_dias, 10),
+    };
     try {
-      if (modal === 'create') {
-        await api.createPlan(payload);
-        toast.success('Plano criado!');
-      } else {
+      if (editId) {
         await api.updatePlan(editId, payload);
-        toast.success('Plano atualizado!');
+        toast.success('Plano atualizado.');
+      } else {
+        await api.createPlan(payload);
+        toast.success('Plano criado.');
       }
-      setModal(null);
-      loadData();
-    } catch (err) { toast.error(err.message); }
-    setSaving(false);
-  };
-
-  const handleDelete = async (id, nome) => {
-    if (!canManagePlans) {
-      toast.error('Sem permissao para remover plano.');
-      return;
+      setFormOpen(false);
+      setEditId('');
+      await loadData();
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao salvar plano.');
+    } finally {
+      setSaving(false);
     }
-    if (!window.confirm(`Remover plano "${nome}"?`)) return;
-    try {
-      await api.deletePlan(id);
-      toast.success('Plano removido');
-      loadData();
-    } catch (err) { toast.error(err.message); }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-[#ccff00] border-t-transparent rounded-full animate-spin" /></div>;
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setSaving(true);
+    try {
+      await api.deletePlan(deleteTarget.plan_id);
+      toast.success('Plano removido.');
+      setDeleteTarget(null);
+      await loadData();
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao remover plano.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <LoadingScreen label="Carregando planos..." />;
+  }
 
   return (
-    <div data-testid="plans-page" className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Planos</h1>
-          <p className="text-zinc-400 mt-1">{plans.length} planos cadastrados</p>
+    <div className="space-y-6" data-testid="plans-page">
+      <PageHeader
+        eyebrow="Oferta comercial"
+        title="Planos"
+        subtitle="Organize o catalogo de planos, precificacao e duracao com uma superficie mais clara para operacao."
+        actions={canManagePlans ? (
+          <Button type="button" onClick={openCreate} variant="primary" size="sm">
+            <Plus className="h-4 w-4" />
+            Novo plano
+          </Button>
+        ) : null}
+      />
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Planos" value={summary.total} hint={`${summary.active} ativos`} icon={Tag} accent="info" />
+        <StatCard label="Preco acumulado" value={formatMoney(summary.revenue)} hint="Soma dos valores cadastrados" icon={Wallet} accent="success" />
+        <StatCard label="Duracao media" value={summary.total ? `${Math.round(summary.avgDuration / summary.total)} dias` : '-'} hint="Media simples da base" icon={Timer} accent="info" />
+        <StatCard label="Visiveis no filtro" value={filteredPlans.length} hint="Resultados conforme busca e status" icon={Tag} accent="default" />
+      </div>
+
+      <SectionCard title="Catalogo" description="Busque planos por nome ou descricao e refine a exibicao por status.">
+        <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+          <div className="max-w-xl">
+            <SearchInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nome ou descricao do plano" aria-label="Buscar plano" />
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant={statusFilter === 'all' ? 'primary' : 'ghost'} size="sm" onClick={() => setStatusFilter('all')}>Todos</Button>
+            <Button type="button" variant={statusFilter === 'active' ? 'primary' : 'ghost'} size="sm" onClick={() => setStatusFilter('active')}>Ativos</Button>
+            <Button type="button" variant={statusFilter === 'inactive' ? 'primary' : 'ghost'} size="sm" onClick={() => setStatusFilter('inactive')}>Inativos</Button>
+          </div>
         </div>
-        {canManagePlans && (
-          <button data-testid="add-plan-btn" onClick={openCreate}
-            className="flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-6 py-2.5 rounded-sm hover:bg-[#b3e600] transition-all hover:-translate-y-0.5">
-            <Plus className="w-4 h-4" /> Novo Plano
-          </button>
-        )}
-      </div>
+      </SectionCard>
 
-      {/* Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-        {plans.map((p, i) => (
-          <motion.div key={p.plan_id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-            data-testid={`plan-card-${p.plan_id}`}
-            className="bg-zinc-900 border border-zinc-800 rounded-md p-6 hover:border-zinc-700 transition-colors">
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-10 h-10 rounded-sm bg-[#ccff00]/10 flex items-center justify-center">
-                <Tag className="w-5 h-5 text-[#ccff00]" />
-              </div>
-              {canManagePlans && (
-                <div className="flex gap-1">
-                  <button data-testid={`edit-plan-${p.plan_id}`} onClick={() => openEdit(p)} className="p-1.5 hover:bg-zinc-800 rounded-sm transition-colors text-zinc-400 hover:text-white">
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button data-testid={`delete-plan-${p.plan_id}`} onClick={() => handleDelete(p.plan_id, p.nome)} className="p-1.5 hover:bg-red-500/10 rounded-sm transition-colors text-zinc-400 hover:text-red-500">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-            </div>
-            <h3 className="font-heading text-xl font-semibold uppercase mb-1">{p.nome}</h3>
-            <p className="text-3xl font-bold mb-1">R$ {p.valor.toFixed(2).replace('.', ',')}</p>
-            <p className="text-zinc-500 text-sm mb-3">{p.duracao_dias} dias</p>
-            {p.descricao && <p className="text-zinc-400 text-sm">{p.descricao}</p>}
-            <div className="mt-4">
-              <span className={`inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-sm border ${p.ativo ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20'}`}>
-                {p.ativo ? 'Ativo' : 'Inativo'}
-              </span>
-            </div>
-          </motion.div>
-        ))}
-        {plans.length === 0 && (
-          <div className="col-span-full text-center py-12 text-zinc-500">Nenhum plano cadastrado</div>
-        )}
-      </div>
+      {filteredPlans.length ? (
+        <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          {filteredPlans.map((plan) => (
+            <PlanCard key={plan.plan_id} plan={plan} onEdit={openEdit} onDelete={setDeleteTarget} canManagePlans={canManagePlans} />
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="Nenhum plano encontrado" description={canManagePlans ? 'Ajuste os filtros ou cadastre um novo plano.' : 'Ajuste os filtros para localizar outro plano.'} action={canManagePlans ? <Button type="button" variant="primary" onClick={openCreate}>Cadastrar plano</Button> : null} />
+      )}
 
-      {/* Modal */}
-      <AnimatePresence>
-        {modal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
-            onClick={() => setModal(null)}>
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-zinc-900 border border-zinc-800 rounded-md w-full max-w-md"
-              onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between p-5 border-b border-zinc-800">
-                <h3 className="font-heading text-xl font-semibold uppercase">{modal === 'create' ? 'Novo Plano' : 'Editar Plano'}</h3>
-                <button data-testid="close-plan-modal-btn" onClick={() => setModal(null)} className="p-1 hover:bg-zinc-800 rounded-sm"><X className="w-5 h-5" /></button>
-              </div>
-              <form onSubmit={handleSave} className="p-5 space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-zinc-400 mb-1 block">Nome *</label>
-                  <input data-testid="plan-nome-input" value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })}
-                    className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" required />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Valor (R$) *</label>
-                    <input data-testid="plan-valor-input" type="number" step="0.01" value={form.valor} onChange={e => setForm({ ...form, valor: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" required />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-zinc-400 mb-1 block">Duracao (dias) *</label>
-                    <input data-testid="plan-duracao-input" type="number" value={form.duracao_dias} onChange={e => setForm({ ...form, duracao_dias: e.target.value })}
-                      className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm h-10 px-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm" required />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-zinc-400 mb-1 block">Descricao</label>
-                  <textarea data-testid="plan-descricao-input" value={form.descricao} onChange={e => setForm({ ...form, descricao: e.target.value })}
-                    rows={3} className="w-full bg-zinc-950 border border-zinc-800 text-zinc-100 rounded-sm p-3 focus:outline-none focus:ring-1 focus:ring-[#ccff00] text-sm resize-none" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <input data-testid="plan-ativo-checkbox" type="checkbox" checked={form.ativo} onChange={e => setForm({ ...form, ativo: e.target.checked })}
-                    className="w-4 h-4 accent-[#ccff00]" />
-                  <label className="text-sm text-zinc-300">Plano ativo</label>
-                </div>
-                <div className="flex gap-3 pt-2">
-                  <button data-testid="save-plan-btn" type="submit" disabled={saving}
-                    className="flex-1 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-10 rounded-sm hover:bg-[#b3e600] transition-all disabled:opacity-50">
-                    {saving ? 'Salvando...' : 'Salvar'}
-                  </button>
-                  <button type="button" onClick={() => setModal(null)} className="px-6 bg-zinc-800 text-white font-semibold uppercase tracking-wide text-sm h-10 rounded-sm hover:bg-zinc-700">
-                    Cancelar
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Dialog
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
+        title={editId ? 'Editar plano' : 'Novo plano'}
+        description="Defina nome, valor, duracao e disponibilidade comercial deste plano."
+        actions={
+          <>
+            <Button type="button" variant="ghost" onClick={() => setFormOpen(false)}>Cancelar</Button>
+            <Button type="submit" form="plan-form" variant="primary" disabled={saving}>{saving ? 'Salvando...' : 'Salvar plano'}</Button>
+          </>
+        }
+      >
+        <form id="plan-form" onSubmit={handleSave} className="grid gap-4 md:grid-cols-2">
+          <TextField label="Nome" value={form.nome} onChange={(event) => setForm((prev) => ({ ...prev, nome: event.target.value }))} required className="md:col-span-2" />
+          <TextField label="Valor (R$)" type="number" step="0.01" value={form.valor} onChange={(event) => setForm((prev) => ({ ...prev, valor: event.target.value }))} required />
+          <TextField label="Duracao (dias)" type="number" value={form.duracao_dias} onChange={(event) => setForm((prev) => ({ ...prev, duracao_dias: event.target.value }))} required />
+          <label className="block space-y-1.5 md:col-span-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Descricao</span>
+            <textarea value={form.descricao} onChange={(event) => setForm((prev) => ({ ...prev, descricao: event.target.value }))} rows={4} className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]" />
+          </label>
+          <label className="flex items-start gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300 md:col-span-2">
+            <input type="checkbox" className="mt-1 accent-[var(--brand-primary)]" checked={Boolean(form.ativo)} onChange={(event) => setForm((prev) => ({ ...prev, ativo: event.target.checked }))} />
+            <span>Manter plano disponivel para novos contratos.</span>
+          </label>
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        title="Remover plano"
+        description="Confirme a exclusao apenas se esse plano nao for mais usado pela operacao."
+        actions={
+          <>
+            <Button type="button" variant="ghost" onClick={() => setDeleteTarget(null)} disabled={saving}>Voltar</Button>
+            <Button type="button" variant="danger" onClick={handleDelete} disabled={saving}>{saving ? 'Removendo...' : 'Remover plano'}</Button>
+          </>
+        }
+      >
+        <p className="text-sm text-zinc-400">Plano selecionado: <span className="text-zinc-100">{deleteTarget?.nome || '-'}</span></p>
+      </Dialog>
     </div>
   );
 }

@@ -1,7 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { api } from '../api';
-import { ScanLine, CheckCircle, XCircle, RefreshCw, FileSpreadsheet } from 'lucide-react';
+import { CheckCircle, FileSpreadsheet, RefreshCw, ScanLine, Search, ShieldAlert, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
+
+import { api } from '../api';
+import Button from '../components/ui/Button';
+import EmptyState from '../components/ui/EmptyState';
+import LoadingScreen from '../components/ui/LoadingScreen';
+import PageHeader from '../components/ui/PageHeader';
+import SearchInput from '../components/ui/SearchInput';
+import SectionCard from '../components/ui/SectionCard';
+import SelectField from '../components/ui/SelectField';
+import SidePanel from '../components/ui/SidePanel';
+import StatCard from '../components/ui/StatCard';
+import StatusBadge from '../components/ui/StatusBadge';
 import { directionLabel, subjectTypeLabel } from '../utils/labels';
 
 const REASON_LABELS = {
@@ -34,11 +45,7 @@ const toDate = (log) => {
 const isToday = (date) => {
   if (!date) return false;
   const now = new Date();
-  return (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  );
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
 };
 
 function reasonLabel(reason) {
@@ -47,127 +54,201 @@ function reasonLabel(reason) {
   return REASON_LABELS[key] || key.replaceAll('_', ' ');
 }
 
+function decisionMeta(log) {
+  const allowed = String(log?.decision || '').toLowerCase() === 'allow';
+  return allowed ? { label: 'Liberado', tone: 'success' } : { label: 'Negado', tone: 'danger' };
+}
+
+function DetailItem({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
+      <p className="mt-1 text-sm text-zinc-100">{value}</p>
+    </div>
+  );
+}
+
 export default function AccessLogsPage() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [profileFilter, setProfileFilter] = useState('');
+  const [decisionFilter, setDecisionFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const [selectedLog, setSelectedLog] = useState(null);
 
-  const loadData = React.useCallback(async () => {
-    setLoading(true);
+  const loadData = React.useCallback(async ({ silent = false } = {}) => {
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     try {
       const response = await api.listTurnstileAccessLogs({
         limit: 300,
         subject_type: profileFilter || undefined,
+        decision: decisionFilter || undefined,
         since_minutes: 24 * 60,
       });
       const onlyToday = (response || []).filter((item) => isToday(toDate(item)));
       setLogs(onlyToday.slice(0, 200));
     } catch (err) {
       toast.error(err?.message || 'Erro ao carregar os acessos.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-    setLoading(false);
-  }, [profileFilter]);
+  }, [profileFilter, decisionFilter]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
+  const filteredLogs = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return logs;
+    return logs.filter((log) => {
+      const haystack = [
+        log.subject_name,
+        log.student_name,
+        log.employee_name,
+        log.owner_name,
+        log.subject_id,
+        log.reason,
+        log.method,
+        log.direction,
+      ]
+        .map((item) => String(item || '').toLowerCase())
+        .join(' ');
+      return haystack.includes(term);
+    });
+  }, [logs, search]);
+
   const stats = useMemo(() => {
-    const total = logs.length;
-    const liberados = logs.filter((item) => String(item.decision || '').toLowerCase() === 'allow').length;
+    const total = filteredLogs.length;
+    const liberados = filteredLogs.filter((item) => String(item.decision || '').toLowerCase() === 'allow').length;
     const negados = total - liberados;
-    return { total, liberados, negados };
-  }, [logs]);
+    const topReason = Object.entries(filteredLogs.reduce((acc, item) => {
+      const key = String(item.reason || 'unknown').toLowerCase();
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {})).sort((a, b) => b[1] - a[1])[0];
+    return { total, liberados, negados, topReason };
+  }, [filteredLogs]);
+
+  if (loading) {
+    return <LoadingScreen label="Carregando acessos..." />;
+  }
 
   return (
-    <div data-testid="access-logs-page" className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Registro de acessos</h1>
-          <p className="text-zinc-400 mt-1">Acessos de hoje com identificacao de aluno, funcionario e dono da academia.</p>
-        </div>
-        <div className="flex gap-2">
-          <select
-            value={profileFilter}
-            onChange={(event) => setProfileFilter(event.target.value)}
-            className="h-10 bg-zinc-800 border border-zinc-700 rounded-sm px-3 text-sm"
-          >
+    <div className="space-y-6" data-testid="access-logs-page">
+      <PageHeader
+        eyebrow="Acesso"
+        title="Registro de acessos"
+        subtitle="Acompanhe entradas e negacoes de hoje com foco em perfil, direcao e motivo operacional."
+        actions={
+          <>
+            <Button type="button" onClick={() => { api.exportAccessExcel(); toast.success('Exportando acessos para Excel.'); }} variant="ghost" size="sm">
+              <FileSpreadsheet className="h-4 w-4" />
+              Excel
+            </Button>
+            <Button type="button" onClick={() => loadData({ silent: true })} variant="secondary" size="sm">
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Atualizar
+            </Button>
+          </>
+        }
+      />
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Total de hoje" value={stats.total} hint="Acessos apos filtros locais" icon={ScanLine} accent="info" />
+        <StatCard label="Liberados" value={stats.liberados} hint="Leituras autorizadas" icon={CheckCircle} accent="success" />
+        <StatCard label="Negados" value={stats.negados} hint="Leituras bloqueadas" icon={XCircle} accent={stats.negados > 0 ? 'danger' : 'default'} />
+        <StatCard label="Motivo mais comum" value={stats.topReason ? reasonLabel(stats.topReason[0]) : '-'} hint={stats.topReason ? `${stats.topReason[1]} ocorrencias` : 'Sem motivos registrados'} icon={ShieldAlert} accent={stats.negados > 0 ? 'warning' : 'default'} />
+      </div>
+
+      <SectionCard title="Filtros" description="Combine perfil, decisao e busca local para reduzir o ruido da operacao.">
+        <div className="grid gap-4 lg:grid-cols-[1fr_auto_auto] lg:items-end">
+          <div className="max-w-xl">
+            <SearchInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por pessoa, metodo, motivo ou direcao" aria-label="Buscar acessos" />
+          </div>
+          <SelectField label="Perfil" value={profileFilter} onChange={(event) => setProfileFilter(event.target.value)} className="min-w-[200px]">
             <option value="">Todos os perfis</option>
             <option value="student">Alunos</option>
             <option value="employee">Funcionarios</option>
             <option value="owner">Dono da academia</option>
-          </select>
-          <button data-testid="export-access-excel-btn" onClick={() => { api.exportAccessExcel(); toast.success('Exportando...'); }}
-            className="flex items-center gap-2 bg-zinc-800 text-white text-xs font-semibold uppercase tracking-wide px-4 py-2 rounded-sm hover:bg-zinc-700">
-            <FileSpreadsheet className="w-4 h-4 text-green-500" /> Excel
-          </button>
-          <button data-testid="refresh-logs-btn" onClick={loadData}
-            className="flex items-center gap-2 bg-zinc-800 text-white font-semibold uppercase tracking-wide text-sm px-6 py-2.5 rounded-sm hover:bg-zinc-700">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Atualizar
-          </button>
+          </SelectField>
+          <SelectField label="Decisao" value={decisionFilter} onChange={(event) => setDecisionFilter(event.target.value)} className="min-w-[180px]">
+            <option value="">Todas</option>
+            <option value="allow">Liberados</option>
+            <option value="deny">Negados</option>
+          </SelectField>
         </div>
-      </div>
+      </SectionCard>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium uppercase tracking-wide text-zinc-400">Total</span>
-            <ScanLine className="w-5 h-5 text-zinc-400" />
+      <SectionCard title="Leituras de hoje" description="Lista das leituras de catraca mais recentes do dia atual." bodyClassName="p-0">
+        {filteredLogs.length ? (
+          <div className="overflow-x-auto">
+            <table data-testid="access-logs-table" className="min-w-[1100px] w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-900 text-left text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                  <th className="px-5 py-3">Horario</th>
+                  <th className="px-5 py-3">Pessoa</th>
+                  <th className="px-5 py-3">Perfil</th>
+                  <th className="px-5 py-3">Direcao</th>
+                  <th className="px-5 py-3">Metodo</th>
+                  <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3">Motivo</th>
+                  <th className="px-5 py-3 text-right">Detalhe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredLogs.map((log, index) => {
+                  const meta = decisionMeta(log);
+                  return (
+                    <tr key={log.access_id || `${log.created_at || log.timestamp}-${index}`} className="border-b border-zinc-900/70 hover:bg-zinc-950/40">
+                      <td className="px-5 py-4 text-zinc-300 whitespace-nowrap">{formatDateTime(log.created_at || log.timestamp)}</td>
+                      <td className="px-5 py-4 font-medium text-zinc-100">{log.subject_name || log.student_name || log.employee_name || log.owner_name || log.subject_id || 'Nao identificado'}</td>
+                      <td className="px-5 py-4 text-zinc-400">{subjectTypeLabel(log.subject_type)}</td>
+                      <td className="px-5 py-4 text-zinc-400">{directionLabel(log.direction)}</td>
+                      <td className="px-5 py-4 text-zinc-400">{log.method || '-'}</td>
+                      <td className="px-5 py-4"><StatusBadge label={meta.label} tone={meta.tone} /></td>
+                      <td className="px-5 py-4 text-zinc-400">{reasonLabel(log.reason)}</td>
+                      <td className="px-5 py-4 text-right"><Button type="button" variant="ghost" size="sm" onClick={() => setSelectedLog(log)}>Ver detalhe</Button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-          <p className="text-2xl font-bold mt-2">{stats.total}</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium uppercase tracking-wide text-zinc-400">Liberados</span>
-            <CheckCircle className="w-5 h-5 text-green-500" />
+        ) : (
+          <div className="p-5">
+            <EmptyState icon={Search} title="Nenhum acesso encontrado" description="Ajuste os filtros ou aguarde novas leituras de catraca." />
           </div>
-          <p className="text-2xl font-bold mt-2 text-green-500">{stats.liberados}</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium uppercase tracking-wide text-zinc-400">Negados</span>
-            <XCircle className="w-5 h-5 text-red-500" />
-          </div>
-          <p className="text-2xl font-bold mt-2 text-red-500">{stats.negados}</p>
-        </div>
-      </div>
+        )}
+      </SectionCard>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md overflow-x-auto">
-        <table data-testid="access-logs-table" className="w-full text-sm">
-          <thead>
-            <tr className="text-zinc-500 text-xs uppercase tracking-wider border-b border-zinc-800">
-              <th className="text-left px-5 py-3 font-medium">Horario</th>
-              <th className="text-left px-5 py-3 font-medium">Pessoa</th>
-              <th className="text-left px-5 py-3 font-medium">Perfil</th>
-              <th className="text-left px-5 py-3 font-medium">Direcao</th>
-              <th className="text-left px-5 py-3 font-medium">Metodo</th>
-              <th className="text-left px-5 py-3 font-medium">Status</th>
-              <th className="text-left px-5 py-3 font-medium">Motivo</th>
-            </tr>
-          </thead>
-          <tbody>
-            {logs.map((log, i) => (
-              <tr key={log.access_id || i} className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
-                <td className="px-5 py-3 text-zinc-300 whitespace-nowrap">{formatDateTime(log.created_at || log.timestamp)}</td>
-                <td className="px-5 py-3 font-medium">
-                  {log.subject_name || log.student_name || log.employee_name || log.owner_name || log.subject_id || 'Nao identificado'}
-                </td>
-                <td className="px-5 py-3">{subjectTypeLabel(log.subject_type)}</td>
-                <td className="px-5 py-3">{directionLabel(log.direction)}</td>
-                <td className="px-5 py-3"><span className="text-xs uppercase tracking-wider bg-zinc-800 px-2 py-1 rounded-sm">{log.method || '-'}</span></td>
-                <td className="px-5 py-3">
-                  <span className={`inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-sm border ${String(log.decision || '').toLowerCase() === 'allow' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${String(log.decision || '').toLowerCase() === 'allow' ? 'bg-green-500' : 'bg-red-500'}`} />
-                    {String(log.decision || '').toLowerCase() === 'allow' ? 'Liberado' : 'Negado'}
-                  </span>
-                </td>
-                <td className="px-5 py-3 text-zinc-400">{reasonLabel(log.reason)}</td>
-              </tr>
-            ))}
-            {logs.length === 0 && <tr><td colSpan={7} className="px-5 py-8 text-center text-zinc-500">Nenhum registro de acesso</td></tr>}
-          </tbody>
-        </table>
-      </div>
+      <SidePanel
+        open={Boolean(selectedLog)}
+        onClose={() => setSelectedLog(null)}
+        title="Detalhe do acesso"
+        description="Resumo tecnico da leitura selecionada."
+        actions={<Button type="button" variant="ghost" onClick={() => setSelectedLog(null)}>Fechar</Button>}
+      >
+        {selectedLog ? (
+          <div className="space-y-3">
+            <DetailItem label="Pessoa" value={selectedLog.subject_name || selectedLog.student_name || selectedLog.employee_name || selectedLog.owner_name || selectedLog.subject_id || 'Nao identificado'} />
+            <DetailItem label="Perfil" value={subjectTypeLabel(selectedLog.subject_type)} />
+            <DetailItem label="Horario" value={formatDateTime(selectedLog.created_at || selectedLog.timestamp)} />
+            <DetailItem label="Direcao" value={directionLabel(selectedLog.direction)} />
+            <DetailItem label="Metodo" value={selectedLog.method || '-'} />
+            <DetailItem label="Resultado" value={decisionMeta(selectedLog).label} />
+            <DetailItem label="Motivo" value={reasonLabel(selectedLog.reason)} />
+            <DetailItem label="Dispositivo" value={selectedLog.device_id || '-'} />
+            <DetailItem label="Credencial" value={selectedLog.credential_masked || selectedLog.credential || '-'} />
+          </div>
+        ) : null}
+      </SidePanel>
     </div>
   );
 }
