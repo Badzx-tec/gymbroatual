@@ -114,6 +114,17 @@ class DummyRequest:
         return dict(self._payload)
 
 
+class DummyAsyncClient:
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
 def _matches(doc: dict, query: dict) -> bool:
     for key, expected in query.items():
         if isinstance(expected, dict) and "$nin" in expected:
@@ -208,3 +219,56 @@ async def test_checkout_webhook_populates_financial_domain(monkeypatch):
     assert attempts_after[0]["status"] == "succeeded"
     assert events_after[0]["source"] == "webhook"
     assert events_after[0]["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_payment_webhook_uses_payment_details_to_unlock_panel(monkeypatch):
+    db = FakeDb()
+
+    async def bypass_rate_limit(**_kwargs):
+        return None
+
+    async def fake_fetch_payment(_client, payment_id: str, _token: str):
+        assert payment_id == "pay_approved_1"
+        return {
+            "id": payment_id,
+            "status": "approved",
+            "external_reference": "own_1",
+            "date_approved": "2026-03-07T15:10:00Z",
+        }
+
+    settings = SimpleNamespace(
+        mp_access_token="token_123",
+        mp_webhook_secret=None,
+        frontend_base_url="http://localhost:3000",
+        app_base_url="http://localhost:8000",
+        subscription_monthly_amount=139.90,
+        webhook_rate_limit=100,
+        webhook_window_seconds=60,
+    )
+
+    monkeypatch.setattr(billing, "get_db", lambda: db)
+    monkeypatch.setattr(billing, "get_settings", lambda: settings)
+    monkeypatch.setattr(billing, "enforce_rate_limit", bypass_rate_limit)
+    monkeypatch.setattr(billing, "fetch_payment", fake_fetch_payment)
+    monkeypatch.setattr(billing.httpx, "AsyncClient", DummyAsyncClient)
+
+    webhook_payload = {
+        "id": "evt_pay_1",
+        "action": "payment.updated",
+        "type": "payment",
+        "data": {"id": "pay_approved_1"},
+    }
+
+    response = await billing.webhook_mercadopago(DummyRequest(webhook_payload), x_signature=None)
+    assert response["status"] == "ok"
+
+    updated_subscription = await db.subscriptions.find_one({"owner_id": "own_1"})
+    assert updated_subscription["status"] == "active"
+    assert updated_subscription["last_payment_at"] == datetime(2026, 3, 7, 15, 10, tzinfo=timezone.utc)
+
+    invoices_after = await billing.invoices(limit=20, actor={"owner_id": "own_1", "role": "OWNER"})
+    attempts_after = await billing.payment_attempts(limit=20, actor={"owner_id": "own_1", "role": "OWNER"})
+
+    assert invoices_after[0]["status"] == "paid"
+    assert attempts_after[0]["status"] == "succeeded"

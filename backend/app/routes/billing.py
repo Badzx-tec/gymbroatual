@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import secrets
 from datetime import datetime
@@ -12,12 +13,20 @@ from app.core.rate_limit import enforce_rate_limit
 from app.core.time import UTC
 from app.db.mongo import get_db
 from app.models.billing import (
+    BillingOverviewOut,
+    BillingOverviewSummaryOut,
     CheckoutOut,
     InvoiceOut,
     MembershipOut,
     PaymentAttemptOut,
     SubscriptionEventOut,
     SubscriptionStatusOut,
+)
+from app.services.mp_payments import (
+    fetch_payment,
+    payment_approved_at,
+    payment_owner_id,
+    payment_status_to_subscription_status,
 )
 from app.services.billing_reconcile import reconcile_subscriptions
 from app.services.observability import log_event
@@ -60,6 +69,14 @@ def status_from_payload(payload: dict) -> str:
     if external_status in {"expired"}:
         return "expired"
     return status_from_action(str(payload.get("action", "")))
+
+
+def _extract_payment_id(payload: dict) -> str | None:
+    details = payload.get("data") or {}
+    payment_id = str(details.get("id") or "").strip()
+    if payment_id:
+        return payment_id
+    return None
 
 
 def _month_label(reference: datetime) -> str:
@@ -240,6 +257,118 @@ async def _subscription_status(owner_id: str) -> SubscriptionStatusOut:
     )
 
 
+async def _build_billing_overview(
+    owner_id: str,
+    *,
+    invoice_limit: int = 12,
+    attempt_limit: int = 12,
+    event_limit: int = 16,
+) -> BillingOverviewOut:
+    db = get_db()
+
+    subscription_task = _subscription_status(owner_id)
+    membership_task = _sync_membership(owner_id)
+    invoices_task = (
+        db.invoices.find({"owner_id": owner_id}, {"_id": 0})
+        .sort("created_at", -1)
+        .limit(invoice_limit)
+        .to_list(invoice_limit)
+    )
+    attempts_task = (
+        db.payment_attempts.find({"owner_id": owner_id}, {"_id": 0})
+        .sort("created_at", -1)
+        .limit(attempt_limit)
+        .to_list(attempt_limit)
+    )
+    events_task = (
+        db.subscription_events.find({"owner_id": owner_id}, {"_id": 0})
+        .sort("created_at", -1)
+        .limit(event_limit)
+        .to_list(event_limit)
+    )
+    invoice_status_totals_task = db.invoices.aggregate(
+        [
+            {"$match": {"owner_id": owner_id}},
+            {
+                "$group": {
+                    "_id": "$status",
+                    "count": {"$sum": 1},
+                    "amount_total": {"$sum": {"$ifNull": ["$amount", 0]}},
+                }
+            },
+        ]
+    ).to_list(None)
+    failed_attempt_count_task = db.payment_attempts.count_documents(
+        {"owner_id": owner_id, "status": "failed"}
+    )
+    next_due_task = (
+        db.invoices.find(
+            {"owner_id": owner_id, "status": {"$in": ["open", "past_due"]}},
+            {"_id": 0, "due_date": 1},
+        )
+        .sort("due_date", 1)
+        .limit(1)
+        .to_list(1)
+    )
+
+    (
+        subscription,
+        membership,
+        invoices,
+        attempts,
+        events,
+        invoice_status_totals,
+        failed_attempt_count,
+        next_due,
+    ) = await asyncio.gather(
+        subscription_task,
+        membership_task,
+        invoices_task,
+        attempts_task,
+        events_task,
+        invoice_status_totals_task,
+        failed_attempt_count_task,
+        next_due_task,
+    )
+
+    counts: dict[str, int] = {}
+    recognized_revenue = 0.0
+    outstanding_amount = 0.0
+    for row in invoice_status_totals:
+        status_key = str(row.get("_id") or "").lower()
+        counts[status_key] = int(row.get("count") or 0)
+        amount_total = float(row.get("amount_total") or 0)
+        if status_key == "paid":
+            recognized_revenue = amount_total
+        if status_key in {"open", "past_due"}:
+            outstanding_amount += amount_total
+
+    summary = BillingOverviewSummaryOut(
+        recognized_revenue=recognized_revenue,
+        outstanding_amount=outstanding_amount,
+        paid_invoice_count=counts.get("paid", 0),
+        open_invoice_count=counts.get("open", 0),
+        past_due_invoice_count=counts.get("past_due", 0),
+        failed_attempt_count=int(failed_attempt_count or 0),
+        next_invoice_due_at=(next_due[0] or {}).get("due_date") if next_due else None,
+        last_event_at=(events[0] or {}).get("created_at") if events else None,
+        action_required=(
+            not subscription.can_login
+            or counts.get("past_due", 0) > 0
+            or int(failed_attempt_count or 0) > 0
+        ),
+    )
+
+    return BillingOverviewOut(
+        subscription=subscription,
+        membership=membership,
+        invoices=invoices,
+        attempts=attempts,
+        events=events,
+        summary=summary,
+    )
+
+
 @router.get("/subscription/status", response_model=SubscriptionStatusOut)
 async def subscription_status(
     refresh: bool = Query(default=False),
@@ -248,6 +377,24 @@ async def subscription_status(
     if refresh:
         await reconcile_subscriptions(owner_id=actor["owner_id"], limit=1)
     return await _subscription_status(actor["owner_id"])
+
+
+@router.get("/overview", response_model=BillingOverviewOut)
+async def billing_overview(
+    invoice_limit: int = Query(default=12, ge=1, le=100),
+    attempt_limit: int = Query(default=12, ge=1, le=100),
+    event_limit: int = Query(default=16, ge=1, le=100),
+    refresh: bool = Query(default=False),
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
+    if refresh:
+        await reconcile_subscriptions(owner_id=actor["owner_id"], limit=1)
+    return await _build_billing_overview(
+        actor["owner_id"],
+        invoice_limit=invoice_limit,
+        attempt_limit=attempt_limit,
+        event_limit=event_limit,
+    )
 
 
 @router.get("/membership", response_model=MembershipOut)
@@ -498,15 +645,37 @@ async def webhook_mercadopago(request: Request, x_signature: str | None = Header
 
     now = datetime.now(UTC)
     action = payload.get("action", "")
-    status_value = status_from_payload(payload)
+    payload_type = str(payload.get("type") or "").lower()
+    payment_details = None
+    payment_id = _extract_payment_id(payload)
+    if settings.mp_access_token and payment_id and "payment" in payload_type:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                payment_details = await fetch_payment(client, payment_id, settings.mp_access_token)
+        except Exception as exc:  # pragma: no cover - network dependent
+            log_event(
+                "billing_webhook_payment_fetch_failed",
+                payment_id=payment_id,
+                error=str(exc),
+            )
 
-    owner_id = payload.get("external_reference") or payload.get("metadata", {}).get("owner_id")
+    owner_id = (
+        payload.get("external_reference")
+        or payload.get("metadata", {}).get("owner_id")
+        or payment_owner_id(payment_details)
+    )
     if not owner_id:
         pre_id = payload.get("data", {}).get("id") or payload.get("id")
         sub = await db.subscriptions.find_one({"mp_preapproval_id": pre_id}, {"_id": 0})
         owner_id = sub.get("owner_id") if sub else None
 
+    if payment_details and payment_details.get("status"):
+        status_value = payment_status_to_subscription_status(payment_details.get("status"))
+    else:
+        status_value = status_from_payload(payload)
+
     if owner_id:
+        reference_now = payment_approved_at(payment_details) or now
         update = {
             "status": status_value,
             "updated_at": now,
@@ -518,8 +687,8 @@ async def webhook_mercadopago(request: Request, x_signature: str | None = Header
             },
         }
         if status_value == "active":
-            update["current_period_end"] = compute_next_period_end()
-            update["last_payment_at"] = now
+            update["current_period_end"] = compute_next_period_end(reference_now)
+            update["last_payment_at"] = reference_now
             update["grace_until"] = None
         elif status_value == "past_due":
             update["grace_until"] = compute_grace_until(now)
@@ -530,27 +699,44 @@ async def webhook_mercadopago(request: Request, x_signature: str | None = Header
             owner_id,
             status_value="paid" if status_value == "active" else "past_due",
             paid=status_value == "active",
-            provider_reference=str(payload.get("id") or payload.get("data", {}).get("id") or ""),
+            provider_reference=str(
+                (payment_details or {}).get("id")
+                or payload.get("id")
+                or payload.get("data", {}).get("id")
+                or ""
+            ),
             amount=membership_doc.get("amount"),
-            now=now,
+            now=reference_now,
         )
         await _record_payment_attempt(
             owner_id,
             subscription_status=status_value,
-            provider_reference=str(payload.get("id") or payload.get("data", {}).get("id") or ""),
+            provider_reference=str(
+                (payment_details or {}).get("id")
+                or payload.get("id")
+                or payload.get("data", {}).get("id")
+                or ""
+            ),
             reason=action or payload.get("type"),
-            payload={"type": payload.get("type"), "action": action},
+            payload={
+                "type": payload.get("type"),
+                "action": action,
+                "payment_status": (payment_details or {}).get("status"),
+            },
             invoice_id=invoice_doc.get("invoice_id"),
             amount=membership_doc.get("amount"),
-            now=now,
+            now=reference_now,
         )
         await _record_subscription_event(
             owner_id,
             source="webhook",
             event_type=action or str(payload.get("type") or "unknown"),
             status_value=status_value,
-            metadata={"event_id": event_id},
-            now=now,
+            metadata={
+                "event_id": event_id,
+                "payment_id": (payment_details or {}).get("id"),
+            },
+            now=reference_now,
         )
 
     await db.billing_events.insert_one(

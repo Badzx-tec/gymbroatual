@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 SubscriptionStatus = Literal["trialing", "active", "past_due", "canceled", "expired"]
 InvoiceStatus = Literal["draft", "open", "paid", "past_due", "canceled"]
@@ -84,3 +84,24 @@ class SubscriptionEventOut(BaseModel):
     status: str
     metadata: dict | None = None
     created_at: datetime
+
+
+class BillingOverviewSummaryOut(BaseModel):
+    recognized_revenue: float = 0
+    outstanding_amount: float = 0
+    paid_invoice_count: int = 0
+    open_invoice_count: int = 0
+    past_due_invoice_count: int = 0
+    failed_attempt_count: int = 0
+    next_invoice_due_at: datetime | None = None
+    last_event_at: datetime | None = None
+    action_required: bool = False
+
+
+class BillingOverviewOut(BaseModel):
+    subscription: SubscriptionStatusOut
+    membership: MembershipOut
+    invoices: list[InvoiceOut] = Field(default_factory=list)
+    attempts: list[PaymentAttemptOut] = Field(default_factory=list)
+    events: list[SubscriptionEventOut] = Field(default_factory=list)
+    summary: BillingOverviewSummaryOut

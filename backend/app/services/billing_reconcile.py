@@ -6,6 +6,11 @@ import httpx
 from app.core.config import get_settings
 from app.core.time import UTC
 from app.db.mongo import get_db
+from app.services.mp_payments import (
+    is_recent_approved_payment,
+    payment_approved_at,
+    search_recent_approved_payment,
+)
 from app.services.observability import log_event
 from app.services.subscription import compute_grace_until, compute_next_period_end, now_utc
 
@@ -85,6 +90,15 @@ async def reconcile_subscriptions(owner_id: str | None = None, limit: int | None
                 mp_data = await _fetch_preapproval(client, preapproval_id, settings.mp_access_token)
                 mapped = map_mp_preapproval_status(mp_data.get("status"))
                 next_payment = _to_utc_datetime(mp_data.get("next_payment_date"))
+                if mapped != "active":
+                    payment_data = await search_recent_approved_payment(
+                        client,
+                        owner,
+                        settings.mp_access_token,
+                    )
+                    if is_recent_approved_payment(payment_data):
+                        mapped = "active"
+                        next_payment = compute_next_period_end(payment_approved_at(payment_data) or now)
                 update: dict = {
                     "status": mapped,
                     "updated_at": now,
@@ -136,6 +150,72 @@ async def reconcile_subscriptions(owner_id: str | None = None, limit: int | None
                     }
                 )
             except Exception as exc:  # pragma: no cover - network dependent
+                payment_data = None
+                try:
+                    payment_data = await search_recent_approved_payment(
+                        client,
+                        owner,
+                        settings.mp_access_token,
+                    )
+                except Exception:
+                    payment_data = None
+
+                if is_recent_approved_payment(payment_data):
+                    approved_at = payment_approved_at(payment_data) or now
+                    update = {
+                        "status": "active",
+                        "updated_at": now,
+                        "last_payment_at": approved_at,
+                        "grace_until": None,
+                        "current_period_end": compute_next_period_end(approved_at),
+                        "meta.last_reconcile": {
+                            "at": now,
+                            "status": payment_data.get("status"),
+                            "source": "payment_search",
+                            "payment_id": payment_data.get("id"),
+                        },
+                    }
+                    result = await db.subscriptions.update_one({"owner_id": owner}, {"$set": update})
+                    if result.matched_count:
+                        updated += 1
+
+                    await db.billing_events.insert_one(
+                        {
+                            "event_id": (
+                                f"reconcile_payment:{owner}:{int(now.timestamp() * 1000000)}"
+                                f":{secrets.token_hex(2)}"
+                            ),
+                            "action": "reconcile_payment_search",
+                            "owner_id": owner,
+                            "status": "active",
+                            "payload": {
+                                "source": "reconcile_job",
+                                "payment_id": payment_data.get("id"),
+                                "payment_status": payment_data.get("status"),
+                                "preapproval_id": preapproval_id,
+                            },
+                            "received_at": now,
+                        }
+                    )
+                    await db.subscription_events.insert_one(
+                        {
+                            "event_id": (
+                                f"subevt_payment:{owner}:{int(now.timestamp() * 1000000)}"
+                                f":{secrets.token_hex(2)}"
+                            ),
+                            "owner_id": owner,
+                            "source": "reconcile",
+                            "event_type": "payment_search_recovered",
+                            "status": "active",
+                            "metadata": {
+                                "payment_id": payment_data.get("id"),
+                                "preapproval_id": preapproval_id,
+                            },
+                            "created_at": now,
+                        }
+                    )
+                    continue
+
                 failed += 1
                 log_event(
                     "billing_reconcile_error",

@@ -1,252 +1,373 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, CreditCard, FileText, History } from 'lucide-react';
+import React from 'react';
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  CreditCard,
+  History,
+  Receipt,
+  RefreshCw,
+  ShieldCheck,
+  Wallet,
+} from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import Button from '../components/ui/Button';
+import EmptyState from '../components/ui/EmptyState';
+import LoadingScreen from '../components/ui/LoadingScreen';
+import PageHeader from '../components/ui/PageHeader';
+import SectionCard from '../components/ui/SectionCard';
+import StatCard from '../components/ui/StatCard';
+import StatusBadge from '../components/ui/StatusBadge';
+import BillingStatusBadge from '../features/billing/BillingStatusBadge';
+import {
+  attemptReasonLabel,
+  eventTypeLabel,
+  formatBillingDate,
+  formatBillingMoney,
+  getBillingActionItems,
+  getInvoiceStatusFilterOptions,
+  getSubscriptionStateMeta,
+} from '../features/billing/billingUtils';
+import useBillingOverview from '../features/billing/useBillingOverview';
 
-function formatDate(value) {
-  if (!value) return '-';
-  try {
-    return new Date(value).toLocaleString('pt-BR');
-  } catch {
-    return String(value);
-  }
-}
-
-function formatMoney(value) {
-  const amount = Number(value || 0);
-  return amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function statusPill(status) {
-  const normalized = String(status || '').toLowerCase();
-  if (normalized === 'active' || normalized === 'paid') return 'bg-green-500/15 text-green-300 border-green-500/30';
-  if (normalized === 'trialing' || normalized === 'open' || normalized === 'pending') return 'bg-blue-500/15 text-blue-300 border-blue-500/30';
-  if (normalized === 'past_due' || normalized === 'failed') return 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30';
-  if (normalized === 'canceled' || normalized === 'expired') return 'bg-red-500/15 text-red-300 border-red-500/30';
-  return 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30';
-}
+const tonePanelClasses = {
+  success: 'border-emerald-500/25 bg-emerald-500/10',
+  warning: 'border-amber-500/25 bg-amber-500/10',
+  danger: 'border-red-500/25 bg-red-500/10',
+  info: 'border-sky-500/25 bg-sky-500/10',
+  neutral: 'border-zinc-800 bg-zinc-950/70',
+};
 
 export default function BillingCenterPage() {
-  const [loading, setLoading] = useState(true);
-  const [processingCheckout, setProcessingCheckout] = useState(false);
-  const [data, setData] = useState({
-    subscription: null,
-    membership: null,
-    invoices: [],
-    attempts: [],
-    events: [],
+  const [invoiceFilter, setInvoiceFilter] = React.useState('all');
+  const { data, loading, refreshing, error, reload, syncWithProvider } = useBillingOverview({
+    invoiceLimit: 12,
+    attemptLimit: 10,
+    eventLimit: 12,
   });
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [subscription, membership, invoices, attempts, events] = await Promise.all([
-        api.subscriptionStatus(),
-        api.billingMembership(),
-        api.billingInvoices(30),
-        api.billingPaymentAttempts(30),
-        api.billingEvents(40),
-      ]);
-      setData({ subscription, membership, invoices, attempts, events });
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const subscriptionMeta = React.useMemo(
+    () => getSubscriptionStateMeta(data.subscription),
+    [data.subscription]
+  );
+  const actionItems = React.useMemo(() => getBillingActionItems(data), [data]);
+  const filteredInvoices = React.useMemo(() => {
+    if (invoiceFilter === 'all') return data.invoices || [];
+    return (data.invoices || []).filter(
+      (invoice) => String(invoice.status || '').toLowerCase() === invoiceFilter
+    );
+  }, [data.invoices, invoiceFilter]);
 
-  useEffect(() => {
-    load();
-  }, []);
-
-  const startCheckout = async () => {
-    setProcessingCheckout(true);
+  const handleCheckout = async () => {
     try {
       const checkout = await api.subscriptionCheckout();
-      if (checkout.checkout_url) {
-        window.location.href = checkout.checkout_url;
+      if (!checkout?.checkout_url) {
+        toast.error('Checkout indisponivel no momento.');
         return;
       }
-      toast.error('Checkout indisponível no momento.');
+      window.location.href = checkout.checkout_url;
     } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setProcessingCheckout(false);
+      toast.error(err?.message || 'Falha ao abrir o checkout.');
     }
   };
 
-  const refreshFromMp = async () => {
-    setLoading(true);
+  const handleReload = async () => {
     try {
-      await api.subscriptionRefresh();
-      await load();
-      toast.success('Status conferido com o Mercado Pago.');
+      await reload();
+      toast.success('Centro de cobranca atualizado.');
     } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setLoading(false);
+      toast.error(err?.message || 'Falha ao atualizar a cobranca.');
     }
   };
 
-  const summary = useMemo(() => {
-    const paidInvoices = data.invoices.filter((item) => item.status === 'paid');
-    const revenue = paidInvoices.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    const failedAttempts = data.attempts.filter((item) => item.status === 'failed').length;
-    return { revenue, failedAttempts };
-  }, [data.invoices, data.attempts]);
+  const handleSync = async () => {
+    try {
+      await syncWithProvider();
+      toast.success('Status sincronizado com o provedor.');
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao sincronizar com o provedor.');
+    }
+  };
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-[#ccff00] border-t-transparent rounded-full animate-spin" /></div>;
+    return <LoadingScreen label="Carregando centro de cobranca..." />;
+  }
+
+  if (error && !data.subscription) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Nao foi possivel carregar a cobranca"
+        description={error}
+        action={
+          <Button variant="primary" onClick={handleReload}>
+            Tentar novamente
+          </Button>
+        }
+      />
+    );
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Centro de Cobrança</h1>
-        <p className="text-zinc-400 mt-1">Contratos, faturas, tentativas e eventos da assinatura SaaS.</p>
+      <PageHeader
+        eyebrow="Receita SaaS"
+        title="Centro de cobranca"
+        subtitle="Acompanhe status da assinatura, faturas, falhas e eventos do provedor em um fluxo operacional unico."
+        actions={
+          <>
+            <Button as={Link} to="/admin/assinatura" variant="ghost">
+              Ver assinatura
+            </Button>
+            <Button onClick={handleSync} variant="secondary">
+              <ShieldCheck className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Ja paguei, verificar
+            </Button>
+            <Button onClick={handleCheckout} variant="primary">
+              <CreditCard className="h-4 w-4" />
+              Abrir checkout
+            </Button>
+          </>
+        }
+      />
+
+      {error ? (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          {error}
+        </div>
+      ) : null}
+
+      <section
+        className={`rounded-2xl border px-5 py-5 ${
+          tonePanelClasses[subscriptionMeta.tone] || tonePanelClasses.neutral
+        }`}
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-2">
+            <StatusBadge label={subscriptionMeta.label} tone={subscriptionMeta.tone} />
+            <div>
+              <h2 className="text-xl font-semibold text-zinc-50">Status operacional da academia</h2>
+              <p className="mt-1 max-w-3xl text-sm text-zinc-200/80">{subscriptionMeta.summary}</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={handleReload} variant="ghost">
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Atualizar
+            </Button>
+            <Button as={Link} to="/admin/assinatura" variant="secondary">
+              <ArrowUpRight className="h-4 w-4" />
+              Detalhes da assinatura
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Receita reconhecida"
+          value={formatBillingMoney(data.summary?.recognized_revenue)}
+          hint={`${data.summary?.paid_invoice_count || 0} faturas pagas`}
+          icon={Wallet}
+          accent="success"
+        />
+        <StatCard
+          label="Em aberto"
+          value={formatBillingMoney(data.summary?.outstanding_amount)}
+          hint={`${data.summary?.open_invoice_count || 0} abertas e ${data.summary?.past_due_invoice_count || 0} em atraso`}
+          icon={Receipt}
+          accent={(data.summary?.past_due_invoice_count || 0) > 0 ? 'warning' : 'info'}
+        />
+        <StatCard
+          label="Ultimo evento"
+          value={formatBillingDate(data.summary?.last_event_at)}
+          hint="Timeline recente da assinatura"
+          icon={History}
+          accent="info"
+        />
+        <StatCard
+          label="Falhas recentes"
+          value={String(data.summary?.failed_attempt_count || 0)}
+          hint="Tentativas marcadas como failed"
+          icon={AlertTriangle}
+          accent={(data.summary?.failed_attempt_count || 0) > 0 ? 'warning' : 'default'}
+        />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <p className="text-xs uppercase tracking-wider text-zinc-500">Status atual</p>
-          <p className={`inline-flex mt-2 px-2 py-1 rounded-sm border text-xs font-semibold uppercase ${statusPill(data.subscription?.status)}`}>
-            {data.subscription?.status || 'desconhecido'}
-          </p>
-          <p className="text-xs text-zinc-500 mt-2">Acesso liberado: {data.subscription?.can_login ? 'sim' : 'não'}</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <p className="text-xs uppercase tracking-wider text-zinc-500">Receita reconhecida</p>
-          <p className="mt-2 text-xl font-bold">{formatMoney(summary.revenue)}</p>
-          <p className="text-xs text-zinc-500 mt-2">{data.invoices.filter((item) => item.status === 'paid').length} faturas pagas</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <p className="text-xs uppercase tracking-wider text-zinc-500">Tentativas falhas</p>
-          <p className="mt-2 text-xl font-bold">{summary.failedAttempts}</p>
-          <p className="text-xs text-zinc-500 mt-2">Últimos registros financeiros</p>
-        </div>
-      </div>
+      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+        <SectionCard title="Contrato SaaS" description="Contexto tecnico e financeiro do plano atual.">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <InfoItem label="Plano" value={data.membership?.plan_code || '-'} emphasize />
+            <InfoItem label="Valor mensal" value={formatBillingMoney(data.membership?.amount)} emphasize />
+            <InfoItem
+              label="Status tecnico"
+              value={<BillingStatusBadge status={data.subscription?.status} />}
+            />
+            <InfoItem label="Periodo pago ate" value={formatBillingDate(data.subscription?.current_period_end)} />
+            <InfoItem label="Ultimo pagamento" value={formatBillingDate(data.subscription?.last_payment_at)} />
+            <InfoItem label="Carencia ate" value={formatBillingDate(data.subscription?.grace_until)} />
+            <InfoItem label="Trial ate" value={formatBillingDate(data.subscription?.trial_ends_at)} />
+            <InfoItem
+              label="Acesso administrativo"
+              value={
+                <StatusBadge
+                  label={data.subscription?.can_login ? 'Liberado' : 'Bloqueado'}
+                  tone={data.subscription?.can_login ? 'success' : 'warning'}
+                />
+              }
+            />
+            <InfoItem label="Proximo vencimento" value={formatBillingDate(data.summary?.next_invoice_due_at)} />
+          </div>
+        </SectionCard>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md p-5">
-        <h2 className="font-heading text-xl uppercase font-semibold flex items-center gap-2"><CreditCard className="w-5 h-5" /> Contrato / Membership</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mt-4">
-          <div>
-            <p className="text-zinc-500">Plano</p>
-            <p className="font-semibold uppercase">{data.membership?.plan_code || '-'}</p>
-          </div>
-          <div>
-            <p className="text-zinc-500">Valor</p>
-            <p className="font-semibold">{formatMoney(data.membership?.amount)}</p>
-          </div>
-          <div>
-            <p className="text-zinc-500">Status</p>
-            <p className={`inline-flex mt-1 px-2 py-1 rounded-sm border text-xs font-semibold uppercase ${statusPill(data.membership?.status)}`}>
-              {data.membership?.status || '-'}
-            </p>
-          </div>
-          <div>
-            <p className="text-zinc-500">Início</p>
-            <p>{formatDate(data.membership?.started_at)}</p>
-          </div>
-          <div>
-            <p className="text-zinc-500">Trial até</p>
-            <p>{formatDate(data.membership?.trial_ends_at)}</p>
-          </div>
-          <div>
-            <p className="text-zinc-500">Período atual (fim)</p>
-            <p>{formatDate(data.membership?.current_period_end)}</p>
-          </div>
-        </div>
-        <div className="mt-4 flex gap-2">
-          <button onClick={startCheckout} disabled={processingCheckout} className="bg-[#ccff00] text-black font-bold uppercase tracking-wide text-xs h-10 px-4 rounded-sm hover:bg-[#b3e600] disabled:opacity-50">
-            {processingCheckout ? 'Abrindo...' : 'Assinar / Renovar'}
-          </button>
-          <button onClick={refreshFromMp} className="bg-blue-600 text-white font-semibold uppercase tracking-wide text-xs h-10 px-4 rounded-sm hover:bg-blue-500">
-            Ja paguei, verificar
-          </button>
-          <button onClick={load} className="bg-zinc-800 text-white font-semibold uppercase tracking-wide text-xs h-10 px-4 rounded-sm hover:bg-zinc-700">
-            Atualizar
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md overflow-x-auto">
-        <div className="px-4 py-3 border-b border-zinc-800 font-semibold uppercase text-sm tracking-wide flex items-center gap-2"><FileText className="w-4 h-4" /> Faturas</div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
-              <th className="text-left px-4 py-3">Período</th>
-              <th className="text-left px-4 py-3">Valor</th>
-              <th className="text-left px-4 py-3">Vencimento</th>
-              <th className="text-left px-4 py-3">Pagamento</th>
-              <th className="text-left px-4 py-3">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.invoices.map((invoice) => (
-              <tr key={invoice.invoice_id} className="border-b border-zinc-800/50">
-                <td className="px-4 py-3">{invoice.period_label}</td>
-                <td className="px-4 py-3">{formatMoney(invoice.amount)}</td>
-                <td className="px-4 py-3 text-zinc-400">{formatDate(invoice.due_date)}</td>
-                <td className="px-4 py-3 text-zinc-400">{formatDate(invoice.paid_at)}</td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-1 rounded-sm border text-xs font-semibold uppercase ${statusPill(invoice.status)}`}>{invoice.status}</span>
-                </td>
-              </tr>
-            ))}
-            {data.invoices.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-zinc-500">Sem faturas registradas.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md overflow-x-auto">
-          <div className="px-4 py-3 border-b border-zinc-800 font-semibold uppercase text-sm tracking-wide flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> Tentativas de pagamento</div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
-                <th className="text-left px-4 py-3">Data</th>
-                <th className="text-left px-4 py-3">Valor</th>
-                <th className="text-left px-4 py-3">Status</th>
-                <th className="text-left px-4 py-3">Motivo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.attempts.map((attempt) => (
-                <tr key={attempt.attempt_id} className="border-b border-zinc-800/50">
-                  <td className="px-4 py-3 text-zinc-400">{formatDate(attempt.created_at)}</td>
-                  <td className="px-4 py-3">{formatMoney(attempt.amount)}</td>
-                  <td className="px-4 py-3"><span className={`px-2 py-1 rounded-sm border text-xs font-semibold uppercase ${statusPill(attempt.status)}`}>{attempt.status}</span></td>
-                  <td className="px-4 py-3 text-zinc-400">{attempt.reason || '-'}</td>
-                </tr>
-              ))}
-              {data.attempts.length === 0 && <tr><td colSpan={4} className="px-4 py-6 text-center text-zinc-500">Sem tentativas registradas.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-          <h3 className="font-semibold uppercase text-sm tracking-wide mb-3 flex items-center gap-2"><History className="w-4 h-4" /> Timeline da assinatura</h3>
-          <ul className="space-y-2 text-sm">
-            {data.events.map((event) => (
-              <li key={event.event_id} className="border border-zinc-800 rounded-sm px-3 py-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold uppercase text-xs">{event.event_type}</span>
-                  <span className={`px-2 py-1 rounded-sm border text-[10px] font-semibold uppercase ${statusPill(event.status)}`}>{event.status}</span>
-                </div>
-                <p className="text-zinc-500 text-xs mt-1">{event.source} - {formatDate(event.created_at)}</p>
+        <SectionCard title="Proximos passos" description="Leitura rapida para suporte e operacao.">
+          <ul className="space-y-3">
+            {actionItems.map((item) => (
+              <li
+                key={item}
+                className="rounded-xl border border-zinc-900 bg-zinc-900/60 px-4 py-3 text-sm text-zinc-300"
+              >
+                {item}
               </li>
             ))}
-            {data.events.length === 0 && <li className="text-zinc-500">Sem eventos registrados.</li>}
           </ul>
-        </div>
+        </SectionCard>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4 text-sm text-zinc-400 flex items-start gap-2">
-        {data.subscription?.can_login ? <CheckCircle2 className="w-4 h-4 mt-0.5 text-green-500" /> : <AlertTriangle className="w-4 h-4 mt-0.5 text-yellow-500" />}
-        <p>
-          Esse painel consolida os dados financeiros da assinatura SaaS do dono da academia (contrato, faturas, tentativas e eventos).
-        </p>
+      <SectionCard
+        title="Faturas recentes"
+        description="Ultimos ciclos de cobranca gerados para a assinatura SaaS."
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {getInvoiceStatusFilterOptions().map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setInvoiceFilter(option.value)}
+                className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+                  invoiceFilter === option.value
+                    ? 'border-[var(--brand-primary)] bg-[var(--brand-primary)] text-black'
+                    : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        }
+        bodyClassName="p-0"
+      >
+        {filteredInvoices.length === 0 ? (
+          <div className="p-5">
+            <EmptyState
+              icon={Receipt}
+              title="Nenhuma fatura para este filtro"
+              description="Ajuste o filtro ou aguarde o proximo ciclo de cobranca."
+            />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-900 text-left text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                  <th className="px-5 py-3">Periodo</th>
+                  <th className="px-5 py-3">Valor</th>
+                  <th className="px-5 py-3">Vencimento</th>
+                  <th className="px-5 py-3">Pagamento</th>
+                  <th className="px-5 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredInvoices.map((invoice) => (
+                  <tr key={invoice.invoice_id} className="border-b border-zinc-900/80 last:border-b-0">
+                    <td className="px-5 py-4 font-medium text-zinc-100">{invoice.period_label}</td>
+                    <td className="px-5 py-4 text-zinc-200">{formatBillingMoney(invoice.amount)}</td>
+                    <td className="px-5 py-4 text-zinc-400">{formatBillingDate(invoice.due_date)}</td>
+                    <td className="px-5 py-4 text-zinc-400">{formatBillingDate(invoice.paid_at)}</td>
+                    <td className="px-5 py-4">
+                      <BillingStatusBadge status={invoice.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <SectionCard title="Tentativas de pagamento" description="Falhas e sucessos mais recentes do provedor.">
+          {data.attempts?.length ? (
+            <div className="space-y-3">
+              {data.attempts.map((attempt) => (
+                <article
+                  key={attempt.attempt_id}
+                  className="rounded-xl border border-zinc-900 bg-zinc-900/55 px-4 py-4"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-zinc-100">
+                        {formatBillingMoney(attempt.amount)}
+                      </p>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {formatBillingDate(attempt.created_at)} · {attemptReasonLabel(attempt.reason)}
+                      </p>
+                    </div>
+                    <BillingStatusBadge status={attempt.status} size="sm" />
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={CreditCard}
+              title="Sem tentativas registradas"
+              description="Quando houver retorno do provedor, ele aparecera aqui."
+            />
+          )}
+        </SectionCard>
+
+        <SectionCard title="Timeline da assinatura" description="Eventos manuais, webhooks e reconciliacoes recentes.">
+          {data.events?.length ? (
+            <div className="space-y-3">
+              {data.events.map((event) => (
+                <article
+                  key={event.event_id}
+                  className="rounded-xl border border-zinc-900 bg-zinc-900/55 px-4 py-4"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-zinc-100">{eventTypeLabel(event.event_type)}</p>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {String(event.source || 'system').toUpperCase()} · {formatBillingDate(event.created_at)}
+                      </p>
+                    </div>
+                    <BillingStatusBadge status={event.status} size="sm" />
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={History}
+              title="Sem eventos recentes"
+              description="Os proximos webhooks, checkouts e reconciliacoes aparecerao aqui."
+            />
+          )}
+        </SectionCard>
+      </div>
+    </div>
+  );
+}
+
+function InfoItem({ label, value, emphasize = false }) {
+  return (
+    <div className="rounded-xl border border-zinc-900 bg-zinc-900/55 px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
+      <div className={`mt-2 text-sm ${emphasize ? 'font-semibold text-zinc-100' : 'text-zinc-300'}`}>
+        {value}
       </div>
     </div>
   );

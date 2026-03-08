@@ -1,180 +1,285 @@
-import React, { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock3, CreditCard, RefreshCw } from 'lucide-react';
+import React from 'react';
+import {
+  AlertTriangle,
+  ArrowUpRight,
+  CheckCircle2,
+  Clock3,
+  CreditCard,
+  RefreshCw,
+} from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { api } from '../api';
+import Button from '../components/ui/Button';
+import EmptyState from '../components/ui/EmptyState';
+import LoadingScreen from '../components/ui/LoadingScreen';
+import PageHeader from '../components/ui/PageHeader';
+import SectionCard from '../components/ui/SectionCard';
+import StatCard from '../components/ui/StatCard';
+import StatusBadge from '../components/ui/StatusBadge';
+import BillingStatusBadge from '../features/billing/BillingStatusBadge';
+import {
+  eventTypeLabel,
+  formatBillingDate,
+  getBillingActionItems,
+  getSubscriptionStateMeta,
+} from '../features/billing/billingUtils';
+import useBillingOverview from '../features/billing/useBillingOverview';
 
-function formatDate(value) {
-  if (!value) return '-';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return String(value);
-  return parsed.toLocaleString('pt-BR');
-}
-
-function statusMeta(rawStatus, canLogin) {
-  const status = String(rawStatus || '').toLowerCase();
-  if (canLogin) {
-    return {
-      label: 'Acesso liberado',
-      className: 'border-green-500/30 bg-green-500/10 text-green-200',
-      icon: CheckCircle2,
-    };
-  }
-  if (status === 'past_due') {
-    return {
-      label: 'Pagamento pendente',
-      className: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-200',
-      icon: AlertTriangle,
-    };
-  }
-  if (status === 'canceled' || status === 'expired') {
-    return {
-      label: 'Assinatura inativa',
-      className: 'border-red-500/30 bg-red-500/10 text-red-200',
-      icon: AlertTriangle,
-    };
-  }
-  return {
-    label: 'Status em analise',
-    className: 'border-blue-500/30 bg-blue-500/10 text-blue-200',
-    icon: Clock3,
-  };
-}
+const checkoutMessages = {
+  success: {
+    tone: 'success',
+    title: 'Checkout concluido',
+    description: 'Se o status ainda nao atualizou, use "Ja paguei, verificar".',
+  },
+  pending: {
+    tone: 'warning',
+    title: 'Pagamento em analise',
+    description: 'A confirmacao depende do provedor e pode levar alguns minutos.',
+  },
+  failure: {
+    tone: 'danger',
+    title: 'Pagamento nao confirmado',
+    description: 'Revise o checkout ou tente novamente com outro meio de pagamento.',
+  },
+};
 
 export default function SubscriptionPage() {
-  const [status, setStatus] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [processingCheckout, setProcessingCheckout] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [searchParams] = useSearchParams();
+  const { data, loading, refreshing, error, reload, syncWithProvider } = useBillingOverview({
+    invoiceLimit: 6,
+    attemptLimit: 4,
+    eventLimit: 6,
+  });
 
-  const loadStatus = async ({ silent = false } = {}) => {
-    if (!silent) setRefreshing(true);
-    if (!silent && !status) setLoading(true);
+  const subscriptionMeta = React.useMemo(
+    () => getSubscriptionStateMeta(data.subscription),
+    [data.subscription]
+  );
+  const actionItems = React.useMemo(() => getBillingActionItems(data), [data]);
+  const checkoutState = checkoutMessages[searchParams.get('status')] || null;
+
+  const handleReload = async () => {
     try {
-      const data = await api.subscriptionStatus();
-      setStatus(data);
-      if (!silent) toast.success('Status da assinatura atualizado.');
+      await reload();
+      toast.success('Status da assinatura atualizado.');
     } catch (err) {
-      if (!silent) toast.error(err?.message || 'Erro ao atualizar status.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+      toast.error(err?.message || 'Falha ao atualizar a assinatura.');
     }
   };
 
-  useEffect(() => {
-    loadStatus({ silent: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const startCheckout = async () => {
-    setProcessingCheckout(true);
+  const handleCheckout = async () => {
     try {
       const result = await api.subscriptionCheckout();
       if (!result?.checkout_url) {
         toast.error('Checkout indisponivel no momento.');
         return;
       }
-      toast.message('Abrindo checkout...');
       window.location.href = result.checkout_url;
     } catch (err) {
       toast.error(err?.message || 'Falha ao abrir checkout.');
-    } finally {
-      setProcessingCheckout(false);
     }
   };
 
-  const refreshFromProvider = async () => {
-    setLoading(true);
+  const handleSync = async () => {
     try {
-      const result = await api.subscriptionRefresh();
-      setStatus(result?.subscription || null);
+      await syncWithProvider();
       toast.success('Status sincronizado com o provedor.');
     } catch (err) {
-      toast.error(err?.message || 'Falha ao sincronizar status.');
-    } finally {
-      setLoading(false);
+      toast.error(err?.message || 'Falha ao sincronizar com o provedor.');
     }
   };
 
   if (loading) {
+    return <LoadingScreen label="Carregando assinatura..." />;
+  }
+
+  if (error && !data.subscription) {
     return (
-      <div className="flex items-center justify-center h-56">
-        <div className="w-8 h-8 border-2 border-[#ccff00] border-t-transparent rounded-full animate-spin" />
-      </div>
+      <EmptyState
+        icon={AlertTriangle}
+        title="Nao foi possivel carregar a assinatura"
+        description={error}
+        action={
+          <Button variant="primary" onClick={handleReload}>
+            Tentar novamente
+          </Button>
+        }
+      />
     );
   }
 
-  const active = Boolean(status?.can_login);
-  const meta = statusMeta(status?.status, active);
-  const StatusIcon = meta.icon;
-
   return (
-    <div className="space-y-6 max-w-3xl">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Assinatura</h1>
-          <p className="text-zinc-400 mt-1">
-            Gerencie o plano SaaS da academia e valide o status em tempo real.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => loadStatus()}
-          className="h-10 px-4 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold uppercase tracking-wide inline-flex items-center gap-2"
-        >
-          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          Atualizar
-        </button>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Assinatura SaaS"
+        title="Assinatura"
+        subtitle="Visual rapido para checar liberacao do painel, datas de vigencia e proxima acao financeira."
+        actions={
+          <>
+            <Button as={Link} to="/admin/cobranca" variant="ghost">
+              Centro de cobranca
+            </Button>
+            <Button onClick={handleReload} variant="secondary">
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Atualizar
+            </Button>
+            <Button onClick={handleCheckout} variant="primary">
+              <CreditCard className="h-4 w-4" />
+              Assinar ou renovar
+            </Button>
+          </>
+        }
+      />
 
-      <div className={`rounded-md border p-5 ${meta.className}`}>
-        <div className="flex items-start gap-3">
-          <StatusIcon className="w-5 h-5 mt-0.5" />
-          <div className="space-y-1 text-sm">
-            <p className="font-semibold uppercase tracking-wide">{meta.label}</p>
-            <p>Status tecnico: {String(status?.status || 'indefinido').toUpperCase()}</p>
-            <p>Trial ate: {formatDate(status?.trial_ends_at)}</p>
-            <p>Periodo pago ate: {formatDate(status?.current_period_end)}</p>
-            <p>Ultimo pagamento: {formatDate(status?.last_payment_at)}</p>
-            <p>Carencia ate: {formatDate(status?.grace_until)}</p>
+      {checkoutState ? (
+        <CheckoutNotice {...checkoutState} />
+      ) : null}
+
+      {error ? (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          {error}
+        </div>
+      ) : null}
+
+      <section className="rounded-2xl border border-zinc-900 bg-[linear-gradient(135deg,rgba(204,255,0,0.12),rgba(9,9,11,0.96)_34%),linear-gradient(180deg,rgba(24,24,27,0.92),rgba(9,9,11,0.96))] px-6 py-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-3">
+            <StatusBadge label={subscriptionMeta.label} tone={subscriptionMeta.tone} />
+            <div>
+              <h2 className="text-2xl font-semibold text-zinc-50">Visao atual da assinatura</h2>
+              <p className="mt-1 max-w-3xl text-sm text-zinc-300">{subscriptionMeta.summary}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <BillingStatusBadge status={data.subscription?.status} />
+              <StatusBadge
+                label={data.subscription?.can_login ? 'Painel liberado' : 'Painel restrito'}
+                tone={data.subscription?.can_login ? 'success' : 'warning'}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={handleSync} variant="secondary">
+              <CheckCircle2 className="h-4 w-4" />
+              Ja paguei, verificar
+            </Button>
+            <Button as={Link} to="/admin/cobranca" variant="ghost">
+              <ArrowUpRight className="h-4 w-4" />
+              Abrir detalhes
+            </Button>
           </div>
         </div>
+      </section>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Periodo pago ate"
+          value={formatBillingDate(data.subscription?.current_period_end)}
+          hint="Validade atual da assinatura"
+          icon={CreditCard}
+          accent="info"
+        />
+        <StatCard
+          label="Ultimo pagamento"
+          value={formatBillingDate(data.subscription?.last_payment_at)}
+          hint="Ultima confirmacao recebida"
+          icon={CheckCircle2}
+          accent="success"
+        />
+        <StatCard
+          label="Carencia ate"
+          value={formatBillingDate(data.subscription?.grace_until)}
+          hint="Se existir grace period ativo"
+          icon={Clock3}
+          accent={data.subscription?.grace_until ? 'warning' : 'default'}
+        />
+        <StatCard
+          label="Faturas em atraso"
+          value={String(data.summary?.past_due_invoice_count || 0)}
+          hint="Pendencias que exigem acao"
+          icon={AlertTriangle}
+          accent={(data.summary?.past_due_invoice_count || 0) > 0 ? 'warning' : 'default'}
+        />
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md p-5 space-y-4">
-        <h2 className="font-heading text-xl uppercase font-semibold flex items-center gap-2">
-          <CreditCard className="w-5 h-5" />
-          Acoes de assinatura
-        </h2>
-        <p className="text-sm text-zinc-400">
-          Se a assinatura estiver inativa, o acesso administrativo pode ser bloqueado apos a carencia.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={startCheckout}
-            disabled={processingCheckout}
-            className="bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm h-11 px-6 rounded-sm hover:bg-[#b3e600] disabled:opacity-50"
-          >
-            {processingCheckout ? 'Abrindo checkout...' : 'Assinar agora'}
-          </button>
-          <button
-            type="button"
-            onClick={refreshFromProvider}
-            className="bg-blue-600 text-white font-semibold uppercase tracking-wide text-sm h-11 px-6 rounded-sm hover:bg-blue-500"
-          >
-            Ja paguei, verificar agora
-          </button>
-        </div>
+      <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <SectionCard title="Como o acesso e decidido" description="Resumo operacional do backend para suporte e gestao.">
+          <div className="space-y-3">
+            {actionItems.map((item) => (
+              <div
+                key={item}
+                className="rounded-xl border border-zinc-900 bg-zinc-900/55 px-4 py-3 text-sm text-zinc-300"
+              >
+                {item}
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Resumo tecnico" description="Campos que mais ajudam na validacao rapida.">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <InfoTile label="Plano" value={data.membership?.plan_code || '-'} />
+            <InfoTile label="Status" value={<BillingStatusBadge status={data.subscription?.status} />} />
+            <InfoTile label="Trial ate" value={formatBillingDate(data.subscription?.trial_ends_at)} />
+            <InfoTile label="Ultimo evento" value={formatBillingDate(data.summary?.last_event_at)} />
+          </div>
+        </SectionCard>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4 text-sm text-zinc-400 flex items-start gap-2">
-        <Clock3 className="w-4 h-4 mt-0.5 text-zinc-500" />
-        <p>
-          O backend controla trial, carencia e bloqueio por assinatura. Este painel e operacional e nao substitui o status validado no servidor.
-        </p>
-      </div>
+      <SectionCard title="Atividade recente" description="Eventos e sincronizacoes mais recentes da assinatura.">
+        {data.events?.length ? (
+          <div className="space-y-3">
+            {data.events.map((event) => (
+              <article
+                key={event.event_id}
+                className="rounded-xl border border-zinc-900 bg-zinc-900/55 px-4 py-4"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-100">{eventTypeLabel(event.event_type)}</p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {String(event.source || 'system').toUpperCase()} · {formatBillingDate(event.created_at)}
+                    </p>
+                  </div>
+                  <BillingStatusBadge status={event.status} size="sm" />
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={Clock3}
+            title="Sem atividade recente"
+            description="Quando houver webhook, checkout ou conciliacao, eles aparecerao aqui."
+          />
+        )}
+      </SectionCard>
+    </div>
+  );
+}
+
+function CheckoutNotice({ tone, title, description }) {
+  const toneClasses = {
+    success: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100',
+    warning: 'border-amber-500/20 bg-amber-500/10 text-amber-100',
+    danger: 'border-red-500/20 bg-red-500/10 text-red-100',
+  };
+
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${toneClasses[tone] || toneClasses.warning}`}>
+      <p className="text-sm font-semibold uppercase tracking-[0.16em]">{title}</p>
+      <p className="mt-1 text-sm">{description}</p>
+    </div>
+  );
+}
+
+function InfoTile({ label, value }) {
+  return (
+    <div className="rounded-xl border border-zinc-900 bg-zinc-900/55 px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
+      <div className="mt-2 text-sm text-zinc-200">{value}</div>
     </div>
   );
 }

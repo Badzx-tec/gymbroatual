@@ -277,6 +277,15 @@ export const api = {
   subscriptionStatusRefresh: () => request('/api/billing/subscription/status?refresh=true'),
   subscriptionCheckout: () => request('/api/billing/subscription/checkout', { method: 'POST' }),
   subscriptionRefresh: () => request('/api/billing/subscription/refresh', { method: 'POST' }),
+  billingOverview: (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.invoiceLimit) query.set('invoice_limit', String(params.invoiceLimit));
+    if (params.attemptLimit) query.set('attempt_limit', String(params.attemptLimit));
+    if (params.eventLimit) query.set('event_limit', String(params.eventLimit));
+    if (params.refresh) query.set('refresh', 'true');
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request(`/api/billing/overview${suffix}`);
+  },
   billingMembership: () => request('/api/billing/membership'),
   billingInvoices: (limit = 50) => request(`/api/billing/invoices?limit=${limit}`),
   billingPaymentAttempts: (limit = 100) => request(`/api/billing/payment-attempts?limit=${limit}`),

@@ -244,3 +244,78 @@
 7. Validar readiness:
    - `/health/ready`
    - `/api/health/ready`
+
+---
+
+# Cobranca e Assinatura - 06/03/2026
+
+## Objetivo
+- Atacar a proxima tela critica do produto pelo impacto direto em receita e suporte.
+- Reduzir waterfall no frontend de cobranca.
+- Melhorar leitura operacional do status da assinatura SaaS.
+
+## Backend
+- Novo endpoint agregado:
+  - `GET /api/billing/overview`
+- Parametros:
+  - `invoice_limit`
+  - `attempt_limit`
+  - `event_limit`
+  - `refresh=true` para reconciliar com o provedor antes de responder
+- Mantive compatibilidade:
+  - endpoints antigos de `subscription/status`, `membership`, `invoices`, `payment-attempts` e `events` continuam existindo
+- Resumo retornado no overview:
+  - `recognized_revenue`
+  - `outstanding_amount`
+  - `paid_invoice_count`
+  - `open_invoice_count`
+  - `past_due_invoice_count`
+  - `failed_attempt_count`
+  - `next_invoice_due_at`
+  - `last_event_at`
+  - `action_required`
+
+## Frontend
+- Refatoradas:
+  - `/admin/cobranca`
+  - `/admin/assinatura`
+- Nova base reutilizavel:
+  - `frontend/src/features/billing/useBillingOverview.js`
+  - `frontend/src/features/billing/billingUtils.js`
+  - `frontend/src/features/billing/BillingStatusBadge.jsx`
+  - `frontend/src/components/ui/SectionCard.jsx`
+  - `frontend/src/components/ui/StatusBadge.jsx`
+- Ganhos principais:
+  - uma chamada agregada para a tela de cobranca
+  - hierarquia visual melhor
+  - estados vazios e erro mais claros
+  - CTA mais evidente
+  - copy operacional em pt-BR claro
+
+## Validacao
+- `python -m pytest backend/tests -q` -> **90 passed**
+- `npm --prefix frontend run lint` -> **passa**
+- `npm --prefix frontend run build` -> **passa**
+
+## Teste manual sugerido
+1. Abrir `/admin/assinatura`
+2. Abrir `/admin/cobranca`
+3. Testar:
+   - `Abrir checkout`
+   - `Ja paguei, verificar`
+   - `Atualizar`
+4. Validar cenarios:
+   - assinatura ativa
+   - assinatura `past_due`
+   - retorno do checkout com `?status=success|pending|failure`
+
+## Fix Mercado Pago - painel nao liberado apos pagamento
+- Causa tratada:
+  - em alguns fluxos o webhook chega como `type=payment` sem `external_reference` suficiente no payload
+  - no fallback de Checkout Pro, o reconcile antigo so consultava `preapproval`, sem recuperar pagamento aprovado por `external_reference`
+- Ajustes aplicados:
+  - webhook agora busca detalhes do pagamento em `v1/payments/{id}` quando necessario
+  - reconcile agora procura pagamento `approved` recente por `external_reference`
+  - se encontrar pagamento aprovado recente, atualiza assinatura para `active` e reabre o painel
+- Validacao:
+  - `python -m pytest backend/tests -q` -> **92 passed**
