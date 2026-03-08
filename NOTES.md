@@ -402,6 +402,43 @@
 - `npm --prefix frontend run build` -> **passa**
 - `python -m pytest backend/tests -q` -> **92 passed**
 
+## Tema branco e sistema de aparencia
+- O branding agora suporta `color_mode` com dois estados:
+  - `dark`
+  - `light`
+- O backend passou a persistir `color_mode` no `branding` do owner e a propagar essa preferencia para:
+  - owner
+  - funcionarios
+  - alunos
+- `ProfilePage` ganhou escolha explicita de modo da interface na secao de branding.
+- `App` agora adapta o `Toaster` ao modo atual.
+- `applyBrandingToDocument` agora aplica:
+  - `data-color-mode`
+  - `color-scheme`
+  - `meta[name="theme-color"]`
+- A base visual foi adaptada para o modo claro em:
+  - `Button`
+  - `IconButton`
+  - `SearchInput`
+  - `TextField`
+  - `SelectField`
+  - `SectionCard`
+  - `PageHeader`
+  - `StatCard`
+  - `Dialog`
+  - `SidePanel`
+  - `BrandMark`
+  - `ContentCard`
+  - `AdminLayout`
+  - `StudentLayout`
+- `index.css` passou a usar tokens semanticos e overrides controlados para os utilitarios mais frequentes, reduzindo retrabalho pagina por pagina.
+
+### Validacao desta etapa
+- `npm --prefix frontend run lint` -> **passa**
+- `npm --prefix frontend run build` -> **passa**
+- `python -m pytest backend/tests/test_auth_owner_role_payload.py -q` -> **3 passed**
+- `python -m pytest backend/tests -q` -> **93 passed**
+
 ## Assinatura, Academias, Planos, Acessos e shell do aluno
 - `SubscriptionPage` foi alinhada ao restante da base visual:
   - banner operacional por estado da assinatura

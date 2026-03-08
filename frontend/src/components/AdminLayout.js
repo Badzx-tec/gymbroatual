@@ -128,6 +128,7 @@ export default function AdminLayout() {
         if (profile?.branding) {
           const normalized = {
             theme_key: profile.branding.theme_key,
+            color_mode: profile.branding.color_mode,
             logo_data_url: profile.branding.logo_data_url || null,
           };
           setBranding(normalized);

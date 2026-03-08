@@ -12,6 +12,7 @@ import SectionCard from '../components/ui/SectionCard';
 import StatCard from '../components/ui/StatCard';
 import TextField from '../components/ui/TextField';
 import {
+  COLOR_MODES,
   BRAND_THEMES,
   applyBrandingToDocument,
   normalizeBranding,
@@ -38,6 +39,7 @@ export default function ProfilePage() {
     plan_expires_at: null,
     auth_login_enabled: true,
     theme_key: 'lime',
+    color_mode: 'dark',
     logo_data_url: null,
   });
   const [passwordForm, setPasswordForm] = useState({
@@ -67,6 +69,7 @@ export default function ProfilePage() {
         plan_expires_at: data.plan_expires_at || null,
         auth_login_enabled: data.auth_login_enabled !== false,
         theme_key: branding.theme_key,
+        color_mode: branding.color_mode,
         logo_data_url: branding.logo_data_url,
       });
       applyBrandingToDocument(branding);
@@ -119,12 +122,14 @@ export default function ProfilePage() {
       if (canManageBranding) {
         payload.gym_name = profile.gym_name;
         payload.theme_key = profile.theme_key;
+        payload.color_mode = profile.color_mode;
         payload.logo_data_url = profile.logo_data_url || null;
       }
 
       const updated = await api.updateProfile(payload);
       const branding = normalizeBranding(updated.branding || {
         theme_key: profile.theme_key,
+        color_mode: profile.color_mode,
         logo_data_url: profile.logo_data_url,
       });
       applyBrandingToDocument(branding);
@@ -139,6 +144,7 @@ export default function ProfilePage() {
         plan_expires_at: updated.plan_expires_at || prev.plan_expires_at,
         auth_login_enabled: updated.auth_login_enabled !== false,
         theme_key: branding.theme_key,
+        color_mode: branding.color_mode,
         logo_data_url: branding.logo_data_url,
       }));
       updateLocalUser(updated.name || profile.name, updated.email || profile.email);
@@ -176,6 +182,7 @@ export default function ProfilePage() {
   }
 
   const activeTheme = BRAND_THEMES.find((item) => item.key === profile.theme_key) || BRAND_THEMES[0];
+  const activeColorMode = COLOR_MODES.find((item) => item.key === profile.color_mode) || COLOR_MODES[0];
 
   return (
     <div className="space-y-6">
@@ -205,8 +212,8 @@ export default function ProfilePage() {
         />
         <StatCard
           label="Tema ativo"
-          value={activeTheme.label}
-          hint={canManageBranding ? 'Pode ser alterado abaixo.' : 'Branding controlado pela academia.'}
+          value={activeColorMode.label}
+          hint={`${activeTheme.label}. ${canManageBranding ? 'Pode ser alterado abaixo.' : 'Branding controlado pela academia.'}`}
           icon={Palette}
           accent="info"
         />
@@ -336,7 +343,7 @@ export default function ProfilePage() {
                       key={theme.key}
                       type="button"
                       onClick={() => {
-                        const nextBranding = { theme_key: theme.key, logo_data_url: profile.logo_data_url };
+                        const nextBranding = { theme_key: theme.key, color_mode: profile.color_mode, logo_data_url: profile.logo_data_url };
                         setProfile((prev) => ({ ...prev, theme_key: theme.key }));
                         applyBrandingToDocument(nextBranding);
                       }}
@@ -350,6 +357,30 @@ export default function ProfilePage() {
                     </button>
                   ))}
                 </div>
+
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Modo da interface</p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {COLOR_MODES.map((mode) => (
+                      <button
+                        key={mode.key}
+                        type="button"
+                        onClick={() => {
+                          const nextBranding = { theme_key: profile.theme_key, color_mode: mode.key, logo_data_url: profile.logo_data_url };
+                          setProfile((prev) => ({ ...prev, color_mode: mode.key }));
+                          applyBrandingToDocument(nextBranding);
+                        }}
+                        className={`rounded-2xl border px-4 py-4 text-left transition-colors ${profile.color_mode === mode.key ? 'border-[var(--brand-primary)] bg-[var(--surface-soft)] text-[var(--text-primary)]' : 'border-[var(--surface-border)] bg-[var(--surface-canvas)] text-[var(--text-secondary)] hover:border-[var(--surface-border-strong)] hover:text-[var(--text-primary)]'}`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-semibold uppercase tracking-[0.16em]">{mode.label}</span>
+                          <span className={`h-4 w-4 rounded-full border ${mode.key === 'light' ? 'border-slate-300 bg-white' : 'border-zinc-700 bg-zinc-950'}`} />
+                        </div>
+                        <p className="mt-2 text-xs text-current/80">{mode.description}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </SectionCard>
           ) : (
@@ -357,7 +388,7 @@ export default function ProfilePage() {
               <EmptyState
                 icon={Palette}
                 title="Branding bloqueado para este perfil"
-                description="Recepcionistas, treinadores e alunos apenas visualizam a identidade definida pela academia."
+                description="Recepcionistas, treinadores e alunos apenas visualizam a identidade visual e o modo claro/escuro definidos pela academia."
               />
             </SectionCard>
           )}

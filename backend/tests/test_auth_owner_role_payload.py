@@ -29,6 +29,19 @@ class FakeDb:
                     "email": "owner@example.com",
                     "email_verified": True,
                     "password_hash": hash_password("secret123"),
+                    "branding": {
+                        "theme_key": "blue",
+                        "color_mode": "light",
+                        "logo_data_url": None,
+                    },
+                }
+            ]
+        )
+        self.gyms = FakeCollection(
+            [
+                {
+                    "owner_id": "own_1",
+                    "name": "Academia Central",
                 }
             ]
         )
@@ -77,3 +90,14 @@ async def test_auth_me_owner_includes_role_even_without_role_in_actor():
 
     assert response["role"] == "OWNER"
     assert response["actor_type"] == "owner"
+
+
+@pytest.mark.asyncio
+async def test_owner_profile_payload_includes_color_mode(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(auth, "get_db", lambda: db)
+
+    payload = await auth._owner_profile_payload(db.owners.docs[0])
+
+    assert payload["branding"]["theme_key"] == "blue"
+    assert payload["branding"]["color_mode"] == "light"

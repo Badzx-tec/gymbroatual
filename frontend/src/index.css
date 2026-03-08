@@ -6,15 +6,26 @@
   --brand-primary: #c8f169;
   --brand-primary-hover: #b4dd56;
   --brand-primary-rgb: 200 241 105;
+  --app-background:
+    radial-gradient(circle at top left, rgba(var(--brand-primary-rgb), 0.08), transparent 22%),
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.08), transparent 18%),
+    linear-gradient(180deg, #090b0c 0%, #0d1113 100%);
   --surface-base: #090b0c;
   --surface-canvas: #0d1113;
   --surface-raised: #11161a;
   --surface-soft: #171d22;
+  --surface-soft-hover: #1f2730;
   --surface-border: #27313a;
   --surface-border-strong: #33404d;
   --text-primary: #f5f7fa;
   --text-secondary: #cbd5df;
   --text-muted: #8b9aaa;
+  --hero-surface:
+    radial-gradient(circle at top left, rgba(var(--brand-primary-rgb), 0.1), transparent 28%),
+    linear-gradient(180deg, rgba(24, 24, 27, 0.92), rgba(9, 9, 11, 0.96));
+  --surface-panel-bg: linear-gradient(180deg, rgba(17, 22, 26, 0.92), rgba(12, 16, 19, 0.94));
+  --surface-card-bg: rgba(17, 22, 26, 0.82);
+  --surface-overlay: rgba(0, 0, 0, 0.6);
   --status-success: #34d399;
   --status-warning: #fbbf24;
   --status-danger: #fb7185;
@@ -31,6 +42,31 @@
   --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+:root[data-color-mode='light'] {
+  --app-background:
+    radial-gradient(circle at top left, rgba(var(--brand-primary-rgb), 0.08), transparent 20%),
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.08), transparent 16%),
+    linear-gradient(180deg, #f4f7fa 0%, #ecf1f6 100%);
+  --surface-base: #f4f7fa;
+  --surface-canvas: #ffffff;
+  --surface-raised: #f9fbfd;
+  --surface-soft: #edf2f7;
+  --surface-soft-hover: #e4ebf3;
+  --surface-border: #d8e0ea;
+  --surface-border-strong: #c6d1de;
+  --text-primary: #101828;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --hero-surface:
+    radial-gradient(circle at top left, rgba(var(--brand-primary-rgb), 0.12), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 247, 250, 0.98));
+  --surface-panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.98));
+  --surface-card-bg: rgba(255, 255, 255, 0.88);
+  --surface-overlay: rgba(15, 23, 42, 0.18);
+  --shadow-soft: 0 24px 60px -40px rgba(15, 23, 42, 0.16);
+  --shadow-panel: 0 28px 72px -44px rgba(15, 23, 42, 0.18);
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -39,10 +75,7 @@
 
 body {
   font-family: 'Manrope', sans-serif;
-  background:
-    radial-gradient(circle at top left, rgba(var(--brand-primary-rgb), 0.08), transparent 22%),
-    radial-gradient(circle at top right, rgba(96, 165, 250, 0.08), transparent 18%),
-    linear-gradient(180deg, #090b0c 0%, #0d1113 100%);
+  background: var(--app-background);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -57,19 +90,19 @@ h1, h2, h3, h4, h5, h6 {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #18181b;
+  background: var(--surface-soft);
 }
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: var(--surface-border-strong);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: var(--surface-border);
 }
 
 input:-webkit-autofill {
-  -webkit-box-shadow: 0 0 0 1000px #09090b inset !important;
-  -webkit-text-fill-color: #fafafa !important;
+  -webkit-box-shadow: 0 0 0 1000px var(--surface-canvas) inset !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
 }
 
 a,
@@ -93,7 +126,7 @@ textarea {
 
 ::selection {
   background: rgb(var(--brand-primary-rgb) / 0.24);
-  color: #fff;
+  color: var(--text-primary);
 }
 
 #root {
@@ -105,15 +138,78 @@ textarea {
 }
 
 .surface-panel {
-  background: linear-gradient(180deg, rgba(17, 22, 26, 0.92), rgba(12, 16, 19, 0.94));
-  border: 1px solid rgba(39, 49, 58, 0.92);
+  background: var(--surface-panel-bg);
+  border: 1px solid var(--surface-border);
   box-shadow: var(--shadow-panel);
 }
 
 .surface-card {
-  background: rgba(17, 22, 26, 0.82);
-  border: 1px solid rgba(39, 49, 58, 0.82);
+  background: var(--surface-card-bg);
+  border: 1px solid var(--surface-border);
   box-shadow: var(--shadow-soft);
+}
+
+:root[data-color-mode='light'] .bg-zinc-950,
+:root[data-color-mode='light'] .bg-\[\#09090b\] {
+  background-color: var(--surface-canvas) !important;
+}
+
+:root[data-color-mode='light'] .bg-zinc-950\/70,
+:root[data-color-mode='light'] .bg-zinc-950\/72,
+:root[data-color-mode='light'] .bg-zinc-950\/80,
+:root[data-color-mode='light'] .bg-zinc-950\/88,
+:root[data-color-mode='light'] .bg-zinc-950\/90 {
+  background-color: rgba(255, 255, 255, 0.86) !important;
+}
+
+:root[data-color-mode='light'] .bg-zinc-900,
+:root[data-color-mode='light'] .bg-zinc-900\/55,
+:root[data-color-mode='light'] .bg-zinc-900\/60,
+:root[data-color-mode='light'] .bg-zinc-900\/70,
+:root[data-color-mode='light'] .bg-zinc-900\/80,
+:root[data-color-mode='light'] .bg-zinc-900\/90 {
+  background-color: var(--surface-soft) !important;
+}
+
+:root[data-color-mode='light'] .bg-zinc-800,
+:root[data-color-mode='light'] .bg-zinc-800\/80 {
+  background-color: var(--surface-soft-hover) !important;
+}
+
+:root[data-color-mode='light'] .border-zinc-900,
+:root[data-color-mode='light'] .border-zinc-800,
+:root[data-color-mode='light'] .border-zinc-700 {
+  border-color: var(--surface-border) !important;
+}
+
+:root[data-color-mode='light'] .text-zinc-50,
+:root[data-color-mode='light'] .text-zinc-100,
+:root[data-color-mode='light'] .text-zinc-200,
+:root[data-color-mode='light'] .text-zinc-300 {
+  color: var(--text-primary) !important;
+}
+
+:root[data-color-mode='light'] .text-zinc-400,
+:root[data-color-mode='light'] .text-zinc-500,
+:root[data-color-mode='light'] .text-zinc-600 {
+  color: var(--text-muted) !important;
+}
+
+:root[data-color-mode='light'] .hover\:bg-zinc-900:hover,
+:root[data-color-mode='light'] .hover\:bg-zinc-900\/80:hover,
+:root[data-color-mode='light'] .hover\:bg-zinc-800:hover {
+  background-color: var(--surface-soft-hover) !important;
+}
+
+:root[data-color-mode='light'] .hover\:text-zinc-100:hover,
+:root[data-color-mode='light'] .hover\:text-zinc-200:hover {
+  color: var(--text-primary) !important;
+}
+
+:root[data-color-mode='light'] .shadow-\[0_16px_52px_-40px_rgba\(0\,0\,0\,0\.92\)\],
+:root[data-color-mode='light'] .shadow-\[0_16px_48px_-36px_rgba\(0\,0\,0\,0\.85\)\],
+:root[data-color-mode='light'] .shadow-\[0_24px_80px_-48px_rgba\(0\,0\,0\,0\.85\)\] {
+  box-shadow: var(--shadow-soft) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

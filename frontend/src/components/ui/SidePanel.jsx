@@ -28,7 +28,7 @@ export default function SidePanel({ open, onClose, title, description, actions, 
     <AnimatePresence>
       {open ? (
         <motion.div
-          className="fixed inset-0 z-[130] bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-[130] bg-[var(--surface-overlay)] backdrop-blur-sm"
           initial={reduceMotion ? false : { opacity: 0 }}
           animate={reduceMotion ? {} : { opacity: 1 }}
           exit={reduceMotion ? {} : { opacity: 0 }}
@@ -45,10 +45,10 @@ export default function SidePanel({ open, onClose, title, description, actions, 
             exit={reduceMotion ? {} : { x: 32, opacity: 0 }}
             transition={{ duration: 0.22 }}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-zinc-900 px-5 py-4">
+            <div className="flex items-start justify-between gap-4 border-b border-[var(--surface-border)] px-5 py-4">
               <div>
-                {title ? <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-100">{title}</h3> : null}
-                {description ? <p className="mt-1 text-sm text-zinc-500">{description}</p> : null}
+                {title ? <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--text-primary)]">{title}</h3> : null}
+                {description ? <p className="mt-1 text-sm text-[var(--text-muted)]">{description}</p> : null}
               </div>
               <IconButton onClick={onClose} variant="ghost" aria-label="Fechar painel lateral">
                 <X className="h-4 w-4" />
@@ -56,7 +56,7 @@ export default function SidePanel({ open, onClose, title, description, actions, 
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
             {actions ? (
-              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-900 px-5 py-4">
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--surface-border)] px-5 py-4">
                 {actions}
               </div>
             ) : null}

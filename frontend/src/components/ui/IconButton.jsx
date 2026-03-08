@@ -11,8 +11,8 @@ export default function IconButton({
 }) {
   const variantClasses = {
     primary: 'bg-[var(--brand-primary)] text-black hover:bg-[var(--brand-primary-hover)]',
-    secondary: 'border border-zinc-800 bg-zinc-900 text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800',
-    ghost: 'text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100',
+    secondary: 'border border-[var(--surface-border)] bg-[var(--surface-soft)] text-[var(--text-secondary)] hover:bg-[var(--surface-soft-hover)]',
+    ghost: 'text-[var(--text-muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--text-primary)]',
   };
 
   return (

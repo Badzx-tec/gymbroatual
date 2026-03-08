@@ -37,16 +37,16 @@ export default function BrandMark({ compact = false, className, caption, tone = 
         className={cn(
           'flex h-11 w-11 items-center justify-center rounded-2xl border',
           tone === 'ghost'
-            ? 'border-zinc-800 bg-zinc-950/80'
-            : 'border-white/10 bg-[linear-gradient(135deg,rgba(var(--brand-primary-rgb),0.18),rgba(96,165,250,0.12))]'
+            ? 'border-[var(--surface-border)] bg-[var(--surface-canvas)]'
+            : 'border-[color:rgb(var(--brand-primary-rgb)/0.2)] bg-[linear-gradient(135deg,rgba(var(--brand-primary-rgb),0.18),rgba(96,165,250,0.12))]'
         )}
       >
         <BrandGlyph className="h-8 w-8" />
       </div>
       {!compact ? (
         <div className="min-w-0">
-          <p className="font-heading text-2xl uppercase tracking-[0.08em] text-zinc-50">{APP_BRAND.name}</p>
-          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">{caption || APP_BRAND.tagline}</p>
+          <p className="font-heading text-2xl uppercase tracking-[0.08em] text-[var(--text-primary)]">{APP_BRAND.name}</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">{caption || APP_BRAND.tagline}</p>
         </div>
       ) : null}
     </div>

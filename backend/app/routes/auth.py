@@ -31,6 +31,7 @@ from app.services.subscription import initial_subscription, subscription_allows_
 
 router = APIRouter()
 ALLOWED_THEME_KEYS = {"lime", "blue", "emerald", "amber", "rose"}
+ALLOWED_COLOR_MODES = {"dark", "light"}
 MAX_LOGO_DATA_URL_LENGTH = 1_500_000
 
 
@@ -115,6 +116,15 @@ def _normalize_theme_key(value, *, strict: bool = False) -> str:
     return key
 
 
+def _normalize_color_mode(value, *, strict: bool = False) -> str:
+    key = (_clean_optional(value) or "dark").lower()
+    if key not in ALLOWED_COLOR_MODES:
+        if strict:
+            raise HTTPException(status_code=400, detail="Modo de cor invalido")
+        return "dark"
+    return key
+
+
 def _normalize_logo_data_url(value) -> str | None:
     logo_data_url = _clean_optional(value)
     if logo_data_url is None:
@@ -140,6 +150,7 @@ async def _owner_profile_payload(owner: dict) -> dict:
         "gym_name": (gym or {}).get("name"),
         "branding": {
             "theme_key": _normalize_theme_key(branding.get("theme_key")),
+            "color_mode": _normalize_color_mode(branding.get("color_mode")),
             "logo_data_url": branding.get("logo_data_url"),
         },
     }
@@ -161,6 +172,7 @@ async def _employee_profile_payload(employee: dict) -> dict:
         "gym_name": (gym or {}).get("name"),
         "branding": {
             "theme_key": _normalize_theme_key(branding.get("theme_key")),
+            "color_mode": _normalize_color_mode(branding.get("color_mode")),
             "logo_data_url": branding.get("logo_data_url"),
         },
     }
@@ -186,6 +198,7 @@ async def _student_profile_payload(student: dict) -> dict:
         "auth_login_enabled": bool(student.get("auth_login_enabled", True)),
         "branding": {
             "theme_key": _normalize_theme_key(branding.get("theme_key")),
+            "color_mode": _normalize_color_mode(branding.get("color_mode")),
             "logo_data_url": branding.get("logo_data_url"),
         },
     }
@@ -202,6 +215,7 @@ def _super_admin_profile_payload() -> dict:
         "gym_name": "GymBro Platform",
         "branding": {
             "theme_key": "blue",
+            "color_mode": "dark",
             "logo_data_url": None,
         },
     }
@@ -1021,10 +1035,12 @@ async def update_profile(payload: dict, actor: dict = Depends(get_current_actor)
     if "phone" in payload:
         update_owner_fields["phone"] = _clean_optional(payload.get("phone"))
 
-    if any(key in payload for key in ("theme_key", "logo_data_url", "remove_logo")):
+    if any(key in payload for key in ("theme_key", "color_mode", "logo_data_url", "remove_logo")):
         current_branding = dict(owner.get("branding") or {})
         if "theme_key" in payload:
             current_branding["theme_key"] = _normalize_theme_key(payload.get("theme_key"), strict=True)
+        if "color_mode" in payload:
+            current_branding["color_mode"] = _normalize_color_mode(payload.get("color_mode"), strict=True)
         if "logo_data_url" in payload:
             current_branding["logo_data_url"] = _normalize_logo_data_url(payload.get("logo_data_url"))
         if payload.get("remove_logo"):

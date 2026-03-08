@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { Toaster } from 'sonner';
 
 import { api } from './api';
+import { loadBranding } from './branding';
 import AdminLayout from './components/AdminLayout';
 import StudentLayout from './components/StudentLayout';
 import LoadingScreen from './components/ui/LoadingScreen';
@@ -166,13 +167,23 @@ function AppRouter() {
 }
 
 export default function App() {
+  const [branding, setBranding] = React.useState(() => loadBranding());
+
   React.useEffect(() => {
     migrateLegacySession();
   }, []);
 
+  React.useEffect(() => {
+    const onBrandingChange = (event) => {
+      setBranding(event?.detail || loadBranding());
+    };
+    window.addEventListener('gymbro:branding-change', onBrandingChange);
+    return () => window.removeEventListener('gymbro:branding-change', onBrandingChange);
+  }, []);
+
   return (
     <BrowserRouter>
-      <Toaster position="top-right" richColors theme="dark" />
+      <Toaster position="top-right" richColors theme={branding.color_mode === 'light' ? 'light' : 'dark'} />
       <React.Suspense fallback={<LoadingScreen fullscreen label="Carregando aplicacao..." />}>
         <AppRouter />
       </React.Suspense>

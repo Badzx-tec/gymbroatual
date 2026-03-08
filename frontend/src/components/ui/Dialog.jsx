@@ -43,7 +43,7 @@ export default function Dialog({
     <AnimatePresence>
       {open ? (
         <motion.div
-          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm"
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-[var(--surface-overlay)] px-4 py-6 backdrop-blur-sm"
           initial={reduceMotion ? false : { opacity: 0 }}
           animate={reduceMotion ? {} : { opacity: 1 }}
           exit={reduceMotion ? {} : { opacity: 0 }}
@@ -63,10 +63,10 @@ export default function Dialog({
             exit={reduceMotion ? {} : { opacity: 0, y: 12, scale: 0.98 }}
             transition={{ duration: 0.2 }}
           >
-            <div className="flex items-start justify-between gap-4 border-b border-zinc-900 px-5 py-4">
+            <div className="flex items-start justify-between gap-4 border-b border-[var(--surface-border)] px-5 py-4">
               <div>
-                {title ? <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-100">{title}</h3> : null}
-                {description ? <p className="mt-1 text-sm text-zinc-500">{description}</p> : null}
+                {title ? <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--text-primary)]">{title}</h3> : null}
+                {description ? <p className="mt-1 text-sm text-[var(--text-muted)]">{description}</p> : null}
               </div>
               <IconButton onClick={onClose} variant="ghost" aria-label="Fechar dialogo">
                 <X className="h-4 w-4" />
@@ -74,7 +74,7 @@ export default function Dialog({
             </div>
             <div className="max-h-[76vh] overflow-y-auto px-5 py-4">{children}</div>
             {actions ? (
-              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-900 px-5 py-4">
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--surface-border)] px-5 py-4">
                 {actions}
               </div>
             ) : null}

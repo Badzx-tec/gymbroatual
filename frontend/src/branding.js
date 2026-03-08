@@ -6,7 +6,23 @@ export const BRAND_THEMES = [
   { key: 'rose', label: 'Rose', primary: '#fb7185', hover: '#f43f5e', rgb: '251 113 133' },
 ];
 
+export const COLOR_MODES = [
+  {
+    key: 'dark',
+    label: 'Modo escuro',
+    description: 'Ideal para operacao prolongada, com menos brilho e mais contraste em ambientes internos.',
+    themeColor: '#090b0c',
+  },
+  {
+    key: 'light',
+    label: 'Modo claro',
+    description: 'Visual limpo e corporativo, com mais leveza para leitura diurna e apresentacoes.',
+    themeColor: '#f4f7fa',
+  },
+];
+
 const DEFAULT_THEME_KEY = 'lime';
+const DEFAULT_COLOR_MODE = 'dark';
 const BRANDING_STORAGE_KEY = 'gymbro_branding';
 export const APP_BRAND = {
   name: 'GymBro',
@@ -19,11 +35,17 @@ export function getThemeByKey(themeKey) {
   return BRAND_THEMES.find((item) => item.key === themeKey) || BRAND_THEMES[0];
 }
 
+export function getColorModeByKey(colorMode) {
+  return COLOR_MODES.find((item) => item.key === colorMode) || COLOR_MODES[0];
+}
+
 export function normalizeBranding(input) {
   const branding = input || {};
   const theme = getThemeByKey(branding.theme_key || DEFAULT_THEME_KEY);
+  const colorMode = getColorModeByKey(branding.color_mode || DEFAULT_COLOR_MODE);
   return {
     theme_key: theme.key,
+    color_mode: colorMode.key,
     logo_data_url: branding.logo_data_url || null,
   };
 }
@@ -32,10 +54,20 @@ export function applyBrandingToDocument(input) {
   if (typeof document === 'undefined') return;
   const branding = normalizeBranding(input);
   const theme = getThemeByKey(branding.theme_key);
+  const colorMode = getColorModeByKey(branding.color_mode);
   const root = document.documentElement;
   root.style.setProperty('--brand-primary', theme.primary);
   root.style.setProperty('--brand-primary-hover', theme.hover);
   root.style.setProperty('--brand-primary-rgb', theme.rgb);
+  root.dataset.colorMode = colorMode.key;
+  root.style.colorScheme = colorMode.key;
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (metaTheme) {
+    metaTheme.setAttribute('content', colorMode.themeColor);
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('gymbro:branding-change', { detail: branding }));
+  }
 }
 
 export function saveBranding(input) {
