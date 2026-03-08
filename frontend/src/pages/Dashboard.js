@@ -248,8 +248,8 @@ export default function Dashboard() {
   const customTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
     return (
-      <div className="bg-zinc-800 border border-zinc-700 rounded-sm px-3 py-2 text-xs">
-        <p className="text-zinc-300 mb-1">{label}</p>
+      <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-3 py-2 text-xs shadow-[var(--shadow-soft)]">
+        <p className="mb-1 text-[var(--text-primary)]">{label}</p>
         {payload.map((item, index) => (
           <p key={`${item?.name || 'item'}-${index}`} style={{ color: item.color || 'var(--brand-primary)' }}>
             {item.name}: {typeof item.value === 'number' ? item.value.toLocaleString('pt-BR') : item.value}
@@ -340,23 +340,23 @@ export default function Dashboard() {
             transition={{ delay: index * 0.04 }}
             data-testid={`kpi-card-${index}`}
           >
-            <StatCard label={kpi.label} value={kpi.value} icon={kpi.icon} className="hover:border-zinc-700" />
+            <StatCard label={kpi.label} value={kpi.value} icon={kpi.icon} className="hover:border-[var(--surface-border-strong)]" />
           </motion.div>
         ))}
       </div>
 
       {canSeeOps && billingOverview && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-            <p className="text-zinc-500 text-xs uppercase tracking-wider">Contratos em atraso</p>
+          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4 shadow-[var(--shadow-soft)]">
+            <p className="text-[var(--text-muted)] text-xs uppercase tracking-wider">Contratos em atraso</p>
             <p className="text-2xl font-bold mt-1">{Number(billingOverview.past_due_contracts || 0)}</p>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-            <p className="text-zinc-500 text-xs uppercase tracking-wider">Cobrancas vencidas</p>
+          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4 shadow-[var(--shadow-soft)]">
+            <p className="text-[var(--text-muted)] text-xs uppercase tracking-wider">Cobrancas vencidas</p>
             <p className="text-2xl font-bold mt-1">{Number(billingOverview.overdue_charges || 0)}</p>
           </div>
-          <div className="bg-zinc-900 border border-zinc-800 rounded-md p-4">
-            <p className="text-zinc-500 text-xs uppercase tracking-wider">Expiram em 7 dias</p>
+          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4 shadow-[var(--shadow-soft)]">
+            <p className="text-[var(--text-muted)] text-xs uppercase tracking-wider">Expiram em 7 dias</p>
             <p className="text-2xl font-bold mt-1">{Number(billingOverview.expiring_next_7d || 0)}</p>
           </div>
         </div>
@@ -366,11 +366,11 @@ export default function Dashboard() {
         <SectionCard title="Saude operacional de acesso" description="Janela configuravel de negacoes, bloqueios e sinais de dispositivos.">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-2">
-              <label className="text-xs uppercase tracking-wider text-zinc-500">Janela</label>
+              <label className="text-xs uppercase tracking-wider text-[var(--text-muted)]">Janela</label>
               <select
                 value={summaryWindowMinutes}
                 onChange={(event) => setSummaryWindowMinutes(Number(event.target.value) || 60)}
-                className="h-8 rounded-sm bg-zinc-950 border border-zinc-800 px-2 text-xs"
+                className="h-8 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-canvas)] px-2 text-xs text-[var(--text-primary)]"
               >
                 <option value={60}>60 min</option>
                 <option value={180}>3h</option>
@@ -380,15 +380,15 @@ export default function Dashboard() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {opsCards.map((card) => (
-              <div key={card.label} className="bg-zinc-950 border border-zinc-800 rounded-sm p-3">
-                <p className="text-[11px] uppercase tracking-wider text-zinc-500">{card.label}</p>
+              <div key={card.label} className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-canvas)] p-3">
+                <p className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">{card.label}</p>
                 <p className={`text-2xl font-bold mt-1 ${card.className}`}>{card.value}</p>
-                <p className="text-[11px] text-zinc-500 mt-1">{card.hint}</p>
+                <p className="mt-1 text-[11px] text-[var(--text-muted)]">{card.hint}</p>
               </div>
             ))}
           </div>
           {topDenyReasons.length > 0 && (
-            <div className="text-xs text-zinc-400">
+            <div className="text-xs text-[var(--text-secondary)]">
               Principais motivos de negacao:
               {' '}
               {topDenyReasons.map((item) => `${reasonLabel(item.reason)} (${item.count})`).join(' | ')}
@@ -400,7 +400,7 @@ export default function Dashboard() {
       {canSeeOps && (
         <SectionCard title="Alertas operacionais" description="Eventos com impacto direto em acesso, contratos e operacao da academia.">
           <div className="flex items-center justify-between">
-            <p className="text-[11px] uppercase tracking-wider text-zinc-500">
+            <p className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">
               {opsAlerts?.generated_at ? `Gerado em ${new Date(opsAlerts.generated_at).toLocaleString('pt-BR')}` : 'Sem dados'}
             </p>
           </div>
@@ -421,14 +421,14 @@ export default function Dashboard() {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-zinc-500">Sem alertas criticos no momento.</p>
+            <p className="text-sm text-[var(--text-muted)]">Sem alertas criticos no momento.</p>
           )}
         </SectionCard>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-5 lg:col-span-1">
-          <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-zinc-400 mb-4">
+        <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)] lg:col-span-1">
+          <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-4">
             Receita por Plano
           </h3>
           {(charts?.receita_por_plano || []).length > 0 ? (
@@ -456,7 +456,7 @@ export default function Dashboard() {
               </div>
               <div className="flex flex-wrap gap-3 mt-2">
                 {(charts?.receita_por_plano || []).map((item, index) => (
-                  <div key={`${item.plano}-${index}`} className="flex items-center gap-1.5 text-xs text-zinc-400">
+                  <div key={`${item.plano}-${index}`} className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
                     <span
                       className="w-2.5 h-2.5 rounded-full"
                       style={{ background: CHART_COLORS[index % CHART_COLORS.length] }}
@@ -467,12 +467,12 @@ export default function Dashboard() {
               </div>
             </>
           ) : (
-            <div className="h-52 flex items-center justify-center text-zinc-500 text-sm">Sem dados de receita por plano.</div>
+            <div className="h-52 flex items-center justify-center text-[var(--text-muted)] text-sm">Sem dados de receita por plano.</div>
           )}
         </div>
 
-        <div className="bg-zinc-900 border border-zinc-800 rounded-md p-5 lg:col-span-2">
-          <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-zinc-400 mb-4">
+        <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)] lg:col-span-2">
+          <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-4">
             Acessos por Hora (24h)
           </h3>
           <div className="h-52">
@@ -484,8 +484,8 @@ export default function Dashboard() {
                     <stop offset="95%" stopColor="var(--brand-primary)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="hora" tick={{ fill: '#71717a', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#71717a', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <XAxis dataKey="hora" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <Tooltip content={customTooltip} />
                 <Area type="monotone" dataKey="acessos" stroke="var(--brand-primary)" fill="url(#colorAccess)" strokeWidth={2} name="Acessos" />
               </AreaChart>
@@ -494,15 +494,15 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="bg-zinc-900 border border-zinc-800 rounded-md p-5">
-        <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-zinc-400 mb-4">
+      <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)]">
+        <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-4">
           Receita Mensal (6 meses)
         </h3>
         <div className="h-52">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={charts?.receita_mensal || []}>
-              <XAxis dataKey="mes" tick={{ fill: '#71717a', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#71717a', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="mes" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
               <Tooltip content={customTooltip} />
               <Bar dataKey="valor" fill="var(--brand-primary)" radius={[4, 4, 0, 0]} name="Receita (R$)" />
             </BarChart>
@@ -511,7 +511,7 @@ export default function Dashboard() {
       </div>
 
       <SectionCard title="Ultimos acessos" description="Atualizacao em tempo real quando o websocket estiver disponivel." bodyClassName="p-0">
-        <div className="p-5 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex flex-col gap-3 border-b border-[var(--surface-border)] p-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex gap-2">
             <Button
               onClick={() => setLogFilter('all')}
@@ -546,7 +546,7 @@ export default function Dashboard() {
         <div className="overflow-x-auto">
           <table data-testid="recent-access-table" className="w-full text-sm">
             <thead>
-              <tr className="text-zinc-500 text-xs uppercase tracking-wider border-b border-zinc-800">
+              <tr className="text-[var(--text-muted)] text-xs uppercase tracking-wider border-b border-[var(--surface-border)]">
                 <th className="text-left px-5 py-3 font-medium">Pessoa</th>
                 <th className="text-left px-5 py-3 font-medium">Tipo</th>
                 <th className="text-left px-5 py-3 font-medium">Status</th>
@@ -561,8 +561,8 @@ export default function Dashboard() {
                 return (
                   <tr
                     key={`${log.log_id || log.access_id || 'log'}-${index}`}
-                    className={`border-b border-zinc-800/50 transition-colors ${
-                      critical ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-zinc-800/30'
+                    className={`border-b border-[var(--surface-border)] transition-colors ${
+                      critical ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-[var(--surface-soft)]'
                     }`}
                   >
                     <td className="px-5 py-3 font-medium">{log.student_name || log.employee_name || 'Desconhecido'}</td>
@@ -581,18 +581,18 @@ export default function Dashboard() {
                         {allowed ? 'Liberado' : 'Negado'}
                       </span>
                     </td>
-                    <td className="px-5 py-3 text-zinc-400">
+                    <td className="px-5 py-3 text-[var(--text-secondary)]">
                       {log.timestamp || log.created_at
                         ? new Date(log.timestamp || log.created_at).toLocaleString('pt-BR')
                         : '-'}
                     </td>
-                    <td className="px-5 py-3 text-zinc-500 text-xs">{reasonLabel(log.motivo || log.reason)}</td>
+                    <td className="px-5 py-3 text-[var(--text-muted)] text-xs">{reasonLabel(log.motivo || log.reason)}</td>
                   </tr>
                 );
               })}
               {filteredLogs.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-8 text-center text-zinc-500">
+                  <td colSpan={5} className="px-5 py-8 text-center text-[var(--text-muted)]">
                     Nenhum acesso no filtro selecionado.
                   </td>
                 </tr>

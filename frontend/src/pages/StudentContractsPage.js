@@ -633,7 +633,7 @@ export default function StudentContractsPage() {
         );
         const success = results.filter((item) => item.status === 'fulfilled').length;
         const failed = results.length - success;
-        toast.success(`Lote concluido. Sucesso: ${success} • Falhas: ${failed}`);
+        toast.success(`Lote concluido. Sucesso: ${success} â€¢ Falhas: ${failed}`);
         setSelectedIds([]);
         await loadContracts();
         if (queryState.contractId) await loadDetail(queryState.contractId);
@@ -726,10 +726,10 @@ export default function StudentContractsPage() {
     if (actionDialog.kind === 'settle') {
       return (
         <div className="space-y-4">
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-[var(--text-secondary)]">
             Registre o pagamento das cobrancas vencidas e recalcule a liberacao da catraca.
           </p>
-          <label className="flex items-start gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300">
+          <label className="flex items-start gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
             <input
               type="checkbox"
               className="mt-1 accent-[var(--brand-primary)]"
@@ -776,7 +776,7 @@ export default function StudentContractsPage() {
             <option value="immediate">Cancelar imediatamente</option>
             <option value="end_of_cycle">Cancelar no fim do ciclo</option>
           </SelectField>
-          <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-400">
+          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-canvas)] px-4 py-3 text-sm text-[var(--text-secondary)]">
             {actionDialog.cancelMode === 'immediate'
               ? 'O acesso sera cortado agora e o contrato encerrado imediatamente.'
               : 'O contrato fica ativo ate o fim da vigencia atual e depois encerra automaticamente.'}
@@ -786,7 +786,7 @@ export default function StudentContractsPage() {
     }
     if (actionDialog.kind === 'bulkCancel') {
       return (
-        <p className="text-sm text-zinc-400">
+        <p className="text-sm text-[var(--text-secondary)]">
           {selectedIds.length} contrato(s) selecionado(s) serao programados para cancelamento no fim do ciclo.
         </p>
       );
@@ -794,7 +794,7 @@ export default function StudentContractsPage() {
     if (actionDialog.kind === 'removeCanceled') {
       return (
         <div className="space-y-3">
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-[var(--text-secondary)]">
             Essa limpeza remove historico financeiro e auditoria dos contratos cancelados.
           </p>
           <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -804,7 +804,7 @@ export default function StudentContractsPage() {
       );
     }
     return (
-      <p className="text-sm text-zinc-400">
+      <p className="text-sm text-[var(--text-secondary)]">
         Confirme esta acao para seguir com a atualizacao do contrato.
       </p>
     );
@@ -1111,7 +1111,7 @@ export default function StudentContractsPage() {
             }}
           />
 
-          <label className="flex items-start gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300">
+          <label className="flex items-start gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
             <input
               type="checkbox"
               className="mt-1 accent-[var(--brand-primary)]"
@@ -1123,7 +1123,7 @@ export default function StudentContractsPage() {
             </span>
           </label>
 
-          <label className="flex items-start gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300">
+          <label className="flex items-start gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
             <input
               type="checkbox"
               className="mt-1 accent-[var(--brand-primary)]"

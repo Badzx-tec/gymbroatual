@@ -1,111 +1,211 @@
-import React, { useState, useEffect } from 'react';
-import { api } from '../api';
-import { toast } from 'sonner';
-import { Bell, Mail, Check, Trash2, RefreshCw, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Bell, Check, Mail, RefreshCw, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
+
+import { api } from '../api';
+import Banner from '../components/ui/Banner';
+import Button from '../components/ui/Button';
+import EmptyState from '../components/ui/EmptyState';
+import LoadingScreen from '../components/ui/LoadingScreen';
+import PageHeader from '../components/ui/PageHeader';
+import SearchInput from '../components/ui/SearchInput';
+import SectionCard from '../components/ui/SectionCard';
+import StatCard from '../components/ui/StatCard';
+import StatusBadge from '../components/ui/StatusBadge';
+
+function notificationTone(type) {
+  return String(type || '').toLowerCase() === 'vencimento' ? 'warning' : 'info';
+}
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
-
-  useEffect(() => { loadData(); }, []);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('all');
 
   const loadData = async () => {
-    try { setNotifications(await api.listNotifications(100)); } catch {}
-    setLoading(false);
+    try {
+      setNotifications(await api.listNotifications(100));
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao carregar notificacoes.');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    loadData();
+  }, []);
 
   const checkExpiring = async () => {
     setChecking(true);
     try {
       const result = await api.checkExpiring();
-      toast.success(result.message);
-      loadData();
-    } catch (err) { toast.error(err.message); }
-    setChecking(false);
+      toast.success(result.message || 'Verificacao concluida.');
+      await loadData();
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao verificar vencimentos.');
+    } finally {
+      setChecking(false);
+    }
   };
 
   const markRead = async (id) => {
-    try { await api.markRead(id); loadData(); } catch {}
+    try {
+      await api.markRead(id);
+      await loadData();
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao marcar notificacao.');
+    }
   };
 
   const deleteNotif = async (id) => {
-    try { await api.deleteNotification(id); toast.success('Removida'); loadData(); } catch {}
+    try {
+      await api.deleteNotification(id);
+      toast.success('Notificacao removida.');
+      await loadData();
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao remover notificacao.');
+    }
   };
 
-  const unread = notifications.filter(n => !n.lida).length;
+  const unread = useMemo(() => notifications.filter((item) => !item.lida).length, [notifications]);
+  const expiringCount = useMemo(
+    () => notifications.filter((item) => String(item.tipo || '').toLowerCase() === 'vencimento').length,
+    [notifications]
+  );
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="w-8 h-8 border-2 border-[#ccff00] border-t-transparent rounded-full animate-spin" /></div>;
+  const filteredNotifications = useMemo(() => {
+    return notifications.filter((item) => {
+      const matchesFilter =
+        filter === 'all'
+        || (filter === 'unread' && !item.lida)
+        || (filter === 'read' && item.lida)
+        || (filter === 'expiring' && String(item.tipo || '').toLowerCase() === 'vencimento');
+      const haystack = [item.titulo, item.mensagem, item.student_email, item.email_status, item.tipo]
+        .join(' ')
+        .toLowerCase();
+      const matchesSearch = !search || haystack.includes(search.toLowerCase());
+      return matchesFilter && matchesSearch;
+    });
+  }, [filter, notifications, search]);
+
+  if (loading) {
+    return <LoadingScreen label="Carregando notificacoes..." />;
+  }
 
   return (
     <div data-testid="notifications-page" className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-3xl font-bold uppercase tracking-tight">Notificacoes</h1>
-          <p className="text-zinc-400 mt-1">{unread} nao lidas de {notifications.length} total</p>
-        </div>
-        <button data-testid="check-expiring-btn" onClick={checkExpiring} disabled={checking}
-          className="flex items-center gap-2 bg-[#ccff00] text-black font-bold uppercase tracking-wider text-sm px-6 py-2.5 rounded-sm hover:bg-[#b3e600] transition-all disabled:opacity-50">
-          <RefreshCw className={`w-4 h-4 ${checking ? 'animate-spin' : ''}`} /> Verificar Vencimentos
-        </button>
-      </div>
-
-      {/* Info Box */}
-      <div className="bg-blue-500/10 border border-blue-500/20 rounded-md p-4 flex items-start gap-3">
-        <Mail className="w-5 h-5 text-blue-400 mt-0.5 shrink-0" />
-        <div>
-          <p className="text-sm text-blue-300 font-medium">Emails Simulados</p>
-          <p className="text-xs text-blue-400/70 mt-1">Os emails de notificacao estao sendo simulados. Quando um aluno esta proximo do vencimento, o sistema registra a notificacao e marca como "enviado (simulado)". Conecte um provedor de email real para enviar notificacoes reais.</p>
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        {notifications.map((n, i) => (
-          <motion.div key={n.notif_id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }}
-            data-testid={`notification-${n.notif_id}`}
-            className={`bg-zinc-900 border rounded-md p-4 flex items-start gap-4 transition-colors ${n.lida ? 'border-zinc-800/50 opacity-60' : 'border-zinc-700'}`}>
-            <div className={`w-10 h-10 rounded-sm flex items-center justify-center shrink-0 ${n.tipo === 'vencimento' ? 'bg-yellow-500/10' : 'bg-blue-500/10'}`}>
-              <AlertTriangle className={`w-5 h-5 ${n.tipo === 'vencimento' ? 'text-yellow-500' : 'text-blue-500'}`} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h4 className="text-sm font-semibold">{n.titulo}</h4>
-                {!n.lida && <span className="w-2 h-2 rounded-full bg-[#ccff00]" />}
-              </div>
-              <p className="text-sm text-zinc-400 mb-2">{n.mensagem}</p>
-              <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
-                {n.email_enviado && (
-                  <span className="flex items-center gap-1 bg-green-500/10 text-green-400 px-2 py-0.5 rounded-sm border border-green-500/20">
-                    <Mail className="w-3 h-3" /> {n.email_status}
-                  </span>
-                )}
-                <span>Para: {n.student_email}</span>
-                <span>{n.created_at ? new Date(n.created_at).toLocaleString('pt-BR') : ''}</span>
-              </div>
-            </div>
-            <div className="flex gap-1 shrink-0">
-              {!n.lida && (
-                <button data-testid={`mark-read-${n.notif_id}`} onClick={() => markRead(n.notif_id)}
-                  className="p-2 hover:bg-zinc-800 rounded-sm text-zinc-400 hover:text-green-500" title="Marcar como lida">
-                  <Check className="w-4 h-4" />
-                </button>
-              )}
-              <button data-testid={`delete-notif-${n.notif_id}`} onClick={() => deleteNotif(n.notif_id)}
-                className="p-2 hover:bg-red-500/10 rounded-sm text-zinc-400 hover:text-red-500" title="Remover">
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          </motion.div>
-        ))}
-        {notifications.length === 0 && (
-          <div className="text-center py-16">
-            <Bell className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
-            <p className="text-zinc-500 text-lg">Nenhuma notificacao</p>
-            <p className="text-zinc-600 text-sm mt-1">Clique em "Verificar Vencimentos" para checar alunos com assinatura proxima do vencimento</p>
-          </div>
+      <PageHeader
+        eyebrow="Sistema"
+        title="Notificacoes"
+        subtitle={`${unread} nao lida(s) de ${notifications.length} total. Use a busca para localizar comunicacoes por aluno, status ou tipo.`}
+        actions={(
+          <Button data-testid="check-expiring-btn" onClick={checkExpiring} disabled={checking} variant="primary" size="sm">
+            <RefreshCw className={`h-4 w-4 ${checking ? 'animate-spin' : ''}`} />
+            Verificar vencimentos
+          </Button>
         )}
+      />
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Nao lidas" value={unread} icon={Bell} accent={unread ? 'warning' : 'default'} />
+        <StatCard label="Vencimento" value={expiringCount} icon={AlertTriangle} accent={expiringCount ? 'warning' : 'default'} />
+        <StatCard label="Enviadas por e-mail" value={notifications.filter((item) => item.email_enviado).length} icon={Mail} accent="info" />
+        <StatCard label="Lidas" value={notifications.filter((item) => item.lida).length} icon={Check} accent="success" />
       </div>
+
+      <Banner
+        tone="info"
+        title="Emails simulados"
+        description='Os envios ainda estao em modo simulado. O sistema registra a notificacao e o status de envio, mas nao dispara e-mail real sem um provedor configurado.'
+      />
+
+      <SectionCard title="Busca e filtros" description="Filtre comunicacoes por estado de leitura, vencimento ou conteudo.">
+        <div className="grid gap-3 lg:grid-cols-[minmax(280px,1fr)_auto]">
+          <SearchInput
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por titulo, mensagem, e-mail do aluno ou status"
+            aria-label="Buscar notificacoes"
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant={filter === 'all' ? 'primary' : 'secondary'} onClick={() => setFilter('all')}>Todas</Button>
+            <Button type="button" size="sm" variant={filter === 'unread' ? 'primary' : 'secondary'} onClick={() => setFilter('unread')}>Nao lidas</Button>
+            <Button type="button" size="sm" variant={filter === 'read' ? 'primary' : 'secondary'} onClick={() => setFilter('read')}>Lidas</Button>
+            <Button type="button" size="sm" variant={filter === 'expiring' ? 'primary' : 'secondary'} onClick={() => setFilter('expiring')}>Vencimento</Button>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Fila de notificacoes" description="Leitura operacional das mensagens geradas pelo sistema.">
+        {filteredNotifications.length ? (
+          <div className="space-y-3">
+            {filteredNotifications.map((notification, index) => (
+              <motion.article
+                key={notification.notif_id}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: index * 0.03 }}
+                data-testid={`notification-${notification.notif_id}`}
+                className={`flex items-start gap-4 rounded-2xl border px-4 py-4 transition-colors ${notification.lida ? 'border-[var(--surface-border)] bg-[var(--surface-soft)]/50 opacity-80' : 'border-[var(--surface-border-strong)] bg-[var(--surface-canvas)]'}`}
+              >
+                <div className={`flex h-10 w-10 items-center justify-center rounded-xl border ${notificationTone(notification.tipo) === 'warning' ? 'border-amber-500/30 bg-amber-500/10 text-amber-500' : 'border-sky-500/30 bg-sky-500/10 text-sky-500'}`}>
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold text-[var(--text-primary)]">{notification.titulo}</h3>
+                    <StatusBadge label={notification.lida ? 'Lida' : 'Pendente'} tone={notification.lida ? 'neutral' : 'warning'} size="sm" />
+                    <StatusBadge label={String(notification.tipo || 'sistema')} tone={notificationTone(notification.tipo)} size="sm" />
+                  </div>
+
+                  <p className="mt-2 text-sm text-[var(--text-secondary)]">{notification.mensagem}</p>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-[var(--text-muted)]">
+                    {notification.email_enviado ? (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-emerald-600">
+                        <Mail className="h-3 w-3" />
+                        {notification.email_status || 'Enviado'}
+                      </span>
+                    ) : null}
+                    <span>Para: {notification.student_email || 'Sem e-mail'}</span>
+                    <span>{notification.created_at ? new Date(notification.created_at).toLocaleString('pt-BR') : '-'}</span>
+                  </div>
+                </div>
+
+                <div className="flex shrink-0 gap-2">
+                  {!notification.lida ? (
+                    <Button data-testid={`mark-read-${notification.notif_id}`} size="sm" variant="ghost" onClick={() => markRead(notification.notif_id)}>
+                      <Check className="h-4 w-4" />
+                      Marcar lida
+                    </Button>
+                  ) : null}
+                  <Button data-testid={`delete-notif-${notification.notif_id}`} size="sm" variant="danger" onClick={() => deleteNotif(notification.notif_id)}>
+                    <Trash2 className="h-4 w-4" />
+                    Remover
+                  </Button>
+                </div>
+              </motion.article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={Bell}
+            title="Nenhuma notificacao encontrada"
+            description="Ajuste os filtros ou use a verificacao de vencimentos para gerar novas notificacoes operacionais."
+            action={(
+              <Button type="button" variant="secondary" onClick={checkExpiring} disabled={checking}>
+                <RefreshCw className={`h-4 w-4 ${checking ? 'animate-spin' : ''}`} />
+                Verificar vencimentos
+              </Button>
+            )}
+          />
+        )}
+      </SectionCard>
     </div>
   );
 }

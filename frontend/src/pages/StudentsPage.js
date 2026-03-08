@@ -211,18 +211,18 @@ function StudentFormFields({ form, setForm, plans }) {
       </div>
 
       <label className="block space-y-1.5">
-        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Treino e observacoes</span>
+        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Treino e observacoes</span>
         <textarea
           value={form.treino}
           onChange={(event) => setForm((current) => ({ ...current, treino: event.target.value }))}
-          className="min-h-[112px] w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
+          className="min-h-[112px] w-full rounded-md border border-[var(--surface-border)] bg-[var(--surface-canvas)] px-3 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
         />
       </label>
 
-      <div className="grid gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-4 lg:grid-cols-2">
+      <div className="grid gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4 lg:grid-cols-2">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Login do aluno</p>
-          <p className="mt-2 text-sm text-zinc-400">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Login do aluno</p>
+          <p className="mt-2 text-sm text-[var(--text-secondary)]">
             Defina senha inicial ou deixe em branco para senha temporaria. E-mail, CPF e matricula podem ser usados como login.
           </p>
         </div>
@@ -234,15 +234,15 @@ function StudentFormFields({ form, setForm, plans }) {
             onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
             placeholder="Opcional"
           />
-          <label className="flex items-center gap-3 text-sm text-zinc-300">
+          <label className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
             <input type="checkbox" checked={form.auth_login_enabled} onChange={(event) => setForm((current) => ({ ...current, auth_login_enabled: event.target.checked }))} className="accent-[var(--brand-primary)]" />
             Permitir login do aluno
           </label>
-          <label className="flex items-center gap-3 text-sm text-zinc-300">
+          <label className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
             <input type="checkbox" checked={form.auto_generate_password} onChange={(event) => setForm((current) => ({ ...current, auto_generate_password: event.target.checked }))} className="accent-[var(--brand-primary)]" />
             Gerar senha temporaria automaticamente
           </label>
-          <label className="flex items-center gap-3 text-sm text-zinc-300">
+          <label className="flex items-center gap-3 text-sm text-[var(--text-secondary)]">
             <input type="checkbox" checked={form.force_password_reset} onChange={(event) => setForm((current) => ({ ...current, force_password_reset: event.target.checked }))} className="accent-[var(--brand-primary)]" />
             Exigir troca de senha no primeiro acesso
           </label>
@@ -580,11 +580,11 @@ export default function StudentsPage() {
               {credentialHistory.map((item) => (
                 <div
                   key={item.id}
-                  className="flex flex-col gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
-                    <p className="text-sm font-semibold text-zinc-100">{item.title}</p>
-                    <p className="mt-1 text-xs text-zinc-500">
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">{item.title}</p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
                       {item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : '-'}
                     </p>
                   </div>
@@ -609,7 +609,7 @@ export default function StudentsPage() {
           <div className="overflow-x-auto">
             <table data-testid="students-table" className="w-full min-w-[980px] text-sm">
               <thead>
-                <tr className="border-b border-zinc-900 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                <tr className="border-b border-[var(--surface-border)] text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
                   <th className="px-5 py-4">Aluno</th>
                   <th className="px-5 py-4">CPF</th>
                   <th className="px-5 py-4">Plano</th>
@@ -620,19 +620,19 @@ export default function StudentsPage() {
               </thead>
               <tbody>
                 {students.map((student) => (
-                  <tr key={student.student_id} className="border-b border-zinc-900/70 hover:bg-zinc-950/55">
+                  <tr key={student.student_id} className="border-b border-[var(--surface-border)] hover:bg-[var(--surface-soft)]">
                     <td className="px-5 py-4">
                       <button type="button" onClick={() => viewStudent(student)} className="text-left">
-                        <p className="font-semibold text-zinc-100">{student.nome}</p>
-                        <p className="mt-1 text-xs text-zinc-500">{student.email || 'Sem e-mail'}</p>
+                        <p className="font-semibold text-[var(--text-primary)]">{student.nome}</p>
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">{student.email || 'Sem e-mail'}</p>
                       </button>
                     </td>
-                    <td className="px-5 py-4 text-zinc-400">{student.cpf || '-'}</td>
-                    <td className="px-5 py-4 text-zinc-300">{getPlanName(student.plano_id)}</td>
+                    <td className="px-5 py-4 text-[var(--text-secondary)]">{student.cpf || '-'}</td>
+                    <td className="px-5 py-4 text-[var(--text-secondary)]">{getPlanName(student.plano_id)}</td>
                     <td className="px-5 py-4">
                       <StatusBadge label={String(student.status || '').toLowerCase() === 'ativo' ? 'Ativo' : 'Inativo'} tone={statusTone(student.status)} />
                     </td>
-                    <td className="px-5 py-4 text-zinc-400">
+                    <td className="px-5 py-4 text-[var(--text-secondary)]">
                       {student.data_vencimento ? new Date(student.data_vencimento).toLocaleDateString('pt-BR') : '-'}
                     </td>
                     <td className="px-5 py-4">
@@ -684,16 +684,16 @@ export default function StudentsPage() {
               <StatusBadge label={selectedStudent.auth_login_enabled !== false ? 'Login liberado' : 'Sem login'} tone={selectedStudent.auth_login_enabled !== false ? 'info' : 'neutral'} />
             </div>
 
-            <div className="grid gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-4 md:grid-cols-2">
+            <div className="grid gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4 md:grid-cols-2">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Contato</p>
-                <p className="mt-1 text-sm text-zinc-100">{selectedStudent.email || 'Sem e-mail'}</p>
-                <p className="mt-1 text-sm text-zinc-400">{selectedStudent.cpf || '-'}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Contato</p>
+                <p className="mt-1 text-sm text-[var(--text-primary)]">{selectedStudent.email || 'Sem e-mail'}</p>
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">{selectedStudent.cpf || '-'}</p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Plano</p>
-                <p className="mt-1 text-sm text-zinc-100">{getPlanName(selectedStudent.plano_id)}</p>
-                <p className="mt-1 text-sm text-zinc-400">Vence em {selectedStudent.data_vencimento ? new Date(selectedStudent.data_vencimento).toLocaleDateString('pt-BR') : '-'}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Plano</p>
+                <p className="mt-1 text-sm text-[var(--text-primary)]">{getPlanName(selectedStudent.plano_id)}</p>
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">Vence em {selectedStudent.data_vencimento ? new Date(selectedStudent.data_vencimento).toLocaleDateString('pt-BR') : '-'}</p>
               </div>
             </div>
 
@@ -705,8 +705,8 @@ export default function StudentsPage() {
                 <TextField label="Frequencia semanal" type="number" defaultValue={selectedStudent.dias_frequencia ?? selectedStudent.dias_presenca ?? 0} onBlur={(event) => saveStudentDetails({ dias_frequencia: parseInt(event.target.value, 10) || 0 })} />
               </div>
               <label className="mt-4 block space-y-1.5">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Treino e observacoes</span>
-                <textarea defaultValue={selectedStudent.treino || ''} onBlur={(event) => saveStudentDetails({ treino: event.target.value })} className="min-h-[112px] w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]" />
+                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Treino e observacoes</span>
+                <textarea defaultValue={selectedStudent.treino || ''} onBlur={(event) => saveStudentDetails({ treino: event.target.value })} className="min-h-[112px] w-full rounded-md border border-[var(--surface-border)] bg-[var(--surface-canvas)] px-3 py-3 text-sm text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]" />
               </label>
             </SectionCard>
 
@@ -723,9 +723,9 @@ export default function StudentsPage() {
               <Banner tone="info" title="Credenciais modernas" description={`Passkeys registradas: ${passkeys.length}. Biometria vinculada: ${selectedStudent.biometria_id || 'nao informada'}.`} />
               <div className="mt-4 space-y-3">
                 {passkeys.length > 0 ? passkeys.map((passkey, index) => (
-                  <div key={`${passkey.id}-${index}`} className="rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4">
-                    <p className="font-mono text-xs text-zinc-200">{passkey.id}</p>
-                    <p className="mt-1 text-xs text-zinc-500">Criado em {new Date(passkey.created_at).toLocaleString('pt-BR')}</p>
+                  <div key={`${passkey.id}-${index}`} className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4">
+                    <p className="font-mono text-xs text-[var(--text-primary)]">{passkey.id}</p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">Criado em {new Date(passkey.created_at).toLocaleString('pt-BR')}</p>
                   </div>
                 )) : <EmptyState icon={Fingerprint} title="Sem passkeys registradas" description="Registre uma passkey neste painel para habilitar autenticacao moderna do aluno." />}
               </div>
@@ -783,7 +783,7 @@ export default function StudentsPage() {
           </>
         }
       >
-        <p className="text-sm text-zinc-400">A lista sera atualizada automaticamente apos a resposta do backend.</p>
+        <p className="text-sm text-[var(--text-secondary)]">A lista sera atualizada automaticamente apos a resposta do backend.</p>
       </Dialog>
     </div>
   );

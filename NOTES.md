@@ -402,6 +402,25 @@
 - `npm --prefix frontend run build` -> **passa**
 - `python -m pytest backend/tests -q` -> **92 passed**
 
+## Refino do modo claro nas telas principais
+- O tema branco foi fechado nas paginas com maior volume operacional que ainda tinham resquicios de classes escuras hardcoded:
+  - `LoginPage`
+  - `Dashboard`
+  - `StudentsPage`
+  - `StudentContractsPage`
+  - `NotificationsPage`
+- `NotificationsPage` foi reorganizada como inbox operacional:
+  - cards de resumo
+  - filtros por estado
+  - busca local
+  - lista mais legivel com acoes claras
+- Os componentes e blocos dessas telas agora usam tokens semanticos de superficie, texto e borda no lugar de `zinc-*` fixo.
+- Foi corrigido texto com encoding visual quebrado na tela de login.
+
+### Validacao desta etapa
+- `npm --prefix frontend run lint` -> **passa**
+- `npm --prefix frontend run build` -> **passa**
+
 ## Tema branco e sistema de aparencia
 - O branding agora suporta `color_mode` com dois estados:
   - `dark`

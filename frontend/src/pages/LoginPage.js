@@ -30,19 +30,19 @@ const modeCopy = {
 function PasswordField({ label, value, onChange, visible, onToggle, ...props }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</span>
+      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">{label}</span>
       <div className="relative">
         <input
           value={value}
           onChange={onChange}
           type={visible ? 'text' : 'password'}
-          className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 pr-11 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
+          className="h-11 w-full rounded-xl border border-[var(--surface-border)] bg-[var(--surface-canvas)] px-3 pr-11 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
           {...props}
         />
         <button
           type="button"
           onClick={onToggle}
-          className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+          className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--text-primary)]"
         >
           {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>
@@ -202,14 +202,14 @@ export default function LoginPage() {
             <div>
               <BrandMark className="mb-8" caption={APP_BRAND.tagline} />
               <div className="max-w-xl">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
                   Plataforma SaaS para academias
                 </p>
-                <h1 className="mt-3 font-heading text-5xl uppercase tracking-[0.04em] text-zinc-50 sm:text-6xl">
+                <h1 className="mt-3 font-heading text-5xl uppercase tracking-[0.04em] text-[var(--text-primary)] sm:text-6xl">
                   Gestao com ritmo, clareza e controle.
                 </h1>
-                <p className="mt-4 max-w-lg text-base text-zinc-300">
-                  {APP_BRAND.productLine} O produto foi desenhado para operacao real, sem ruído e com foco em receita, acesso e equipe.
+                <p className="mt-4 max-w-lg text-base text-[var(--text-secondary)]">
+                  {APP_BRAND.productLine} O produto foi desenhado para operacao real, sem ruido e com foco em receita, acesso e equipe.
                 </p>
               </div>
             </div>
@@ -220,9 +220,9 @@ export default function LoginPage() {
                 { title: 'Acesso e catraca', text: 'Visao operacional, bloqueios por perfil e leitura rapida de incidentes.' },
                 { title: 'Contratos e equipe', text: 'Fluxos administrativos com menos friccao e mais hierarquia visual.' },
               ].map((item) => (
-                <div key={item.title} className="rounded-[var(--radius-md)] border border-zinc-900 bg-zinc-950/70 p-4">
-                  <p className="text-sm font-semibold text-zinc-100">{item.title}</p>
-                  <p className="mt-2 text-sm text-zinc-500">{item.text}</p>
+                <div key={item.title} className="rounded-[var(--radius-md)] border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4">
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">{item.title}</p>
+                  <p className="mt-2 text-sm text-[var(--text-muted)]">{item.text}</p>
                 </div>
               ))}
             </div>
@@ -232,9 +232,9 @@ export default function LoginPage() {
         <ContentCard className="surface-panel flex items-center px-5 py-6 sm:px-7 lg:px-8">
           <div className="w-full">
             <div className="mb-6">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-zinc-500">Acesso seguro</p>
-              <h2 className="mt-2 text-2xl font-semibold text-zinc-50">{currentModeCopy.title}</h2>
-              <p className="mt-1 text-sm text-zinc-500">{currentModeCopy.subtitle}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">Acesso seguro</p>
+              <h2 className="mt-2 text-2xl font-semibold text-[var(--text-primary)]">{currentModeCopy.title}</h2>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">{currentModeCopy.subtitle}</p>
             </div>
 
             {paymentRequired ? (
@@ -365,7 +365,7 @@ export default function LoginPage() {
               </form>
             ) : null}
 
-            <div className="mt-6 border-t border-zinc-900 pt-5 text-sm text-zinc-500">
+            <div className="mt-6 border-t border-[var(--surface-border)] pt-5 text-sm text-[var(--text-muted)]">
               {mode === 'login' && !isPlatformSubdomain ? (
                 <p>
                   Nao tem conta?{' '}
@@ -395,7 +395,7 @@ export default function LoginPage() {
               ) : null}
             </div>
 
-            <div className="mt-5 flex items-center gap-3 border-t border-zinc-900 pt-5 text-xs text-zinc-500">
+            <div className="mt-5 flex items-center gap-3 border-t border-[var(--surface-border)] pt-5 text-xs text-[var(--text-muted)]">
               <div className="inline-flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-[var(--brand-primary)]" />
                 Sessao validada no backend
