@@ -400,6 +400,27 @@
 ### Validacao desta etapa
 - `npm --prefix frontend run lint` -> **passa**
 - `npm --prefix frontend run build` -> **passa**
+
+## NotificationsPage operacional
+- `NotificationsPage` foi elevada para uma fila operacional real:
+  - busca por texto
+  - filtros por estado
+  - selecao multipla
+  - acoes em lote para marcar leitura e remover
+  - painel lateral de detalhe
+  - confirmacao para remocao
+  - atualizacao local sem reload completo da pagina a cada acao
+- O badge de notificacoes na sidebar agora reage imediatamente a alteracoes feitas na propria tela.
+- Backend recebeu endpoints em lote compativeis com o fluxo novo:
+  - `POST /api/notifications/read-bulk`
+  - `POST /api/notifications/delete-bulk`
+- O endpoint de leitura individual passou a registrar `read_at`.
+
+### Validacao desta etapa
+- `python -m pytest backend/tests/test_notifications.py -q` -> **2 passed**
+- `python -m pytest backend/tests -q` -> **95 passed**
+- `npm --prefix frontend run lint` -> **passa**
+- `npm --prefix frontend run build` -> **passa**
 - `python -m pytest backend/tests -q` -> **92 passed**
 
 ## Refino do modo claro nas telas principais

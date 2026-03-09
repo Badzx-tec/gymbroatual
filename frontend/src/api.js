@@ -271,7 +271,9 @@ export const api = {
   listNotifications: (limit = 50) => request(`/api/notifications?limit=${limit}`),
   checkExpiring: () => request('/api/notifications/check-expiring', { method: 'POST' }),
   markRead: (id) => request(`/api/notifications/${id}/read`, { method: 'PUT' }),
+  markNotificationsRead: (notifIds) => request('/api/notifications/read-bulk', { method: 'POST', body: JSON.stringify({ notif_ids: notifIds }) }),
   deleteNotification: (id) => request(`/api/notifications/${id}`, { method: 'DELETE' }),
+  deleteNotifications: (notifIds) => request('/api/notifications/delete-bulk', { method: 'POST', body: JSON.stringify({ notif_ids: notifIds }) }),
 
   subscriptionStatus: () => request('/api/billing/subscription/status'),
   subscriptionStatusRefresh: () => request('/api/billing/subscription/status?refresh=true'),

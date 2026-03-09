@@ -147,12 +147,26 @@ export default function AdminLayout() {
   }, [user.email, user.name]);
 
   React.useEffect(() => {
-    api
-      .listNotifications(50)
-      .then((notifs) => {
-        setUnreadCount(notifs.filter((n) => !n.lida).length);
-      })
-      .catch(() => {});
+    const syncUnreadCount = () => {
+      api
+        .listNotifications(50)
+        .then((notifs) => {
+          setUnreadCount(notifs.filter((n) => !n.lida).length);
+        })
+        .catch(() => {});
+    };
+
+    const handleNotificationsUpdated = (event) => {
+      if (typeof event?.detail?.unreadCount === 'number') {
+        setUnreadCount(event.detail.unreadCount);
+      }
+    };
+
+    syncUnreadCount();
+    window.addEventListener('gymbro:notifications-updated', handleNotificationsUpdated);
+    return () => {
+      window.removeEventListener('gymbro:notifications-updated', handleNotificationsUpdated);
+    };
   }, []);
 
   const handleLogout = async () => {

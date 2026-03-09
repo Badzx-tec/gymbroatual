@@ -30,6 +30,27 @@ def _clean_doc(doc: dict) -> dict:
     return sanitized
 
 
+def _extract_notification_ids(payload: dict | None) -> list[str]:
+    payload = payload or {}
+    raw_ids = payload.get("notif_ids") or payload.get("ids") or []
+    if not isinstance(raw_ids, list):
+        raise HTTPException(status_code=422, detail="notif_ids deve ser uma lista")
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in raw_ids[:300]:
+        notif_id = str(item or "").strip()
+        if not notif_id or notif_id in seen:
+            continue
+        seen.add(notif_id)
+        normalized.append(notif_id)
+
+    if not normalized:
+        raise HTTPException(status_code=422, detail="Selecione ao menos uma notificacao")
+
+    return normalized
+
+
 @router.get("/dashboard")
 async def dashboard(actor: dict = Depends(require_admin_actor())):
     return await gym_routes.dashboard(actor)
@@ -173,9 +194,21 @@ async def notifications_check(actor: dict = Depends(require_admin_actor())):
 async def notification_read(notif_id: str, actor: dict = Depends(require_admin_actor())):
     db = get_db()
     await db.notifications.update_one(
-        {"notif_id": notif_id, "owner_id": actor["owner_id"]}, {"$set": {"lida": True}}
+        {"notif_id": notif_id, "owner_id": actor["owner_id"]},
+        {"$set": {"lida": True, "read_at": datetime.now(UTC)}},
     )
     return {"message": "ok"}
+
+
+@router.post("/notifications/read-bulk")
+async def notification_read_bulk(payload: dict, actor: dict = Depends(require_admin_actor())):
+    db = get_db()
+    notif_ids = _extract_notification_ids(payload)
+    result = await db.notifications.update_many(
+        {"notif_id": {"$in": notif_ids}, "owner_id": actor["owner_id"]},
+        {"$set": {"lida": True, "read_at": datetime.now(UTC)}},
+    )
+    return {"message": "ok", "updated": int(result.modified_count or 0), "notif_ids": notif_ids}
 
 
 @router.delete("/notifications/{notif_id}")
@@ -183,6 +216,16 @@ async def notification_delete(notif_id: str, actor: dict = Depends(require_admin
     db = get_db()
     await db.notifications.delete_one({"notif_id": notif_id, "owner_id": actor["owner_id"]})
     return {"message": "ok"}
+
+
+@router.post("/notifications/delete-bulk")
+async def notification_delete_bulk(payload: dict, actor: dict = Depends(require_admin_actor())):
+    db = get_db()
+    notif_ids = _extract_notification_ids(payload)
+    result = await db.notifications.delete_many(
+        {"notif_id": {"$in": notif_ids}, "owner_id": actor["owner_id"]}
+    )
+    return {"message": "ok", "deleted": int(result.deleted_count or 0), "notif_ids": notif_ids}
 
 
 @router.post("/catraca/command")
