@@ -352,6 +352,16 @@ def _sanitize_access_log_output(entry: dict) -> dict:
     return safe
 
 
+def _credential_query_for_method(*, owner_id: str, method: str, credential: str) -> dict | None:
+    normalized_method = _normalize_method(method)
+    if normalized_method != "biometry":
+        return None
+    return {
+        "owner_id": owner_id,
+        "biometria_id": credential,
+    }
+
+
 def _evaluate_student_access(student: dict | None, now: datetime) -> tuple[bool, str, dict]:
     if not student:
         return False, "student_not_found", {"rule": "student_exists"}
@@ -934,20 +944,18 @@ async def turnstile_decision(
             "ttl": 3,
         }
 
-    credential_query = {
-        "owner_id": device["owner_id"],
-        "$or": [
-            {"tag_rfid": normalized["credential"]},
-            {"biometria_id": normalized["credential"]},
-            {"keypad_code": normalized["credential"]},
-            {"matricula": normalized["credential"]},
-        ],
-    }
-
-    student = await db.students.find_one(
-        credential_query,
-        {"_id": 0},
+    credential_query = _credential_query_for_method(
+        owner_id=device["owner_id"],
+        method=normalized["method"],
+        credential=normalized["credential"],
     )
+
+    student = None
+    if credential_query:
+        student = await db.students.find_one(
+            credential_query,
+            {"_id": 0},
+        )
 
     employee = None
     owner_account = None
@@ -962,7 +970,15 @@ async def turnstile_decision(
     subject_name = None
     subject_role = None
 
-    if student:
+    if credential_query is None:
+        reason = "biometry_required"
+        details = {
+            "rule": "biometry_required",
+            "expected_method": "biometry",
+            "received_method": normalized["method"],
+            "requested_direction": event_direction,
+        }
+    elif student:
         try:
             student = await _refresh_student_contract_snapshot(student, now)
         except Exception as exc:  # pragma: no cover - resiliencia em runtime
@@ -1081,6 +1097,8 @@ async def turnstile_decision(
 
     if allow_now:
         message = "Acesso liberado"
+    elif reason == "biometry_required":
+        message = "Use biometria para entrada e saida"
     elif reason == "turnstile_direction_locked":
         message = "Fluxo travado para esta direcao"
     else:

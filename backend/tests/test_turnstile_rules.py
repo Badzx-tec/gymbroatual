@@ -206,6 +206,7 @@ class _FakeDb:
                     "gym_id": "gym_1",
                     "name": "Recepcao",
                     "is_active": True,
+                    "tag_rfid": "RFID-EMP-1",
                     "biometria_id": "BIO-EMP-1",
                 }
             ]
@@ -252,6 +253,67 @@ async def test_turnstile_decision_allows_employee_credentials(monkeypatch):
     assert decision["allow"] is True
     assert db.access_logs.inserted[-1]["employee_id"] == "emp_1"
     assert db.access_logs.inserted[-1]["subject_type"] == "employee"
+
+
+@pytest.mark.asyncio
+async def test_turnstile_decision_denies_non_biometric_method(monkeypatch):
+    db = _FakeDb()
+
+    async def fake_authenticate(*_args, **_kwargs):
+        return (
+            {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"},
+            {
+                "device_id": "dev_1",
+                "method": "rfid",
+                "credential": "RFID-EMP-1",
+                "direction": "exit",
+            },
+        )
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_request", fake_authenticate)
+    monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
+
+    decision = await turnstiles.turnstile_decision(
+        payload={},
+        request=_DummyRequest(),
+        x_device_token=None,
+    )
+
+    assert decision["allow"] is False
+    assert decision["message"] == "Use biometria para entrada e saida"
+    assert db.access_logs.inserted[-1]["reason"] == "biometry_required"
+    assert db.access_logs.inserted[-1]["subject_type"] is None
+
+
+@pytest.mark.asyncio
+async def test_turnstile_decision_matches_only_biometry_field(monkeypatch):
+    db = _FakeDb()
+
+    async def fake_authenticate(*_args, **_kwargs):
+        return (
+            {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"},
+            {
+                "device_id": "dev_1",
+                "method": "biometry",
+                "credential": "RFID-EMP-1",
+                "direction": "entry",
+            },
+        )
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_request", fake_authenticate)
+    monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
+
+    decision = await turnstiles.turnstile_decision(
+        payload={},
+        request=_DummyRequest(),
+        x_device_token=None,
+    )
+
+    assert decision["allow"] is False
+    assert db.access_logs.inserted[-1]["reason"] == "credential_not_found"
+    assert db.access_logs.inserted[-1]["employee_id"] is None
 
 
 @pytest.mark.asyncio

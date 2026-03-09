@@ -36,6 +36,7 @@ import { directionLabel, subjectTypeLabel } from '../utils/labels';
 
 const REASON_LABELS = {
   ok: 'Acesso valido',
+  biometry_required: 'Biometria obrigatoria',
   credential_not_found: 'Credencial nao encontrada',
   student_not_found: 'Aluno nao encontrado',
   student_inactive: 'Aluno inativo',
@@ -146,6 +147,9 @@ function extractReasonDetail(log) {
   if (detail.rule === 'turnstile_control_state') {
     const requested = directionLabel(detail.requested_direction);
     return `Fluxo ${requested.toLowerCase()} travado para este perfil.`;
+  }
+  if (detail.rule === 'biometry_required') {
+    return 'Entrada e saida exigem leitura biometrica.';
   }
   return '';
 }

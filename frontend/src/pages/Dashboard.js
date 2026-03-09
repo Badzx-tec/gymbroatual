@@ -66,6 +66,7 @@ function reasonLabel(value) {
   const key = String(value || '').toLowerCase();
   const labels = {
     ok: 'Acesso valido',
+    biometry_required: 'Biometria obrigatoria',
     contract_access_blocked: 'Contrato bloqueado',
     student_manual_block: 'Bloqueio manual',
     plan_expired: 'Plano vencido',

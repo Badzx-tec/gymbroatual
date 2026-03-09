@@ -17,6 +17,7 @@ import { directionLabel, subjectTypeLabel } from '../utils/labels';
 
 const REASON_LABELS = {
   ok: 'Acesso valido',
+  biometry_required: 'Biometria obrigatoria',
   credential_not_found: 'Credencial nao encontrada',
   contract_access_blocked: 'Contrato bloqueado',
   student_manual_block: 'Bloqueio manual do aluno',
