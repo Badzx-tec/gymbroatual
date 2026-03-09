@@ -68,6 +68,49 @@ Gateway (simulador) via profile:
 docker compose --profile gateway up -d gateway-toletus
 ```
 
+## Gateway local da academia (cliente)
+
+Para a academia do cliente, rode somente o agente local da Toletus. Nao use `docker-compose.prod.yml` nesse host, porque ele sobe `nginx`, `backend`, `frontend` e `mongo` e exige certificados TLS locais.
+
+Arquivo correto:
+
+```bash
+docker compose -f docker-compose.gateway.yml up -d --build gateway-toletus
+```
+
+Passo a passo:
+
+```powershell
+cd C:\Users\Admin\Documents\gymbroatual
+
+git fetch --all --prune
+git checkout main
+git pull --ff-only origin main
+
+docker compose -f docker-compose.prod.yml down
+docker compose -f docker-compose.gateway.yml config -q
+docker compose -f docker-compose.gateway.yml up -d --build gateway-toletus
+
+docker compose -f docker-compose.gateway.yml ps
+docker compose -f docker-compose.gateway.yml logs --tail=100 gateway-toletus
+```
+
+Script pronto para Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/deploy_gateway_client.ps1
+```
+
+Variaveis minimas no `.env` do cliente:
+- `SAAS_URL=https://gymbro.dev.br`
+- `GATEWAY_DEVICE_ID=<device_id_cadastrado_no_saas>`
+- `GATEWAY_DEVICE_TOKEN=<token_do_device>`
+- `TOLETUS_SIMULATOR=false`
+- `TOLETUS_HOST=<ip_ou_host_da_controladora>`
+- `TOLETUS_PORT=7878`
+- `TOLETUS_DEFAULT_DIRECTION=entry`
+- `TOLETUS_BIOMETRY_DEFAULT_DIRECTION=both`
+
 ## Rodando sem Docker
 
 ### Backend
