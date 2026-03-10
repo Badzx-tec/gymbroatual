@@ -206,12 +206,15 @@ class _FakeDb:
                     "gym_id": "gym_1",
                     "name": "Recepcao",
                     "is_active": True,
+                    "matricula": "FUNC0001",
                     "tag_rfid": "RFID-EMP-1",
                     "biometria_id": "BIO-EMP-1",
+                    "keypad_code": "1234",
                 }
             ]
         )
         self.access_logs = _FakeCollection([])
+        self.turnstile_events = _FakeCollection([])
         self.turnstile_devices = _FakeCollection([])
         self.turnstile_security_events = _FakeCollection([])
         self.catraca_control_state = _FakeCollection([])
@@ -256,7 +259,7 @@ async def test_turnstile_decision_allows_employee_credentials(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_turnstile_decision_denies_non_biometric_method(monkeypatch):
+async def test_turnstile_decision_allows_rfid_method_on_exit(monkeypatch):
     db = _FakeDb()
 
     async def fake_authenticate(*_args, **_kwargs):
@@ -280,10 +283,10 @@ async def test_turnstile_decision_denies_non_biometric_method(monkeypatch):
         x_device_token=None,
     )
 
-    assert decision["allow"] is False
-    assert decision["message"] == "Use biometria para entrada e saida"
-    assert db.access_logs.inserted[-1]["reason"] == "biometry_required"
-    assert db.access_logs.inserted[-1]["subject_type"] is None
+    assert decision["allow"] is True
+    assert decision["direction"] == "exit"
+    assert db.access_logs.inserted[-1]["reason"] == "ok"
+    assert db.access_logs.inserted[-1]["subject_type"] == "employee"
 
 
 @pytest.mark.asyncio
@@ -314,6 +317,73 @@ async def test_turnstile_decision_matches_only_biometry_field(monkeypatch):
     assert decision["allow"] is False
     assert db.access_logs.inserted[-1]["reason"] == "credential_not_found"
     assert db.access_logs.inserted[-1]["employee_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_turnstile_decision_denies_when_credential_missing_on_exit(monkeypatch):
+    db = _FakeDb()
+
+    async def fake_authenticate(*_args, **_kwargs):
+        return (
+            {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"},
+            {
+                "device_id": "dev_1",
+                "method": "biometry",
+                "credential": "",
+                "direction": "exit",
+            },
+        )
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_request", fake_authenticate)
+    monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
+
+    decision = await turnstiles.turnstile_decision(
+        payload={},
+        request=_DummyRequest(),
+        x_device_token=None,
+    )
+
+    assert decision["allow"] is False
+    assert decision["message"] == "Use uma credencial valida para entrar e sair"
+    assert db.access_logs.inserted[-1]["reason"] == "credential_required"
+    assert db.access_logs.inserted[-1]["direction"] == "exit"
+
+
+@pytest.mark.asyncio
+async def test_turnstile_event_records_unauthorized_passage(monkeypatch):
+    db = _FakeDb()
+
+    async def fake_authenticate(*_args, **_kwargs):
+        return (
+            {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"},
+            {
+                "device_id": "dev_1",
+                "method": "passage",
+                "credential": "exit:42",
+                "direction": "exit",
+            },
+        )
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_request", fake_authenticate)
+    monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
+
+    response = await turnstiles.turnstile_event(
+        payload={
+            "event_type": "passage",
+            "decision": False,
+            "reason": "passage_without_authorization",
+            "message": "Passagem sem credencial previa",
+        },
+        request=_DummyRequest(),
+        x_device_token=None,
+    )
+
+    assert response["message"] == "Evento recebido"
+    assert db.turnstile_events.inserted[-1]["reason"] == "passage_without_authorization"
+    assert db.access_logs.inserted[-1]["reason"] == "passage_without_authorization"
+    assert db.access_logs.inserted[-1]["decision"] == "deny"
 
 
 @pytest.mark.asyncio

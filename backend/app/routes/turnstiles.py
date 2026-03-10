@@ -11,13 +11,14 @@ from app.core.deps import require_roles
 from app.core.http import get_client_ip
 from app.core.time import UTC
 from app.db.mongo import get_db
+from app.services.internal_codes import normalize_internal_code
 from app.services.observability import log_event
 from app.services.student_contracts import derive_student_operational_status, refresh_contract_state
 from app.services.subscription import subscription_allows_login
 
 router = APIRouter()
 
-ALLOWED_METHODS = {"rfid", "keypad", "biometry", "passage"}
+ALLOWED_METHODS = {"rfid", "barcode", "keypad", "biometry", "passage"}
 DIRECTION_ENTRY = "entry"
 DIRECTION_EXIT = "exit"
 DIRECTION_BOTH = "both"
@@ -259,6 +260,19 @@ def _normalize_method(method: str) -> str:
     return normalized
 
 
+def _coerce_optional_bool(value) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+    raw = str(value).strip().lower()
+    if raw in {"1", "true", "t", "yes", "y", "on", "allow", "allowed"}:
+        return True
+    if raw in {"0", "false", "f", "no", "n", "off", "deny", "denied"}:
+        return False
+    return None
+
+
 def _parse_timestamp_utc(value: str) -> datetime:
     raw = (value or "").strip()
     if not raw:
@@ -354,12 +368,42 @@ def _sanitize_access_log_output(entry: dict) -> dict:
 
 def _credential_query_for_method(*, owner_id: str, method: str, credential: str) -> dict | None:
     normalized_method = _normalize_method(method)
-    if normalized_method != "biometry":
+    cleaned_credential = str(credential or "").strip()
+    if not cleaned_credential:
         return None
-    return {
-        "owner_id": owner_id,
-        "biometria_id": credential,
-    }
+
+    if normalized_method == "biometry":
+        return {
+            "owner_id": owner_id,
+            "biometria_id": cleaned_credential,
+        }
+
+    if normalized_method == "rfid":
+        return {
+            "owner_id": owner_id,
+            "tag_rfid": cleaned_credential,
+        }
+
+    if normalized_method == "barcode":
+        normalized_code = normalize_internal_code(cleaned_credential)
+        if not normalized_code:
+            return None
+        return {
+            "owner_id": owner_id,
+            "matricula": normalized_code,
+        }
+
+    if normalized_method == "keypad":
+        normalized_code = normalize_internal_code(cleaned_credential)
+        keypad_clauses = [{"keypad_code": cleaned_credential}]
+        if normalized_code:
+            keypad_clauses.append({"matricula": normalized_code})
+        return {
+            "owner_id": owner_id,
+            "$or": keypad_clauses,
+        }
+
+    return None
 
 
 def _evaluate_student_access(student: dict | None, now: datetime) -> tuple[bool, str, dict]:
@@ -970,11 +1014,19 @@ async def turnstile_decision(
     subject_name = None
     subject_role = None
 
-    if credential_query is None:
-        reason = "biometry_required"
+    if not str(normalized["credential"] or "").strip():
+        reason = "credential_required"
         details = {
-            "rule": "biometry_required",
-            "expected_method": "biometry",
+            "rule": "credential_required",
+            "expected_methods": ["biometry", "rfid", "barcode", "keypad"],
+            "received_method": normalized["method"],
+            "requested_direction": event_direction,
+        }
+    elif credential_query is None:
+        reason = "credential_required"
+        details = {
+            "rule": "credential_required",
+            "expected_methods": ["biometry", "rfid", "barcode", "keypad"],
             "received_method": normalized["method"],
             "requested_direction": event_direction,
         }
@@ -1097,8 +1149,8 @@ async def turnstile_decision(
 
     if allow_now:
         message = "Acesso liberado"
-    elif reason == "biometry_required":
-        message = "Use biometria para entrada e saida"
+    elif reason == "credential_required":
+        message = "Use uma credencial valida para entrar e sair"
     elif reason == "turnstile_direction_locked":
         message = "Fluxo travado para esta direcao"
     else:
@@ -1142,13 +1194,66 @@ async def turnstile_event(
         "direction": _normalize_direction(payload.get("direction") or normalized.get("direction")),
         "decision": payload.get("decision"),
         "message": payload.get("message"),
+        "reason": str(payload.get("reason") or "").strip().lower() or None,
+        "reason_detail": payload.get("reason_detail"),
         "allow_entry": payload.get("allow_entry"),
         "allow_exit": payload.get("allow_exit"),
         "release_direction": payload.get("release_direction"),
+        "event_kind": payload.get("event_kind"),
+        "event_type": payload.get("event_type"),
         "raw": payload.get("raw"),
         "created_at": now,
     }
     await db.turnstile_events.insert_one(event)
+
+    if str(event.get("event_type") or "").strip().lower() == "passage":
+        decision = _coerce_optional_bool(payload.get("decision"))
+        if decision is False:
+            reason = event.get("reason") or "passage_without_authorization"
+            details = event.get("reason_detail")
+            if not isinstance(details, dict):
+                details = {
+                    "rule": "passage_without_authorization",
+                    "requested_direction": event.get("direction"),
+                    "message": event.get("message"),
+                }
+            await db.access_logs.insert_one(
+                {
+                    "access_id": f"acc_{secrets.token_hex(6)}",
+                    "gym_id": device["gym_id"],
+                    "owner_id": device["owner_id"],
+                    "device_id": normalized["device_id"],
+                    "method": normalized["method"],
+                    "credential": normalized["credential"],
+                    "direction": event.get("direction"),
+                    "subject_type": None,
+                    "subject_id": None,
+                    "subject_name": None,
+                    "subject_role": None,
+                    "student_id": None,
+                    "student_name": None,
+                    "employee_id": None,
+                    "employee_name": None,
+                    "owner_name": None,
+                    "decision": "deny",
+                    "autorizado": False,
+                    "tipo": "passage",
+                    "motivo": reason,
+                    "reason": reason,
+                    "reason_detail": details,
+                    "allow_entry": False,
+                    "allow_exit": False,
+                    "timestamp": now,
+                    "created_at": now,
+                }
+            )
+            log_event(
+                "turnstile_passage_without_authorization",
+                owner_id=device["owner_id"],
+                device_id=normalized["device_id"],
+                direction=event.get("direction"),
+                reason=reason,
+            )
     return {"message": "Evento recebido"}
 
 

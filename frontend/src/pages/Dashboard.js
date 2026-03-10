@@ -67,10 +67,12 @@ function reasonLabel(value) {
   const labels = {
     ok: 'Acesso valido',
     biometry_required: 'Biometria obrigatoria',
+    credential_required: 'Credencial obrigatoria',
     contract_access_blocked: 'Contrato bloqueado',
     student_manual_block: 'Bloqueio manual',
     plan_expired: 'Plano vencido',
     credential_not_found: 'Credencial nao encontrada',
+    passage_without_authorization: 'Passagem sem credencial/autorizacao',
     academy_subscription_inactive: 'Assinatura da academia inativa',
   };
   return labels[key] || key || '-';

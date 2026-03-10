@@ -6,6 +6,7 @@ import os
 import secrets
 import socket
 from datetime import datetime, timezone
+from time import monotonic
 
 import httpx
 
@@ -138,6 +139,14 @@ SAAS_REQUEST_TIMEOUT = _env_float("SAAS_REQUEST_TIMEOUT", 10.0, minimum=1.0)
 TOLETUS_DENY_BEEP = _env_int("TOLETUS_DENY_BEEP", 2, minimum=0)
 TOLETUS_DENY_LED = _env_int("TOLETUS_DENY_LED", 1, minimum=0)
 TOLETUS_DENY_DURATION_MS = _env_int("TOLETUS_DENY_DURATION_MS", 2000, minimum=0)
+AUTHORIZED_PASSAGE_TTL_SECONDS = _env_float(
+    "AUTHORIZED_PASSAGE_TTL_SECONDS", 8.0, minimum=1.0
+)
+
+_recent_authorizations: dict[str, list[float]] = {
+    DIRECTION_ENTRY: [],
+    DIRECTION_EXIT: [],
+}
 
 
 def sign_payload(method: str, credential: str, timestamp: str, nonce: str) -> str:
@@ -302,6 +311,43 @@ def normalize_decision(decision: dict, event_direction: str) -> dict:
     }
 
 
+def _prune_recent_authorizations(now_mono: float | None = None) -> None:
+    cutoff = (now_mono or monotonic()) - AUTHORIZED_PASSAGE_TTL_SECONDS
+    for direction in (DIRECTION_ENTRY, DIRECTION_EXIT):
+        _recent_authorizations[direction] = [
+            timestamp
+            for timestamp in _recent_authorizations.get(direction, [])
+            if timestamp >= cutoff
+        ]
+
+
+def _remember_authorized_release(normalized_decision: dict) -> None:
+    release_direction = normalize_direction(normalized_decision.get("release_direction"))
+    if release_direction == DIRECTION_UNKNOWN:
+        return
+
+    _prune_recent_authorizations()
+    now_mono = monotonic()
+    if release_direction == DIRECTION_BOTH:
+        _recent_authorizations[DIRECTION_ENTRY].append(now_mono)
+        _recent_authorizations[DIRECTION_EXIT].append(now_mono)
+        return
+    if release_direction in {DIRECTION_ENTRY, DIRECTION_EXIT}:
+        _recent_authorizations[release_direction].append(now_mono)
+
+
+def _consume_recent_authorization(direction: str) -> bool:
+    normalized_direction = normalize_direction(direction)
+    if normalized_direction not in {DIRECTION_ENTRY, DIRECTION_EXIT}:
+        return False
+    _prune_recent_authorizations()
+    cached = _recent_authorizations.get(normalized_direction) or []
+    if not cached:
+        return False
+    cached.pop(0)
+    return True
+
+
 async def request_decision(client: httpx.AsyncClient, event: dict, event_direction: str) -> dict:
     payload = build_auth_payload(
         event["method"],
@@ -332,9 +378,11 @@ async def post_event(
     *,
     normalized_decision: dict | None = None,
     send_message: str | None = None,
+    reason: str | None = None,
+    reason_detail: dict | None = None,
 ) -> None:
     method = str(event.get("method") or "").strip().lower()
-    if method not in {"rfid", "keypad", "biometry", "passage"}:
+    if method not in {"rfid", "barcode", "keypad", "biometry", "passage"}:
         return
 
     payload = build_auth_payload(
@@ -355,6 +403,10 @@ async def post_event(
         payload["allow_entry"] = bool(normalized_decision.get("allow_entry"))
         payload["allow_exit"] = bool(normalized_decision.get("allow_exit"))
         payload["release_direction"] = normalized_decision.get("release_direction")
+    if reason:
+        payload["reason"] = str(reason).strip().lower()
+    if reason_detail:
+        payload["reason_detail"] = reason_detail
 
     try:
         response = await client.post(
@@ -446,6 +498,8 @@ async def handle_credential_event(
     )
 
     await apply_decision_to_device(writer, event, normalized)
+    if normalized["allow"]:
+        _remember_authorized_release(normalized)
     await post_event(client, event, normalized_decision=normalized)
 
 
@@ -458,6 +512,32 @@ async def handle_operational_event(client: httpx.AsyncClient, event: dict) -> No
         command=f"0x{int(event.get('command') or 0):04x}",
     )
     if event.get("type") == "passage":
+        if not _consume_recent_authorization(event.get("direction")):
+            _log(
+                "unexpected_passage",
+                direction=event.get("direction"),
+                count=event.get("count"),
+                message="Passagem detectada sem credencial/autorizacao previa",
+            )
+            await post_event(
+                client,
+                event,
+                normalized_decision={
+                    "allow": False,
+                    "allow_entry": False,
+                    "allow_exit": False,
+                    "release_direction": None,
+                    "message": "Passagem sem credencial ou autorizacao previa",
+                },
+                send_message="Passagem sem credencial ou autorizacao previa",
+                reason="passage_without_authorization",
+                reason_detail={
+                    "rule": "passage_without_authorization",
+                    "direction": normalize_direction(event.get("direction")),
+                    "count": event.get("count"),
+                },
+            )
+            return
         await post_event(client, event)
 
 
@@ -609,6 +689,7 @@ async def main() -> None:
         reconnect_delay=TOLETUS_RECONNECT_DELAY,
         probe_on_connect=TOLETUS_PROBE_ON_CONNECT,
         probe_on_timeout=TOLETUS_PROBE_ON_TIMEOUT,
+        authorized_passage_ttl_s=AUTHORIZED_PASSAGE_TTL_SECONDS,
         default_direction=TOLETUS_DEFAULT_DIRECTION,
         biometry_default_direction=TOLETUS_BIOMETRY_DEFAULT_DIRECTION,
     )
