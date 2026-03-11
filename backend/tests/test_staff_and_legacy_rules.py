@@ -174,3 +174,32 @@ async def test_create_employee_blank_matricula_with_shadow_sync(monkeypatch):
     assert result["matricula_auto_generated"] is True
     assert result["shadow_student_id"].startswith("empstd_")
     assert "shadow_sync_warning" not in result
+
+
+@pytest.mark.asyncio
+async def test_reset_employee_password_accepts_custom_password(monkeypatch):
+    db = FakeDb(
+        employees=[
+            {
+                "employee_id": "emp_1",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "name": "Recepcao",
+                "role": "RECEPTION",
+                "password_hash": "hash-antigo",
+                "is_active": True,
+            }
+        ]
+    )
+    monkeypatch.setattr(staff, "get_db", lambda: db)
+
+    result = await staff.reset_password(
+        employee_id="emp_1",
+        payload={"new_password": "NovaSenha#2026"},
+        actor={"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER"},
+    )
+
+    assert result["temp_password"] == "NovaSenha#2026"
+    updated = await db.employees.find_one({"employee_id": "emp_1", "owner_id": "own_1"})
+    assert updated["password_hash"] != "hash-antigo"
+    assert updated.get("session_revoked_at") is not None

@@ -85,6 +85,10 @@ def _month_label(value: datetime) -> str:
     return f"{names[value.month - 1]}/{value.year % 100:02d}"
 
 
+def _can_view_financial_dashboard(actor: dict) -> bool:
+    return str(actor.get("role") or "").upper() in {"OWNER", "MANAGER"}
+
+
 @router.get("")
 async def list_gyms(
     owner: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION", "TRAINER"))
@@ -100,6 +104,7 @@ async def dashboard(
 ):
     db = get_db()
     owner_id = owner["owner_id"]
+    can_view_financial = _can_view_financial_dashboard(owner)
     base = {"owner_id": owner["owner_id"], "is_employee_shadow": {"$ne": True}}
     total_alunos = await db.students.count_documents(base)
     alunos_ativos = await db.students.count_documents({**base, "status": "ativo"})
@@ -114,14 +119,17 @@ async def dashboard(
     )
     sem_treino = await db.students.count_documents({**base, "$or": [{"treino": {"$exists": False}}, {"treino": ""}]})
 
-    revenue_window_start = now - timedelta(days=30)
-    paid_charges = await db.student_charges.find(
-        {"owner_id": owner_id, "status": "paid", "paid_at": {"$gte": revenue_window_start}},
-        {"_id": 0, "amount": 1, "amount_received": 1},
-    ).to_list(5000)
-    faturamento_mensal = sum(
-        float(item.get("amount_received") or item.get("amount") or 0) for item in paid_charges
-    )
+    faturamento_mensal = None
+    if can_view_financial:
+        revenue_window_start = now - timedelta(days=30)
+        paid_charges = await db.student_charges.find(
+            {"owner_id": owner_id, "status": "paid", "paid_at": {"$gte": revenue_window_start}},
+            {"_id": 0, "amount": 1, "amount_received": 1},
+        ).to_list(5000)
+        faturamento_mensal = round(
+            sum(float(item.get("amount_received") or item.get("amount") or 0) for item in paid_charges),
+            2,
+        )
 
     occupancy_window = now - timedelta(hours=2)
     current_accesses = await db.access_logs.find(
@@ -173,7 +181,7 @@ async def dashboard(
         "alunos_inativos": alunos_inativos,
         "acessos_hoje": acessos_hoje,
         "alunos_sem_treino": sem_treino,
-        "faturamento_mensal": round(faturamento_mensal, 2),
+        "faturamento_mensal": faturamento_mensal,
         "ocupacao_atual": len(unique_subjects),
         "ultimos_acessos": latest_logs[:10],
     }
@@ -183,25 +191,38 @@ async def dashboard_charts(owner: dict) -> dict:
     db = get_db()
     owner_id = owner["owner_id"]
     now = datetime.now(UTC)
+    can_view_financial = _can_view_financial_dashboard(owner)
 
-    contracts = await db.student_contracts.find(
-        {
-            "owner_id": owner_id,
-            "$or": [
-                {"status": {"$in": ["active", "past_due"]}},
-                {"contract_status": {"$in": ["active", "pending_activation", "frozen", "scheduled_cancel", "scheduled_freeze"]}},
-            ],
-        },
-        {"_id": 0, "plan_name": 1, "plan_id": 1, "amount": 1},
-    ).to_list(3000)
-    plan_totals: dict[str, float] = defaultdict(float)
-    for contract in contracts:
-        plan_name = contract.get("plan_name") or contract.get("plan_id") or "Sem plano"
-        plan_totals[str(plan_name)] += float(contract.get("amount") or 0)
-    receita_por_plano = [
-        {"plano": plan_name, "valor": round(total, 2)}
-        for plan_name, total in sorted(plan_totals.items(), key=lambda item: item[1], reverse=True)
-    ]
+    receita_por_plano: list[dict] = []
+    if can_view_financial:
+        contracts = await db.student_contracts.find(
+            {
+                "owner_id": owner_id,
+                "$or": [
+                    {"status": {"$in": ["active", "past_due"]}},
+                    {
+                        "contract_status": {
+                            "$in": [
+                                "active",
+                                "pending_activation",
+                                "frozen",
+                                "scheduled_cancel",
+                                "scheduled_freeze",
+                            ]
+                        }
+                    },
+                ],
+            },
+            {"_id": 0, "plan_name": 1, "plan_id": 1, "amount": 1},
+        ).to_list(3000)
+        plan_totals: dict[str, float] = defaultdict(float)
+        for contract in contracts:
+            plan_name = contract.get("plan_name") or contract.get("plan_id") or "Sem plano"
+            plan_totals[str(plan_name)] += float(contract.get("amount") or 0)
+        receita_por_plano = [
+            {"plano": plan_name, "valor": round(total, 2)}
+            for plan_name, total in sorted(plan_totals.items(), key=lambda item: item[1], reverse=True)
+        ]
 
     hour_start = (now - timedelta(hours=23)).replace(minute=0, second=0, microsecond=0)
     hour_buckets = [hour_start + timedelta(hours=index) for index in range(24)]
@@ -233,29 +254,31 @@ async def dashboard_charts(owner: dict) -> dict:
         for bucket in hour_buckets
     ]
 
-    current_month = _month_floor(now)
-    month_buckets = [_month_floor(_shift_months(current_month, -offset)) for offset in range(5, -1, -1)]
-    month_start = month_buckets[0]
-    charges = await db.student_charges.find(
-        {"owner_id": owner_id, "status": "paid", "paid_at": {"$gte": month_start}},
-        {"_id": 0, "paid_at": 1, "amount": 1, "amount_received": 1},
-    ).to_list(10000)
-    month_totals: dict[str, float] = {
-        bucket.strftime("%Y-%m"): 0.0
-        for bucket in month_buckets
-    }
-    for charge in charges:
-        paid_at = _coerce_datetime_utc(charge.get("paid_at"))
-        if not paid_at:
-            continue
-        month_key = paid_at.strftime("%Y-%m")
-        if month_key not in month_totals:
-            continue
-        month_totals[month_key] += float(charge.get("amount_received") or charge.get("amount") or 0)
-    receita_mensal = [
-        {"mes": _month_label(bucket), "valor": round(month_totals[bucket.strftime("%Y-%m")], 2)}
-        for bucket in month_buckets
-    ]
+    receita_mensal: list[dict] = []
+    if can_view_financial:
+        current_month = _month_floor(now)
+        month_buckets = [_month_floor(_shift_months(current_month, -offset)) for offset in range(5, -1, -1)]
+        month_start = month_buckets[0]
+        charges = await db.student_charges.find(
+            {"owner_id": owner_id, "status": "paid", "paid_at": {"$gte": month_start}},
+            {"_id": 0, "paid_at": 1, "amount": 1, "amount_received": 1},
+        ).to_list(10000)
+        month_totals: dict[str, float] = {
+            bucket.strftime("%Y-%m"): 0.0
+            for bucket in month_buckets
+        }
+        for charge in charges:
+            paid_at = _coerce_datetime_utc(charge.get("paid_at"))
+            if not paid_at:
+                continue
+            month_key = paid_at.strftime("%Y-%m")
+            if month_key not in month_totals:
+                continue
+            month_totals[month_key] += float(charge.get("amount_received") or charge.get("amount") or 0)
+        receita_mensal = [
+            {"mes": _month_label(bucket), "valor": round(month_totals[bucket.strftime("%Y-%m")], 2)}
+            for bucket in month_buckets
+        ]
 
     return {
         "receita_por_plano": receita_por_plano,

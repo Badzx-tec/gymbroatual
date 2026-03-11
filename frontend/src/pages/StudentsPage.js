@@ -71,6 +71,23 @@ function statusTone(status) {
   return String(status || '').toLowerCase() === 'ativo' ? 'success' : 'danger';
 }
 
+function studentMatchesSearch(student, query) {
+  if (!query) return true;
+  const haystack = [
+    student?.nome,
+    student?.email,
+    student?.cpf,
+    student?.telefone,
+    student?.matricula,
+    student?.tag_rfid,
+    student?.biometria_id,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(query);
+}
+
 function buildStudentForm(student) {
   return {
     nome: student?.nome || '',
@@ -504,6 +521,23 @@ export default function StudentsPage() {
     return { active, inactive, withLogin, withBiometry };
   }, [students]);
 
+  const visibleStudents = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase();
+    return [...students]
+      .filter((student) => {
+        if (!studentMatchesSearch(student, normalizedSearch)) return false;
+        if (filterStatus && String(student?.status || '').toLowerCase() !== String(filterStatus).toLowerCase()) {
+          return false;
+        }
+        return true;
+      })
+      .sort((left, right) =>
+        String(left?.nome || '').localeCompare(String(right?.nome || ''), 'pt-BR', {
+          sensitivity: 'base',
+        })
+      );
+  }, [filterStatus, search, students]);
+
   if (loading) return <LoadingScreen label="Carregando alunos..." />;
 
   return (
@@ -511,7 +545,11 @@ export default function StudentsPage() {
       <PageHeader
         eyebrow="Operacao"
         title="Alunos"
-        subtitle={`${students.length} alunos carregados para operacao diaria, credenciais e acesso.`}
+        subtitle={
+          search || filterStatus
+            ? `${visibleStudents.length} alunos encontrados${students.length !== visibleStudents.length ? ` de ${students.length}` : ''}, em ordem alfabetica.`
+            : `${visibleStudents.length} alunos em ordem alfabetica para operacao diaria, credenciais e acesso.`
+        }
         actions={
           <>
             <Button data-testid="export-students-excel-btn" onClick={() => { api.exportStudentsExcel(); toast.success('Exportando Excel...'); }} size="sm">
@@ -554,7 +592,7 @@ export default function StudentsPage() {
             <SearchInput
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar por nome, e-mail, CPF ou RFID"
+              placeholder="Buscar por nome, e-mail, CPF, matricula ou RFID"
             />
             <SelectField label="" value={filterStatus} onChange={(event) => setFilterStatus(event.target.value)}>
               <option value="">Todos os status</option>
@@ -605,7 +643,7 @@ export default function StudentsPage() {
       </div>
 
       <SectionCard title="Base de alunos" description="Lista operacional com leitura rapida de plano, status e vencimento." bodyClassName="p-0">
-        {students.length > 0 ? (
+        {visibleStudents.length > 0 ? (
           <div className="overflow-x-auto">
             <table data-testid="students-table" className="w-full min-w-[980px] text-sm">
               <thead>
@@ -619,7 +657,7 @@ export default function StudentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {students.map((student) => (
+                {visibleStudents.map((student) => (
                   <tr key={student.student_id} className="border-b border-[var(--surface-border)] hover:bg-[var(--surface-soft)]">
                     <td className="px-5 py-4">
                       <button type="button" onClick={() => viewStudent(student)} className="text-left">
@@ -661,7 +699,15 @@ export default function StudentsPage() {
           </div>
         ) : (
           <div className="p-5">
-            <EmptyState icon={Users} title="Nenhum aluno encontrado" description="Ajuste os filtros ou cadastre o primeiro aluno para iniciar a operacao." />
+            <EmptyState
+              icon={Users}
+              title="Nenhum aluno encontrado"
+              description={
+                search || filterStatus
+                  ? 'Ajuste a busca ou os filtros para localizar outro aluno.'
+                  : 'Cadastre o primeiro aluno para iniciar a operacao.'
+              }
+            />
           </div>
         )}
       </SectionCard>

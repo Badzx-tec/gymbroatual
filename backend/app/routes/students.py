@@ -149,7 +149,11 @@ async def list_students(
             {"tag_rfid": {"$regex": safe_search, "$options": "i"}},
         ]
 
-    docs = await db.students.find(query, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
+    docs = (
+        await db.students.find(query, {"_id": 0, "password_hash": 0})
+        .sort("nome", 1)
+        .to_list(500)
+    )
     return docs
 
 

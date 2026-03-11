@@ -99,6 +99,7 @@ export default function Dashboard() {
   });
 
   const role = String(getStoredUser()?.role || '').toUpperCase();
+  const canSeeFinancial = ['OWNER', 'MANAGER'].includes(role);
   const canSeeOps = ['OWNER', 'MANAGER'].includes(role);
   const canExportFinancial = ['OWNER', 'MANAGER'].includes(role);
   const canRunReconcile = ['OWNER', 'MANAGER'].includes(role);
@@ -220,22 +221,33 @@ export default function Dashboard() {
     return (turnstileSummary?.deny_reasons || []).slice(0, 3);
   }, [turnstileSummary]);
 
-  const kpis = useMemo(
-    () => [
+  const kpis = useMemo(() => {
+    const cards = [
       { icon: Users, label: 'Total Alunos', value: Number(stats?.total_alunos || 0), color: '#ccff00' },
       { icon: UserCheck, label: 'Ativos', value: Number(stats?.alunos_ativos || 0), color: '#22c55e' },
       { icon: UserX, label: 'Inativos', value: Number(stats?.alunos_inativos || 0), color: '#ef4444' },
-      {
+      { icon: ScanLine, label: 'Acessos Hoje', value: Number(stats?.acessos_hoje || 0), color: '#a855f7' },
+      { icon: Activity, label: 'Na Academia', value: Number(stats?.ocupacao_atual || 0), color: '#f59e0b' },
+    ];
+
+    if (canSeeFinancial) {
+      cards.splice(3, 0, {
         icon: DollarSign,
         label: 'Faturamento',
         value: formatMoney(stats?.faturamento_mensal || 0),
         color: '#3b82f6',
-      },
-      { icon: ScanLine, label: 'Acessos Hoje', value: Number(stats?.acessos_hoje || 0), color: '#a855f7' },
-      { icon: Activity, label: 'Na Academia', value: Number(stats?.ocupacao_atual || 0), color: '#f59e0b' },
-    ],
-    [stats]
-  );
+      });
+    } else {
+      cards.splice(3, 0, {
+        icon: FileText,
+        label: 'Sem treino',
+        value: Number(stats?.alunos_sem_treino || 0),
+        color: '#f59e0b',
+      });
+    }
+
+    return cards;
+  }, [canSeeFinancial, stats]);
 
   const baseLogs = useMemo(
     () => (realtimeLogs.length > 0 ? realtimeLogs : stats?.ultimos_acessos || []),
@@ -429,52 +441,54 @@ export default function Dashboard() {
         </SectionCard>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-        <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)] lg:col-span-1">
-          <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-4">
-            Receita por Plano
-          </h3>
-          {(charts?.receita_por_plano || []).length > 0 ? (
-            <>
-              <div className="h-52">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={charts?.receita_por_plano || []}
-                      dataKey="valor"
-                      nameKey="plano"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={45}
-                      outerRadius={75}
-                      paddingAngle={3}
-                    >
-                      {(charts?.receita_por_plano || []).map((_, index) => (
-                        <Cell key={`slice-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip content={customTooltip} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="flex flex-wrap gap-3 mt-2">
-                {(charts?.receita_por_plano || []).map((item, index) => (
-                  <div key={`${item.plano}-${index}`} className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
-                    <span
-                      className="w-2.5 h-2.5 rounded-full"
-                      style={{ background: CHART_COLORS[index % CHART_COLORS.length] }}
-                    />
-                    {item.plano}
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="h-52 flex items-center justify-center text-[var(--text-muted)] text-sm">Sem dados de receita por plano.</div>
-          )}
-        </div>
+      <div className={`grid grid-cols-1 ${canSeeFinancial ? 'lg:grid-cols-3' : ''} gap-4 md:gap-6`}>
+        {canSeeFinancial ? (
+          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)] lg:col-span-1">
+            <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-4">
+              Receita por Plano
+            </h3>
+            {(charts?.receita_por_plano || []).length > 0 ? (
+              <>
+                <div className="h-52">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={charts?.receita_por_plano || []}
+                        dataKey="valor"
+                        nameKey="plano"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={75}
+                        paddingAngle={3}
+                      >
+                        {(charts?.receita_por_plano || []).map((_, index) => (
+                          <Cell key={`slice-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={customTooltip} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex flex-wrap gap-3 mt-2">
+                  {(charts?.receita_por_plano || []).map((item, index) => (
+                    <div key={`${item.plano}-${index}`} className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full"
+                        style={{ background: CHART_COLORS[index % CHART_COLORS.length] }}
+                      />
+                      {item.plano}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="h-52 flex items-center justify-center text-[var(--text-muted)] text-sm">Sem dados de receita por plano.</div>
+            )}
+          </div>
+        ) : null}
 
-        <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)] lg:col-span-2">
+        <div className={`rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)] ${canSeeFinancial ? 'lg:col-span-2' : ''}`}>
           <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-4">
             Acessos por Hora (24h)
           </h3>
@@ -497,21 +511,23 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)]">
-        <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-4">
-          Receita Mensal (6 meses)
-        </h3>
-        <div className="h-52">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={charts?.receita_mensal || []}>
-              <XAxis dataKey="mes" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
-              <Tooltip content={customTooltip} />
-              <Bar dataKey="valor" fill="var(--brand-primary)" radius={[4, 4, 0, 0]} name="Receita (R$)" />
-            </BarChart>
-          </ResponsiveContainer>
+      {canSeeFinancial ? (
+        <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)]">
+          <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-4">
+            Receita Mensal (6 meses)
+          </h3>
+          <div className="h-52">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={charts?.receita_mensal || []}>
+                <XAxis dataKey="mes" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip content={customTooltip} />
+                <Bar dataKey="valor" fill="var(--brand-primary)" radius={[4, 4, 0, 0]} name="Receita (R$)" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <SectionCard title="Ultimos acessos" description="Atualizacao em tempo real quando o websocket estiver disponivel." bodyClassName="p-0">
         <div className="flex flex-col gap-3 border-b border-[var(--surface-border)] p-5 sm:flex-row sm:items-center sm:justify-between">

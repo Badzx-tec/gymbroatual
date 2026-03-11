@@ -185,6 +185,22 @@ async def test_dashboard_returns_kpis_and_recent_accesses(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_dashboard_hides_revenue_for_reception(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(gyms, "get_db", lambda: db)
+
+    stats = await gyms.dashboard(owner={"owner_id": "own_1", "gym_id": "gym_1", "role": "RECEPTION"})
+    charts = await gyms.dashboard_charts(
+        owner={"owner_id": "own_1", "gym_id": "gym_1", "role": "RECEPTION"}
+    )
+
+    assert stats["faturamento_mensal"] is None
+    assert charts["receita_por_plano"] == []
+    assert charts["receita_mensal"] == []
+    assert len(charts["acessos_por_hora"]) == 24
+
+
+@pytest.mark.asyncio
 async def test_dashboard_charts_returns_aggregated_series(monkeypatch):
     db = FakeDb()
     monkeypatch.setattr(gyms, "get_db", lambda: db)

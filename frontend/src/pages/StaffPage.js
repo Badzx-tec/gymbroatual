@@ -187,8 +187,8 @@ function EmployeeFields({ model, onChange, includePassword = false, includeActiv
         />
       </div>
 
-      <div className="grid gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/65 p-4 md:grid-cols-2">
-        <label className="flex items-start gap-3 text-sm text-zinc-300">
+      <div className="grid gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4 md:grid-cols-2">
+        <label className="flex items-start gap-3 text-sm text-[var(--text-secondary)]">
           <input
             type="checkbox"
             checked={Boolean(model.sync_shadow_student)}
@@ -196,13 +196,13 @@ function EmployeeFields({ model, onChange, includePassword = false, includeActiv
             className="mt-1 accent-[var(--brand-primary)]"
           />
           <span>
-            <strong className="block text-zinc-100">Sincronizar aluno tecnico</strong>
+            <strong className="block text-[var(--text-primary)]">Sincronizar aluno tecnico</strong>
             Mantem compatibilidade com fluxos antigos de biometria e acesso.
           </span>
         </label>
 
         {includeActive ? (
-          <label className="flex items-start gap-3 text-sm text-zinc-300">
+          <label className="flex items-start gap-3 text-sm text-[var(--text-secondary)]">
             <input
               type="checkbox"
               checked={Boolean(model.is_active)}
@@ -210,12 +210,12 @@ function EmployeeFields({ model, onChange, includePassword = false, includeActiv
               className="mt-1 accent-[var(--brand-primary)]"
             />
             <span>
-              <strong className="block text-zinc-100">Funcionario ativo</strong>
+              <strong className="block text-[var(--text-primary)]">Funcionario ativo</strong>
               Desative para impedir login e operacao sem remover o cadastro.
             </span>
           </label>
         ) : (
-          <div className="rounded-2xl border border-dashed border-zinc-800 px-4 py-3 text-sm text-zinc-500">
+          <div className="rounded-2xl border border-dashed border-[var(--surface-border)] px-4 py-3 text-sm text-[var(--text-muted)]">
             E-mail permite login no painel. Sem senha informada, o sistema gera uma senha temporaria.
           </div>
         )}
@@ -248,6 +248,9 @@ export default function StaffPage() {
   const [credentialHistory, setCredentialHistory] = useState(() =>
     loadCredentialHistory(STAFF_CREDENTIAL_HISTORY_KEY)
   );
+  const [passwordEditor, setPasswordEditor] = useState(null);
+  const [passwordDraft, setPasswordDraft] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
 
   const openCredentialPanel = (payload) => {
     if (!payload?.fields?.length) return;
@@ -395,22 +398,47 @@ export default function StaffPage() {
     }
   };
 
-  const resetEmployeePassword = async (employee) => {
+  const openPasswordEditor = (employee) => {
+    setPasswordEditor(employee);
+    setPasswordDraft('');
+  };
+
+  const submitPasswordUpdate = async (event) => {
+    event.preventDefault();
+    if (!passwordEditor) return;
+    setSavingPassword(true);
     try {
-      const result = await api.resetEmployeePassword(employee.employee_id);
-      toast.success('Senha redefinida.');
+      const trimmedPassword = passwordDraft.trim();
+      const result = await api.resetEmployeePassword(
+        passwordEditor.employee_id,
+        trimmedPassword ? { new_password: trimmedPassword } : {}
+      );
+      toast.success(trimmedPassword ? 'Senha atualizada.' : 'Senha temporaria gerada.');
+
       const fields = [];
-      if (employee?.email) fields.push({ label: 'Login', value: employee.email });
-      if (result?.temp_password) fields.push({ label: 'Nova senha temporaria', value: result.temp_password });
+      if (passwordEditor?.email) fields.push({ label: 'Login', value: passwordEditor.email });
+      if (result?.temp_password) {
+        fields.push({
+          label: trimmedPassword ? 'Nova senha' : 'Senha temporaria',
+          value: result.temp_password,
+        });
+      }
       if (fields.length) {
         openCredentialPanel({
-          title: `Nova senha de ${employee.name}`,
-          description: 'Copie e entregue ao funcionario. O acesso e feito pela tela de login.',
+          title: `Acesso de ${passwordEditor.name}`,
+          description: trimmedPassword
+            ? 'Copie a nova senha e entregue ao funcionario por um canal seguro.'
+            : 'Copie e entregue a senha temporaria agora. Ela nao sera exibida novamente.',
           fields,
         });
       }
+
+      setPasswordEditor(null);
+      setPasswordDraft('');
     } catch (err) {
-      toast.error(err?.message || 'Nao foi possivel redefinir a senha.');
+      toast.error(err?.message || 'Nao foi possivel atualizar a senha.');
+    } finally {
+      setSavingPassword(false);
     }
   };
 
@@ -625,7 +653,7 @@ export default function StaffPage() {
               onChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))}
             />
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-[var(--text-muted)]">
                 Diretor, recepcionista e treinador herdam as permissoes do RBAC ja configurado no backend.
               </p>
               <Button type="submit" variant="primary" disabled={creatingEmployee}>
@@ -677,11 +705,11 @@ export default function StaffPage() {
                 {credentialHistory.map((item) => (
                   <div
                     key={item.id}
-                    className="flex flex-col gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+                    className="flex flex-col gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div>
-                      <p className="text-sm font-semibold text-zinc-100">{item.title}</p>
-                      <p className="mt-1 text-xs text-zinc-500">
+                      <p className="text-sm font-semibold text-[var(--text-primary)]">{item.title}</p>
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">
                         {item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : '-'}
                       </p>
                     </div>
@@ -741,7 +769,7 @@ export default function StaffPage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[920px] text-sm">
               <thead>
-                <tr className="border-b border-zinc-900 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                <tr className="border-b border-[var(--surface-border)] text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
                   <th className="px-5 py-4">Funcionario</th>
                   <th className="px-5 py-4">Perfil</th>
                   <th className="px-5 py-4">Credenciais</th>
@@ -754,21 +782,21 @@ export default function StaffPage() {
                 {filteredEmployees.map((employee) => {
                   const isActive = employee?.is_active !== false;
                   return (
-                    <tr key={employee.employee_id} className="border-b border-zinc-900/70 hover:bg-zinc-950/55">
+                    <tr key={employee.employee_id} className="border-b border-[var(--surface-border)] hover:bg-[var(--surface-soft)]">
                       <td className="px-5 py-4 align-top">
                         <div>
-                          <p className="font-semibold text-zinc-100">{employee.name}</p>
-                          <p className="mt-1 text-xs text-zinc-500">
+                          <p className="font-semibold text-[var(--text-primary)]">{employee.name}</p>
+                          <p className="mt-1 text-xs text-[var(--text-muted)]">
                             {employee.email || 'Sem login configurado'}
                           </p>
-                          <p className="mt-1 text-xs text-zinc-500">Matricula: {employee.matricula || '-'}</p>
+                          <p className="mt-1 text-xs text-[var(--text-muted)]">Matricula: {employee.matricula || '-'}</p>
                         </div>
                       </td>
                       <td className="px-5 py-4 align-top">
                         <StatusBadge label={roleLabel(employee.role)} tone={roleTone(employee.role)} />
                       </td>
                       <td className="px-5 py-4 align-top">
-                        <div className="space-y-1 text-xs text-zinc-400">
+                        <div className="space-y-1 text-xs text-[var(--text-secondary)]">
                           <p>{credentialsSummary(employee)}</p>
                           <p>BIO: {employee.biometria_id || '-'}</p>
                           <p>RFID: {employee.tag_rfid || '-'}</p>
@@ -781,7 +809,7 @@ export default function StaffPage() {
                         />
                       </td>
                       <td className="px-5 py-4 align-top">
-                        <p className="text-xs text-zinc-400">
+                        <p className="text-xs text-[var(--text-secondary)]">
                           {employee.shadow_student_id
                             ? `Aluno tecnico: ${employee.shadow_student_id}`
                             : 'Sem aluno tecnico sincronizado'}
@@ -804,8 +832,8 @@ export default function StaffPage() {
                           <Button size="sm" variant="ghost" onClick={() => syncShadowStudent(employee.employee_id)}>
                             Sync tecnico
                           </Button>
-                          <Button size="sm" variant="ghost" onClick={() => resetEmployeePassword(employee)}>
-                            Resetar senha
+                          <Button size="sm" variant="ghost" onClick={() => openPasswordEditor(employee)}>
+                            Atualizar senha
                           </Button>
                           <Button
                             size="sm"
@@ -843,11 +871,11 @@ export default function StaffPage() {
             {invites.map((invite) => (
               <div
                 key={invite.invite_id}
-                className="flex flex-col gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div>
-                  <p className="text-sm font-semibold text-zinc-100">{invite.email}</p>
-                  <p className="mt-1 text-xs text-zinc-500">{roleLabel(invite.role)}</p>
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">{invite.email}</p>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">{roleLabel(invite.role)}</p>
                 </div>
                 <Button size="sm" variant="danger" onClick={() => askCancelInvite(invite)}>
                   Cancelar convite
@@ -872,6 +900,61 @@ export default function StaffPage() {
           onClose={() => setCredentialPanel(null)}
         />
       ) : null}
+
+      <Dialog
+        open={Boolean(passwordEditor)}
+        onClose={() => {
+          setPasswordEditor(null);
+          setPasswordDraft('');
+        }}
+        size="sm"
+        title={passwordEditor ? `Atualizar senha de ${passwordEditor.name}` : 'Atualizar senha'}
+        description="Defina uma nova senha agora ou deixe o campo vazio para gerar uma senha temporaria automaticamente."
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPasswordEditor(null);
+                setPasswordDraft('');
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => document.getElementById('staff-password-form')?.requestSubmit()}
+              disabled={savingPassword}
+            >
+              {savingPassword
+                ? 'Salvando...'
+                : passwordDraft.trim()
+                  ? 'Salvar nova senha'
+                  : 'Gerar senha temporaria'}
+            </Button>
+          </>
+        }
+      >
+        <form id="staff-password-form" onSubmit={submitPasswordUpdate} className="space-y-4">
+          <Banner
+            tone="info"
+            title="Atualizacao segura de acesso"
+            description="Ao salvar, as sessoes atuais do funcionario serao encerradas e a nova senha passa a valer imediatamente."
+          />
+          <TextField
+            label="Nova senha"
+            type="password"
+            value={passwordDraft}
+            onChange={(event) => setPasswordDraft(event.target.value)}
+            placeholder="Deixe em branco para gerar uma senha temporaria"
+            autoComplete="new-password"
+            minLength={6}
+          />
+          <p className="text-sm text-[var(--text-muted)]">
+            Use uma senha definida quando quiser entregar acesso permanente. Para atendimento rapido, deixe em branco e gere uma senha temporaria.
+          </p>
+        </form>
+      </Dialog>
 
       <SidePanel
         open={Boolean(editingEmployee)}
@@ -964,7 +1047,7 @@ export default function StaffPage() {
               placeholder="Codigo numerico"
             />
           </div>
-          <label className="flex items-start gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4 text-sm text-zinc-300">
+          <label className="flex items-start gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 text-sm text-[var(--text-secondary)]">
             <input
               type="checkbox"
               checked={Boolean(credentialsForm.sync_shadow_student)}
@@ -977,7 +1060,7 @@ export default function StaffPage() {
               className="mt-1 accent-[var(--brand-primary)]"
             />
             <span>
-              <strong className="block text-zinc-100">Sincronizar aluno tecnico</strong>
+              <strong className="block text-[var(--text-primary)]">Sincronizar aluno tecnico</strong>
               Atualiza o espelho usado por fluxos antigos de biometria e acesso.
             </span>
           </label>
@@ -1068,7 +1151,7 @@ export default function StaffPage() {
           </>
         }
       >
-        <p className="text-sm text-zinc-400">
+        <p className="text-sm text-[var(--text-secondary)]">
           O estado da interface sera atualizado logo apos a resposta do backend.
         </p>
       </Dialog>
