@@ -40,6 +40,13 @@ from app.services.subscription import (
 router = APIRouter()
 
 MEMBERSHIP_PLAN_CODE = "owner_monthly"
+ALLOWED_SUBSCRIPTION_EVENT_SOURCES = {
+    "webhook",
+    "reconcile",
+    "manual",
+    "system",
+    "super_admin",
+}
 
 
 def status_from_action(action: str) -> str:
@@ -257,6 +264,21 @@ async def _subscription_status(owner_id: str) -> SubscriptionStatusOut:
     )
 
 
+def _normalize_subscription_event(event: dict) -> dict:
+    normalized = dict(event or {})
+    raw_source = str(normalized.get("source") or "").strip().lower()
+    if raw_source in ALLOWED_SUBSCRIPTION_EVENT_SOURCES:
+        normalized["source"] = raw_source
+        return normalized
+
+    metadata = dict(normalized.get("metadata") or {})
+    if raw_source:
+        metadata.setdefault("original_source", raw_source)
+    normalized["metadata"] = metadata or None
+    normalized["source"] = "system"
+    return normalized
+
+
 async def _build_billing_overview(
     owner_id: str,
     *,
@@ -330,6 +352,7 @@ async def _build_billing_overview(
         failed_attempt_count_task,
         next_due_task,
     )
+    events = [_normalize_subscription_event(item) for item in events]
 
     counts: dict[str, int] = {}
     recognized_revenue = 0.0

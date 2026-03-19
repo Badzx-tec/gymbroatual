@@ -221,6 +221,81 @@ async def test_build_billing_overview_summarizes_financial_state(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_build_billing_overview_accepts_super_admin_and_normalizes_legacy_sources(
+    monkeypatch,
+):
+    now = datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
+    db = FakeDb(
+        invoices=[],
+        attempts=[],
+        events=[
+            {
+                "event_id": "evt_super_admin",
+                "owner_id": "own_1",
+                "source": "super_admin",
+                "event_type": "manual_grace_granted",
+                "status": "past_due",
+                "metadata": {"reason": "ajuste"},
+                "created_at": now,
+            },
+            {
+                "event_id": "evt_legacy",
+                "owner_id": "own_1",
+                "source": "legacy_job",
+                "event_type": "legacy_sync",
+                "status": "past_due",
+                "created_at": now - timedelta(minutes=5),
+            },
+        ],
+    )
+
+    async def fake_subscription_status(_owner_id):
+        return SubscriptionStatusOut(
+            owner_id="own_1",
+            status="past_due",
+            provider="mercadopago",
+            current_period_end=now + timedelta(days=30),
+            last_payment_at=None,
+            grace_until=now + timedelta(days=2),
+            trial_ends_at=None,
+            can_login=False,
+        )
+
+    async def fake_sync_membership(_owner_id, **_kwargs):
+        return {
+            "membership_id": "mem_1",
+            "owner_id": "own_1",
+            "plan_code": "owner_monthly",
+            "amount": 139.9,
+            "currency": "BRL",
+            "provider": "mercadopago",
+            "status": "past_due",
+            "started_at": now - timedelta(days=30),
+            "trial_ends_at": None,
+            "current_period_start": now - timedelta(days=30),
+            "current_period_end": now + timedelta(days=30),
+            "canceled_at": None,
+            "updated_at": now,
+        }
+
+    monkeypatch.setattr(billing, "get_db", lambda: db)
+    monkeypatch.setattr(billing, "_subscription_status", fake_subscription_status)
+    monkeypatch.setattr(billing, "_sync_membership", fake_sync_membership)
+
+    overview = await billing._build_billing_overview(
+        "own_1",
+        invoice_limit=2,
+        attempt_limit=2,
+        event_limit=2,
+    )
+
+    assert overview.events[0].source == "super_admin"
+    assert overview.events[0].event_type == "manual_grace_granted"
+    assert overview.events[1].source == "system"
+    assert overview.events[1].metadata["original_source"] == "legacy_job"
+
+
+@pytest.mark.asyncio
 async def test_billing_overview_refreshes_before_returning(monkeypatch):
     calls = {"reconcile": 0, "build": 0}
 

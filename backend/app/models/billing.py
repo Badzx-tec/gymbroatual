@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 SubscriptionStatus = Literal["trialing", "active", "past_due", "canceled", "expired"]
 InvoiceStatus = Literal["draft", "open", "paid", "past_due", "canceled"]
 PaymentAttemptStatus = Literal["succeeded", "failed", "pending"]
+SubscriptionEventSource = Literal["webhook", "reconcile", "manual", "system", "super_admin"]
 
 
 class SubscriptionStatusOut(BaseModel):
@@ -79,7 +80,7 @@ class PaymentAttemptOut(BaseModel):
 class SubscriptionEventOut(BaseModel):
     event_id: str
     owner_id: str
-    source: Literal["webhook", "reconcile", "manual", "system"]
+    source: SubscriptionEventSource
     event_type: str
     status: str
     metadata: dict | None = None

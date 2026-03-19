@@ -102,6 +102,8 @@ export function eventTypeLabel(value) {
   if (key === 'checkout_created') return 'Checkout criado';
   if (key === 'payment_failed') return 'Pagamento falhou';
   if (key === 'payment_approved') return 'Pagamento aprovado';
+  if (key === 'manual_grace_granted') return 'Carencia manual concedida';
+  if (key === 'manual_grace_removed') return 'Carencia manual removida';
   if (key === 'subscription_canceled') return 'Assinatura cancelada';
   if (key === 'subscription_reactivated') return 'Assinatura reativada';
   return value || 'Evento';
