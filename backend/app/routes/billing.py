@@ -455,7 +455,9 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
     owner_id = owner["owner_id"]
 
     checkout_url = f"{settings.frontend_base_url}/admin/assinatura?mock=1&owner_id={owner_id}"
-    preapproval_id = f"mock_pre_{owner_id}"
+    preapproval_id: str | None = None
+    provider_reference: str | None = None
+    checkout_mode = "mock"
 
     if settings.mp_access_token:
         payload = {
@@ -487,7 +489,9 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
                 checkout_url = (
                     data.get("init_point") or data.get("sandbox_init_point") or checkout_url
                 )
-                preapproval_id = data.get("id") or preapproval_id
+                preapproval_id = str(data.get("id") or "").strip() or None
+                provider_reference = preapproval_id
+                checkout_mode = "preapproval"
             else:
                 preapproval_body = response.text[:300]
                 log_event(
@@ -529,7 +533,8 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
                         or pref_data.get("sandbox_init_point")
                         or checkout_url
                     )
-                    preapproval_id = pref_data.get("id") or preapproval_id
+                    provider_reference = str(pref_data.get("id") or "").strip() or None
+                    checkout_mode = "preference"
                 else:
                     pref_body = pref_response.text[:300]
                     raise HTTPException(
@@ -540,33 +545,42 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
                             f"preference {pref_response.status_code}: {pref_body})"
                         ),
                     )
+    else:
+        preapproval_id = f"mock_pre_{owner_id}"
+        provider_reference = preapproval_id
 
+    current_now = now_utc()
+    subscription_update = {
+        "updated_at": current_now,
+        "provider": "mercadopago",
+        "meta.last_checkout": {
+            "at": current_now,
+            "mode": checkout_mode,
+            "preapproval_id": preapproval_id,
+            "provider_reference": provider_reference,
+        },
+    }
+    if preapproval_id is not None:
+        subscription_update["mp_preapproval_id"] = preapproval_id
     await db.subscriptions.update_one(
         {"owner_id": owner_id},
-        {
-            "$set": {
-                "mp_preapproval_id": preapproval_id,
-                "updated_at": now_utc(),
-                "provider": "mercadopago",
-            }
-        },
+        {"$set": subscription_update},
     )
-    current_now = now_utc()
     membership_doc = await _sync_membership(owner_id, now=current_now)
     invoice_doc = await _upsert_invoice(
         owner_id,
         status_value="open",
         paid=False,
-        provider_reference=preapproval_id,
+        provider_reference=provider_reference,
         amount=membership_doc.get("amount"),
         now=current_now,
     )
     await _record_payment_attempt(
         owner_id,
         subscription_status=membership_doc.get("status", "trialing"),
-        provider_reference=preapproval_id,
+        provider_reference=provider_reference,
         reason="checkout_created",
-        payload={"stage": "checkout"},
+        payload={"stage": "checkout", "mode": checkout_mode},
         invoice_id=invoice_doc.get("invoice_id"),
         amount=membership_doc.get("amount"),
         now=current_now,
@@ -576,7 +590,11 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
         source="manual",
         event_type="checkout_created",
         status_value=membership_doc.get("status", "trialing"),
-        metadata={"preapproval_id": preapproval_id},
+        metadata={
+            "preapproval_id": preapproval_id,
+            "provider_reference": provider_reference,
+            "mode": checkout_mode,
+        },
         now=current_now,
     )
 

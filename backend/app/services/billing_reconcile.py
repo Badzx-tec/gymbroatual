@@ -40,6 +40,12 @@ def map_mp_preapproval_status(mp_status: str | None) -> str:
     return "past_due"
 
 
+def _http_status_code(exc: Exception) -> int | None:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        return exc.response.status_code
+    return None
+
+
 async def _fetch_preapproval(client: httpx.AsyncClient, preapproval_id: str, token: str) -> dict:
     response = await client.get(
         f"https://api.mercadopago.com/preapproval/{preapproval_id}",
@@ -81,6 +87,15 @@ async def reconcile_subscriptions(owner_id: str | None = None, limit: int | None
             processed += 1
             preapproval_id = sub.get("mp_preapproval_id")
             if not preapproval_id:
+                skipped += 1
+                continue
+            invalid_reference = (
+                (sub.get("meta") or {}).get("invalid_preapproval_reference") or {}
+            )
+            if (
+                invalid_reference.get("preapproval_id") == preapproval_id
+                and invalid_reference.get("http_status") in {400, 404}
+            ):
                 skipped += 1
                 continue
 
@@ -150,14 +165,17 @@ async def reconcile_subscriptions(owner_id: str | None = None, limit: int | None
                     }
                 )
             except Exception as exc:  # pragma: no cover - network dependent
+                invalid_preapproval_status = _http_status_code(exc)
                 payment_data = None
+                payment_lookup_error = None
                 try:
                     payment_data = await search_recent_approved_payment(
                         client,
                         owner,
                         settings.mp_access_token,
                     )
-                except Exception:
+                except Exception as payment_exc:
+                    payment_lookup_error = payment_exc
                     payment_data = None
 
                 if is_recent_approved_payment(payment_data):
@@ -213,6 +231,31 @@ async def reconcile_subscriptions(owner_id: str | None = None, limit: int | None
                             },
                             "created_at": now,
                         }
+                    )
+                    continue
+
+                if invalid_preapproval_status in {400, 404} and payment_lookup_error is None:
+                    skipped += 1
+                    invalid_reference = {
+                        "at": now,
+                        "preapproval_id": preapproval_id,
+                        "http_status": invalid_preapproval_status,
+                    }
+                    await db.subscriptions.update_one(
+                        {"owner_id": owner},
+                        {
+                            "$set": {
+                                "updated_at": now,
+                                "meta.last_reconcile": {
+                                    "at": now,
+                                    "status": "invalid_preapproval_reference",
+                                    "source": "preapproval_lookup",
+                                    "preapproval_id": preapproval_id,
+                                    "http_status": invalid_preapproval_status,
+                                },
+                                "meta.invalid_preapproval_reference": invalid_reference,
+                            }
+                        },
                     )
                     continue
 

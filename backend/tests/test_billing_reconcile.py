@@ -119,6 +119,20 @@ class FakeAsyncClient:
         raise AssertionError(f"Unexpected URL {url}")
 
 
+class FakeAsyncClientInvalidPreapprovalNoPayment(FakeAsyncClient):
+    async def get(self, url, headers=None, params=None):
+        if "/preapproval/" in url:
+            return FakeResponse(status_code=404, payload={})
+        if url.endswith("/v1/payments/search"):
+            return FakeResponse(status_code=200, payload={"results": []})
+        raise AssertionError(f"Unexpected URL {url}")
+
+
+class FakeAsyncClientShouldNotBeCalled(FakeAsyncClient):
+    async def get(self, url, headers=None, params=None):
+        raise AssertionError(f"Reconcile should have skipped the HTTP call for {url}")
+
+
 def _matches(doc, query):
     for key, expected in query.items():
         if isinstance(expected, dict) and "$nin" in expected:
@@ -148,3 +162,64 @@ async def test_reconcile_recovers_active_status_from_recent_payment(monkeypatch)
     assert db.subscriptions.docs[0]["status"] == "active"
     assert db.subscriptions.docs[0]["current_period_end"] is not None
     assert db.billing_events.docs[0]["action"] == "reconcile_payment_search"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_invalid_preapproval_without_logging_error(monkeypatch):
+    db = FakeDb()
+    settings = SimpleNamespace(
+        mp_access_token="token_123",
+        billing_reconcile_batch_size=50,
+    )
+    observed_events = []
+
+    monkeypatch.setattr(billing_reconcile, "get_db", lambda: db)
+    monkeypatch.setattr(billing_reconcile, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        billing_reconcile.httpx,
+        "AsyncClient",
+        FakeAsyncClientInvalidPreapprovalNoPayment,
+    )
+    monkeypatch.setattr(
+        billing_reconcile,
+        "log_event",
+        lambda name, **kwargs: observed_events.append((name, kwargs)),
+    )
+
+    summary = await billing_reconcile.reconcile_subscriptions(owner_id="own_1", limit=1)
+
+    assert summary == {"processed": 1, "updated": 0, "failed": 0, "skipped": 1}
+    assert db.subscriptions.docs[0]["status"] == "past_due"
+    assert db.subscriptions.docs[0]["meta.last_reconcile"]["status"] == (
+        "invalid_preapproval_reference"
+    )
+    assert db.subscriptions.docs[0]["meta.invalid_preapproval_reference"]["http_status"] == 404
+    assert db.billing_events.docs == []
+    assert observed_events == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_previously_marked_invalid_preapproval(monkeypatch):
+    db = FakeDb()
+    db.subscriptions.docs[0]["meta"] = {
+        "invalid_preapproval_reference": {
+            "preapproval_id": "pref_123",
+            "http_status": 404,
+        }
+    }
+    settings = SimpleNamespace(
+        mp_access_token="token_123",
+        billing_reconcile_batch_size=50,
+    )
+
+    monkeypatch.setattr(billing_reconcile, "get_db", lambda: db)
+    monkeypatch.setattr(billing_reconcile, "get_settings", lambda: settings)
+    monkeypatch.setattr(
+        billing_reconcile.httpx,
+        "AsyncClient",
+        FakeAsyncClientShouldNotBeCalled,
+    )
+
+    summary = await billing_reconcile.reconcile_subscriptions(owner_id="own_1", limit=1)
+
+    assert summary == {"processed": 1, "updated": 0, "failed": 0, "skipped": 1}

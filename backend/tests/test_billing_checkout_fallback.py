@@ -6,7 +6,11 @@ from app.routes import billing
 
 
 class FakeSubscriptions:
+    def __init__(self):
+        self.calls = []
+
     async def update_one(self, _query: dict, _update: dict):
+        self.calls.append({"query": dict(_query), "update": dict(_update)})
         return None
 
 
@@ -53,7 +57,8 @@ class FakeAsyncClient:
 
 @pytest.mark.asyncio
 async def test_checkout_fallbacks_to_preference_when_preapproval_fails(monkeypatch):
-    monkeypatch.setattr(billing, "get_db", lambda: FakeDb())
+    db = FakeDb()
+    monkeypatch.setattr(billing, "get_db", lambda: db)
     monkeypatch.setattr(billing.httpx, "AsyncClient", FakeAsyncClient)
     monkeypatch.setattr(
         billing,
@@ -92,8 +97,12 @@ async def test_checkout_fallbacks_to_preference_when_preapproval_fails(monkeypat
         {"owner_id": "own_1", "email": "owner@gymbro.dev.br"}
     )
 
-    assert checkout.preapproval_id == "pref_123"
+    assert checkout.preapproval_id is None
     assert checkout.checkout_url == "https://mp.test/checkout/pref_123"
+    subscription_update = db.subscriptions.calls[0]["update"]["$set"]
+    assert "mp_preapproval_id" not in subscription_update
+    assert subscription_update["meta.last_checkout"]["mode"] == "preference"
+    assert subscription_update["meta.last_checkout"]["provider_reference"] == "pref_123"
 
 
 def _async_value(value):
