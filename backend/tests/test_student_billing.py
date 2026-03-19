@@ -9,6 +9,7 @@ from app.models.student_billing import (
     ChargeMarkPaidIn,
     ChargeMarkUnpaidIn,
     ContractCreateIn,
+    ContractUpdateIn,
 )
 from app.routes import student_billing
 from app.services.student_contracts import refresh_contract_state
@@ -221,6 +222,94 @@ async def test_create_contract_respects_manual_period_end_override(monkeypatch):
     assert contract["current_period_end"] == manual_end
     assert refreshed["current_period_end"] == manual_end
     assert len(refreshed.get("manual_overrides") or []) >= 1
+
+
+@pytest.mark.asyncio
+async def test_create_contract_with_discount_sets_breakdown_and_charge_amount(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+
+    actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER"}
+    start_at = datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)
+    payload = ContractCreateIn(
+        student_id="std_1",
+        plan_id="pln_1",
+        amount=149.9,
+        discount_amount=20.0,
+        start_at=start_at,
+    )
+
+    result = await student_billing.create_contract(payload=payload, actor=actor)
+    contract = result["contract"]
+    charge = result["initial_charge"]
+
+    assert contract["original_amount"] == 149.9
+    assert contract["discount_amount"] == 20.0
+    assert contract["amount"] == 129.9
+    assert charge["amount"] == 129.9
+    assert any(
+        item["event_type"] == "contract_created"
+        and float(item.get("payload", {}).get("discount_amount") or 0) == 20.0
+        for item in db.student_billing_events.docs
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_contract_discount_syncs_only_mutable_charges(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+
+    actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "MANAGER"}
+    created = await student_billing.create_contract(
+        payload=ContractCreateIn(
+            student_id="std_1",
+            plan_id="pln_1",
+            amount=149.9,
+            start_at=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
+        ),
+        actor=actor,
+    )
+    contract_id = created["contract"]["contract_id"]
+    db.student_charges.docs.append(
+        {
+            "charge_id": "chg_paid_locked",
+            "contract_id": contract_id,
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "student_id": "std_1",
+            "amount": 149.9,
+            "currency": "BRL",
+            "due_at": datetime(2026, 4, 2, 12, 0, tzinfo=timezone.utc),
+            "status": "paid",
+            "paid_at": datetime(2026, 4, 2, 12, 0, tzinfo=timezone.utc),
+            "payment_method": "pix",
+            "amount_received": 149.9,
+            "period_start": datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
+            "period_end": datetime(2026, 5, 1, 12, 0, tzinfo=timezone.utc),
+            "created_at": datetime(2026, 4, 2, 12, 0, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 4, 2, 12, 0, tzinfo=timezone.utc),
+        }
+    )
+
+    updated = await student_billing.update_contract(
+        contract_id=contract_id,
+        payload=ContractUpdateIn(
+            discount_amount=20.0,
+            manual_override_reason="desconto_balco",
+        ),
+        actor=actor,
+    )
+
+    open_charge = next(item for item in db.student_charges.docs if item["charge_id"] == created["initial_charge"]["charge_id"])
+    paid_charge = next(item for item in db.student_charges.docs if item["charge_id"] == "chg_paid_locked")
+
+    assert updated["original_amount"] == 149.9
+    assert updated["discount_amount"] == 20.0
+    assert updated["amount"] == 129.9
+    assert open_charge["amount"] == 129.9
+    assert open_charge["discount_sync_reason"] == "desconto_balco"
+    assert paid_charge["amount"] == 149.9
+    assert any(item["event_type"] == "contract_charge_amounts_synced" for item in db.student_billing_events.docs)
 
 
 @pytest.mark.asyncio

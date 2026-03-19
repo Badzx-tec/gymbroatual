@@ -1,5 +1,6 @@
 import { apiUrl, API_BASE } from './config';
 import { clearSession, getSessionToken } from './lib/session';
+import { dateInputToIsoRangeEnd, dateInputToIsoRangeStart } from './utils/timezone';
 
 function stringifyDetail(detail) {
   if (typeof detail === 'string') return detail;
@@ -173,8 +174,10 @@ export const api = {
     if (params.q) query.set('q', String(params.q));
     if (params.sortBy) query.set('sortBy', String(params.sortBy));
     if (params.sortDir) query.set('sortDir', String(params.sortDir));
-    if (params.startDate) query.set('startDate', String(params.startDate));
-    if (params.endDate) query.set('endDate', String(params.endDate));
+    const startDate = params.startDate ? dateInputToIsoRangeStart(params.startDate) : null;
+    const endDate = params.endDate ? dateInputToIsoRangeEnd(params.endDate) : null;
+    if (startDate) query.set('startDate', startDate);
+    if (endDate) query.set('endDate', endDate);
     if (params.expiringInDays) query.set('expiringInDays', String(params.expiringInDays));
     if (params.pendingOnly) query.set('pendingOnly', 'true');
     if (Array.isArray(params.status)) {
@@ -205,8 +208,10 @@ export const api = {
     const query = new URLSearchParams();
     if (params.format) query.set('format', String(params.format));
     if (params.q) query.set('q', String(params.q));
-    if (params.startDate) query.set('startDate', String(params.startDate));
-    if (params.endDate) query.set('endDate', String(params.endDate));
+    const startDate = params.startDate ? dateInputToIsoRangeStart(params.startDate) : null;
+    const endDate = params.endDate ? dateInputToIsoRangeEnd(params.endDate) : null;
+    if (startDate) query.set('startDate', startDate);
+    if (endDate) query.set('endDate', endDate);
     if (params.expiringInDays) query.set('expiringInDays', String(params.expiringInDays));
     if (params.pendingOnly) query.set('pendingOnly', 'true');
     if (Array.isArray(params.status)) {
@@ -357,6 +362,8 @@ export const api = {
   catracaCommand: (data) => request('/api/catraca/command', { method: 'POST', body: JSON.stringify(data) }),
   catracaCommands: () => request('/api/catraca/commands'),
   catracaControlState: () => request('/api/catraca/control-state'),
+  turnstileManualRelease: (data) =>
+    request('/api/turnstiles/manual-releases', { method: 'POST', body: JSON.stringify(data) }),
 
   exportStudentsExcel: () => request('/api/reports/students/excel', { isBlob: true }).then((b) => downloadBlob(b, 'alunos_gymbro.xlsx')),
   exportStudentsPdf: () => request('/api/reports/students/pdf', { isBlob: true }).then((b) => downloadBlob(b, 'alunos_gymbro.pdf')),

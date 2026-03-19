@@ -1,8 +1,9 @@
 import csv
 import re
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 from io import BytesIO, StringIO
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -11,6 +12,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
 from app.core.deps import require_roles
+from app.core.time import SAO_PAULO_TZ, sao_paulo_day_bounds, sao_paulo_month_bounds, to_sao_paulo
 from app.db.mongo import get_db
 from app.models.student_billing import ContractCancelIn, ContractFreezeIn, ContractRenewIn
 from app.services.report_exports import as_text, xlsx_response
@@ -26,6 +28,7 @@ from . import student_billing
 router = APIRouter()
 
 ALLOWED_SORT_FIELDS = {
+    "student": "student_name",
     "status": "contract_status",
     "endDate": "current_period_end",
     "startDate": "current_period_start",
@@ -65,6 +68,9 @@ class AdminSettleOverdueIn(BaseModel):
     payment_method: str = Field(default="other", max_length=20)
     reason: str | None = Field(default=None, max_length=240)
     include_future_open: bool = False
+    settlement_mode: Literal["all_overdue", "days", "month"] = "all_overdue"
+    days: int | None = Field(default=None, ge=1, le=365)
+    month: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}$")
 
 
 def _normalize_sort(sort_by: str, sort_dir: str) -> tuple[str, int]:
@@ -84,6 +90,31 @@ def _parse_iso_date(value: str | None, *, field_name: str):
     if not parsed:
         raise HTTPException(status_code=400, detail=f"{field_name} invalido")
     return parsed
+
+
+def _parse_date_range_for_filter(value: str | None, *, field_name: str, is_end: bool) -> datetime | None:
+    if value is None:
+        return None
+    day_start, day_end = sao_paulo_day_bounds(value)
+    if day_start is None or day_end is None:
+        raise HTTPException(status_code=400, detail=f"{field_name} invalido")
+    return day_end if is_end else day_start
+
+
+def _parse_month_reference(value: str | None) -> tuple[datetime, datetime] | tuple[None, None]:
+    if value is None:
+        return None, None
+    raw = str(value).strip()
+    if not raw:
+        return None, None
+    try:
+        year = int(raw[0:4])
+        month = int(raw[5:7])
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="month invalido")
+    if month < 1 or month > 12:
+        raise HTTPException(status_code=400, detail="month invalido")
+    return sao_paulo_month_bounds(year, month)
 
 
 def _merge_end_date_range(
@@ -229,8 +260,8 @@ async def list_admin_contracts(
 ):
     db = get_db()
     role = str(actor.get("role") or "").upper()
-    start_date = _parse_iso_date(start_date_raw, field_name="startDate")
-    end_date = _parse_iso_date(end_date_raw, field_name="endDate")
+    start_date = _parse_date_range_for_filter(start_date_raw, field_name="startDate", is_end=False)
+    end_date = _parse_date_range_for_filter(end_date_raw, field_name="endDate", is_end=True)
     if start_date and end_date and end_date < start_date:
         raise HTTPException(status_code=400, detail="endDate deve ser maior que startDate")
 
@@ -541,19 +572,37 @@ async def settle_admin_contract_overdue(
     before = await student_billing._load_contract_for_owner(contract_id, actor, refresh=False)
 
     base_query: dict = {"owner_id": actor["owner_id"], "contract_id": contract_id}
-    if request_data.include_future_open:
-        charge_query = {
-            **base_query,
-            "status": {"$in": ["open", "overdue", "failed", "partially_paid"]},
-        }
-    else:
-        charge_query = {
-            **base_query,
-            "$or": [
-                {"status": {"$in": ["overdue", "failed"]}},
-                {"status": {"$in": ["open", "partially_paid"]}, "due_at": {"$lte": now}},
-            ],
-        }
+    settlement_mode = str(request_data.settlement_mode or "all_overdue").strip().lower()
+    mutable_statuses = ["open", "overdue", "failed", "partially_paid"]
+    if settlement_mode not in {"all_overdue", "days", "month"}:
+        raise HTTPException(status_code=400, detail="settlement_mode invalido")
+
+    charge_query = {
+        **base_query,
+        "status": {"$in": mutable_statuses},
+    }
+    if settlement_mode == "all_overdue":
+        if not request_data.include_future_open:
+            charge_query = {
+                **base_query,
+                "$or": [
+                    {"status": {"$in": ["overdue", "failed"]}},
+                    {"status": {"$in": ["open", "partially_paid"]}, "due_at": {"$lte": now}},
+                ],
+            }
+    elif settlement_mode == "days":
+        if request_data.days is None:
+            raise HTTPException(status_code=400, detail="days obrigatorio para settlement_mode=days")
+        now_sp = to_sao_paulo(now) or now.astimezone(SAO_PAULO_TZ)
+        start_utc, _ = sao_paulo_day_bounds(now_sp.date() - timedelta(days=int(request_data.days) - 1))
+        _, end_utc = sao_paulo_day_bounds(now_sp.date())
+        charge_query["due_at"] = {"$gte": start_utc, "$lte": end_utc}
+    elif settlement_mode == "month":
+        month_start, month_end = _parse_month_reference(request_data.month)
+        if month_start is None or month_end is None:
+            current_sp = to_sao_paulo(now) or now.astimezone(SAO_PAULO_TZ)
+            month_start, month_end = sao_paulo_month_bounds(current_sp.year, current_sp.month)
+        charge_query["due_at"] = {"$gte": month_start, "$lte": month_end}
 
     pending_charges = (
         await db.student_charges.find(
@@ -618,6 +667,9 @@ async def settle_admin_contract_overdue(
                 "paid_at": paid_at.isoformat(),
                 "reason": request_data.reason,
                 "include_future_open": bool(request_data.include_future_open),
+                "settlement_mode": settlement_mode,
+                "days": request_data.days,
+                "month": request_data.month,
             },
             actor=actor,
         )
@@ -671,7 +723,9 @@ async def download_contract_pdf(
         ("Acesso", as_text(contract.get("access_status"))),
         ("Vigencia inicio", as_text(contract.get("current_period_start"))),
         ("Vigencia fim", as_text(contract.get("current_period_end"))),
-        ("Valor", as_text(contract.get("amount"))),
+        ("Valor base", as_text(contract.get("original_amount") or contract.get("amount"))),
+        ("Desconto", as_text(contract.get("discount_amount") or 0)),
+        ("Valor final", as_text(contract.get("amount"))),
         ("Forma pagamento", as_text(contract.get("payment_method"))),
         ("Ultima atualizacao", as_text(contract.get("updated_at"))),
     ]
@@ -715,8 +769,8 @@ async def export_admin_contracts(
     if normalized_format not in {"xlsx", "csv"}:
         raise HTTPException(status_code=400, detail="format invalido")
 
-    start_date = _parse_iso_date(start_date_raw, field_name="startDate")
-    end_date = _parse_iso_date(end_date_raw, field_name="endDate")
+    start_date = _parse_date_range_for_filter(start_date_raw, field_name="startDate", is_end=False)
+    end_date = _parse_date_range_for_filter(end_date_raw, field_name="endDate", is_end=True)
     query, _ = _build_contract_query(
         owner_id=actor["owner_id"],
         q=q,
@@ -748,7 +802,9 @@ async def export_admin_contracts(
         "Status",
         "Financeiro",
         "Acesso",
-        "Valor",
+        "Valor base",
+        "Desconto",
+        "Valor final",
         "Atualizado em",
     ]
     rows = [
@@ -762,6 +818,8 @@ async def export_admin_contracts(
             as_text(item.get("contract_status")),
             as_text(item.get("financial_status")),
             as_text(item.get("access_status")),
+            as_text(item.get("original_amount") or item.get("amount")),
+            as_text(item.get("discount_amount") or 0),
             as_text(item.get("amount")),
             as_text(item.get("updated_at")),
         ]

@@ -6,7 +6,7 @@ from pymongo.errors import DuplicateKeyError
 
 from app.core.deps import require_roles
 from app.core.security import hash_password
-from app.core.time import UTC
+from app.core.time import SAO_PAULO_TZ, UTC
 from app.db.mongo import get_db
 from app.models.students import (
     AttendanceIn,
@@ -21,6 +21,7 @@ from app.services.internal_codes import (
     normalize_internal_code,
 )
 from app.services.query_safety import safe_contains_regex
+from app.services.student_usage import compute_operational_usage_status, touch_student_usage
 
 router = APIRouter()
 STUDENT_MATRICULA_PREFIX = "ALU"
@@ -43,6 +44,14 @@ def _clean_doc(doc: dict, *, include_auth_meta: bool = True) -> dict:
         sanitized.pop("must_change_password", None)
         sanitized.pop("auth_login_enabled", None)
     return sanitized
+
+
+def _decorate_operational_usage(doc: dict) -> dict:
+    decorated = dict(doc)
+    decorated["operational_usage_status"] = compute_operational_usage_status(
+        decorated.get("last_real_usage_at")
+    )
+    return decorated
 
 
 def _require_gym_id(owner: dict) -> str:
@@ -68,7 +77,7 @@ def _normalize_student_doc_data(payload: StudentIn) -> dict:
     for field in ("data_nascimento", "data_vencimento"):
         value = data.get(field)
         if isinstance(value, date):
-            data[field] = datetime.combine(value, time.min, tzinfo=UTC)
+            data[field] = datetime.combine(value, time.min, tzinfo=SAO_PAULO_TZ).astimezone(UTC)
     data["matricula"] = normalize_internal_code(data.get("matricula"))
     return data
 
@@ -104,7 +113,7 @@ def _normalize_student_update_payload(payload: dict) -> dict:
         if isinstance(value, datetime):
             parsed = value
         elif isinstance(value, date):
-            parsed = datetime.combine(value, time.min)
+            parsed = datetime.combine(value, time.min, tzinfo=SAO_PAULO_TZ)
         elif isinstance(value, str):
             try:
                 parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -114,7 +123,7 @@ def _normalize_student_update_payload(payload: dict) -> dict:
             raise HTTPException(status_code=400, detail=f"{field} invalida")
 
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
+            parsed = parsed.replace(tzinfo=SAO_PAULO_TZ)
         updates[field] = parsed.astimezone(UTC)
 
     return updates
@@ -154,7 +163,7 @@ async def list_students(
         .sort("nome", 1)
         .to_list(500)
     )
-    return docs
+    return [_decorate_operational_usage(item) for item in docs]
 
 
 @router.post("")
@@ -264,7 +273,7 @@ async def get_student(
         .sort("date_time", -1)
         .to_list(100)
     )
-    return student
+    return _decorate_operational_usage(student)
 
 
 @router.put("/{student_id}")
@@ -460,6 +469,13 @@ async def add_attendance(
             "owner_id": owner["owner_id"],
             "gym_id": gym_id,
         }
+    )
+    await touch_student_usage(
+        db,
+        owner_id=owner["owner_id"],
+        student_id=student_id,
+        usage_at=payload.date_time,
+        source=payload.source,
     )
     return _clean_doc(doc)
 

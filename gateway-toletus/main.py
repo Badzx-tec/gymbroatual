@@ -139,6 +139,9 @@ SAAS_REQUEST_TIMEOUT = _env_float("SAAS_REQUEST_TIMEOUT", 10.0, minimum=1.0)
 TOLETUS_DENY_BEEP = _env_int("TOLETUS_DENY_BEEP", 2, minimum=0)
 TOLETUS_DENY_LED = _env_int("TOLETUS_DENY_LED", 1, minimum=0)
 TOLETUS_DENY_DURATION_MS = _env_int("TOLETUS_DENY_DURATION_MS", 2000, minimum=0)
+MANUAL_RELEASE_POLL_INTERVAL_SECONDS = _env_float(
+    "MANUAL_RELEASE_POLL_INTERVAL_SECONDS", 1.0, minimum=0.2
+)
 AUTHORIZED_PASSAGE_TTL_SECONDS = _env_float(
     "AUTHORIZED_PASSAGE_TTL_SECONDS", 8.0, minimum=1.0
 )
@@ -419,6 +422,39 @@ async def post_event(
         _log("event_post_error", error=f"{type(exc).__name__}: {exc}", method=method)
 
 
+async def pull_manual_release(client: httpx.AsyncClient) -> dict | None:
+    response = await client.post(
+        f"{SAAS_URL.rstrip('/')}/api/turnstiles/devices/{DEVICE_ID}/manual-releases/pull",
+        headers={"X-Device-Token": DEVICE_TOKEN},
+    )
+    if response.status_code == 204:
+        return None
+    response.raise_for_status()
+    parsed = response.json()
+    if not isinstance(parsed, dict):
+        raise RuntimeError("Invalid manual release response")
+    return parsed
+
+
+async def acknowledge_manual_release(
+    client: httpx.AsyncClient,
+    *,
+    release_id: str,
+    status_value: str,
+    error: str | None = None,
+) -> None:
+    response = await client.post(
+        f"{SAAS_URL.rstrip('/')}/api/turnstiles/devices/{DEVICE_ID}/manual-releases/{release_id}/ack",
+        json={
+            "status": status_value,
+            "success": status_value == "executed",
+            "error": error,
+        },
+        headers={"X-Device-Token": DEVICE_TOKEN},
+    )
+    response.raise_for_status()
+
+
 async def _safe_send(writer: asyncio.StreamWriter, packet: bytes, tx_type: str, **metadata) -> None:
     writer.write(packet)
     await writer.drain()
@@ -467,6 +503,51 @@ async def apply_decision_to_device(
         event_direction=normalized_decision.get("event_direction"),
         blocked_directions=normalized_decision.get("blocked_directions"),
     )
+
+
+async def process_manual_release_queue(
+    client: httpx.AsyncClient,
+    writer: asyncio.StreamWriter,
+) -> None:
+    command = await pull_manual_release(client)
+    if not command:
+        return
+
+    release_id = str(command.get("release_id") or "").strip()
+    direction = normalize_direction(command.get("direction"))
+    if not release_id or direction not in {DIRECTION_ENTRY, DIRECTION_EXIT, DIRECTION_BOTH}:
+        if release_id:
+            await acknowledge_manual_release(
+                client,
+                release_id=release_id,
+                status_value="failed",
+                error="invalid_release_direction",
+            )
+        return
+
+    packet = encode_release_for_direction(direction, message=str(command.get("message") or "LIBERADO"))
+    try:
+        await _safe_send(
+            writer,
+            packet,
+            "manual_release",
+            release_id=release_id,
+            release_direction=direction,
+            student_id=command.get("student_id"),
+        )
+        await acknowledge_manual_release(
+            client,
+            release_id=release_id,
+            status_value="executed",
+        )
+    except Exception as exc:
+        await acknowledge_manual_release(
+            client,
+            release_id=release_id,
+            status_value="failed",
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        raise
 
 
 async def handle_credential_event(
@@ -611,19 +692,27 @@ async def run_tcp(client: httpx.AsyncClient) -> None:
             if TOLETUS_PROBE_ON_CONNECT:
                 await _send_probe(writer, "connect")
 
+            last_packet_at = monotonic()
             while True:
+                loop_timeout = MANUAL_RELEASE_POLL_INTERVAL_SECONDS
+                if TOLETUS_READ_TIMEOUT > 0:
+                    loop_timeout = min(loop_timeout, TOLETUS_READ_TIMEOUT)
                 try:
-                    if TOLETUS_READ_TIMEOUT > 0:
-                        packet = await asyncio.wait_for(
-                            reader.readexactly(PACKET_SIZE),
-                            timeout=TOLETUS_READ_TIMEOUT,
-                        )
-                    else:
-                        packet = await reader.readexactly(PACKET_SIZE)
+                    packet = await asyncio.wait_for(
+                        reader.readexactly(PACKET_SIZE),
+                        timeout=loop_timeout,
+                    )
                 except asyncio.TimeoutError:
-                    _log("tcp_read_timeout", timeout_s=TOLETUS_READ_TIMEOUT)
-                    if TOLETUS_PROBE_ON_TIMEOUT:
-                        await _send_probe(writer, "timeout")
+                    try:
+                        await process_manual_release_queue(client, writer)
+                    except Exception as exc:
+                        _log("manual_release_poll_error", error=f"{type(exc).__name__}: {exc}")
+                    idle_for = monotonic() - last_packet_at
+                    if TOLETUS_READ_TIMEOUT > 0 and idle_for >= TOLETUS_READ_TIMEOUT:
+                        _log("tcp_read_timeout", timeout_s=TOLETUS_READ_TIMEOUT)
+                        if TOLETUS_PROBE_ON_TIMEOUT:
+                            await _send_probe(writer, "timeout")
+                        last_packet_at = monotonic()
                     continue
                 except asyncio.IncompleteReadError as exc:
                     _log(
@@ -638,6 +727,7 @@ async def run_tcp(client: httpx.AsyncClient) -> None:
                 except Exception as exc:
                     _log("packet_invalid", error=f"{type(exc).__name__}: {exc}", raw=packet.hex())
                     continue
+                last_packet_at = monotonic()
 
                 if event.get("kind") == OPER_CREDENTIAL:
                     try:
@@ -689,6 +779,7 @@ async def main() -> None:
         reconnect_delay=TOLETUS_RECONNECT_DELAY,
         probe_on_connect=TOLETUS_PROBE_ON_CONNECT,
         probe_on_timeout=TOLETUS_PROBE_ON_TIMEOUT,
+        manual_release_poll_interval_s=MANUAL_RELEASE_POLL_INTERVAL_SECONDS,
         authorized_passage_ttl_s=AUTHORIZED_PASSAGE_TTL_SECONDS,
         default_direction=TOLETUS_DEFAULT_DIRECTION,
         biometry_default_direction=TOLETUS_BIOMETRY_DEFAULT_DIRECTION,

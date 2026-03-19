@@ -653,3 +653,136 @@ async def test_turnstile_access_summary_includes_grace_and_device_health(monkeyp
     assert summary["blocked_students"] == 1
     assert summary["gateway_auth_failures_1h"] == 1
     assert summary["deny_reasons"][0]["reason"] == "contract_access_blocked"
+
+
+@pytest.mark.asyncio
+async def test_turnstile_decision_updates_operational_usage_for_allowed_student(monkeypatch):
+    db = _FakeDb()
+    db.students = _FakeCollection(
+        [
+            {
+                "student_id": "std_1",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "nome": "Aluno Teste",
+                "status": "ativo",
+                "biometria_id": "BIO-STU-1",
+                "contract_access_status": "allowed",
+            }
+        ]
+    )
+
+    async def fake_authenticate(*_args, **_kwargs):
+        return (
+            {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"},
+            {
+                "device_id": "dev_1",
+                "method": "biometry",
+                "credential": "BIO-STU-1",
+                "direction": "entry",
+            },
+        )
+
+    async def identity_refresh(student, now):
+        return student
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_request", fake_authenticate)
+    monkeypatch.setattr(turnstiles, "_refresh_student_contract_snapshot", identity_refresh)
+    monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
+
+    decision = await turnstiles.turnstile_decision(
+        payload={},
+        request=_DummyRequest(),
+        x_device_token=None,
+    )
+
+    updated_student = await db.students.find_one({"owner_id": "own_1", "student_id": "std_1"})
+    assert decision["allow"] is True
+    assert updated_student["operational_usage_status"] == "active_recent"
+    assert updated_student.get("last_real_usage_at") is not None
+
+
+@pytest.mark.asyncio
+async def test_manual_release_flow_for_daily_student_is_claimed_and_acknowledged(monkeypatch):
+    db = _FakeDb()
+    now = datetime.now(timezone.utc)
+    db.students = _FakeCollection(
+        [
+            {
+                "student_id": "std_daily",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "nome": "Aluno Diario",
+                "status": "ativo",
+                "contract_access_status": "allowed",
+            }
+        ]
+    )
+    db.student_contracts = _FakeCollection(
+        [
+            {
+                "contract_id": "ctr_daily",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "student_id": "std_daily",
+                "student_name": "Aluno Diario",
+                "duration_days": 1,
+                "contract_status": "active",
+                "financial_status": "paid",
+                "access_status": "allowed",
+                "current_period_start": now - timedelta(hours=1),
+                "current_period_end": now + timedelta(hours=2),
+                "created_at": now - timedelta(hours=2),
+            }
+        ]
+    )
+    db.catraca_commands = _FakeCollection([])
+    db.audit_logs = _FakeCollection([])
+
+    async def identity_refresh(student, now):
+        return student
+
+    async def fake_gateway_auth(*_args, **_kwargs):
+        return {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"}
+
+    async def fake_latest_contract(*, owner_id, student_id):
+        assert owner_id == "own_1"
+        assert student_id == "std_daily"
+        return db.student_contracts.docs[0]
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_refresh_student_contract_snapshot", identity_refresh)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_device_channel", fake_gateway_auth)
+    monkeypatch.setattr(turnstiles, "_load_latest_student_contract", fake_latest_contract)
+    monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
+
+    created = await turnstiles.create_manual_turnstile_release(
+        payload=turnstiles.ManualReleaseCreateIn(
+            student_id="std_daily",
+            direction="entry",
+            reason="aluno diario sem biometria",
+        ),
+        actor={"owner_id": "own_1", "gym_id": "gym_1", "role": "RECEPTION", "actor_type": "employee", "employee_id": "emp_1"},
+    )
+
+    pulled = await turnstiles.pull_manual_turnstile_release(
+        device_id="dev_1",
+        request=_DummyRequest(),
+        x_device_token="token",
+    )
+    acknowledged = await turnstiles.acknowledge_manual_turnstile_release(
+        device_id="dev_1",
+        release_id=created["cmd_id"],
+        payload={"status": "executed", "success": True},
+        request=_DummyRequest(),
+        x_device_token="token",
+    )
+
+    command = await db.catraca_commands.find_one({"cmd_id": created["cmd_id"]})
+    assert created["status"] == "pending"
+    assert pulled["release_id"] == created["cmd_id"]
+    assert pulled["direction"] == "entry"
+    assert acknowledged["status"] == "executed"
+    assert command["status"] == "executed"
+    assert len(db.audit_logs.docs) == 1

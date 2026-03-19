@@ -2,19 +2,22 @@ import hashlib
 import hmac
 import secrets
 from datetime import date, datetime, time, timedelta
+from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
+from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
 from app.core.config import get_settings
 from app.core.deps import require_roles
 from app.core.http import get_client_ip
-from app.core.time import UTC
+from app.core.time import SAO_PAULO_TZ, UTC, sao_paulo_day_bounds, to_sao_paulo
 from app.db.mongo import get_db
 from app.services.internal_codes import normalize_internal_code
 from app.services.observability import log_event
 from app.services.student_contracts import derive_student_operational_status, refresh_contract_state
 from app.services.subscription import subscription_allows_login
+from app.services.student_usage import touch_student_usage
 
 router = APIRouter()
 
@@ -61,6 +64,15 @@ WEEKDAY_NAMES = {
     "sun": 6,
     "domingo": 6,
 }
+MANUAL_RELEASE_DIRECTION_VALUES = {"entry", "exit"}
+MANUAL_RELEASE_STATUSES = {"pending", "claimed", "executed", "failed", "expired"}
+
+
+class ManualReleaseCreateIn(BaseModel):
+    student_id: str
+    direction: Literal["entry", "exit"]
+    reason: str = Field(min_length=3, max_length=240)
+    device_id: str | None = Field(default=None, max_length=120)
 
 
 def _normalize_direction(value) -> str:
@@ -826,6 +838,196 @@ async def _authenticate_gateway_request(
     }
 
 
+async def _authenticate_gateway_device_channel(
+    *,
+    device_id: str,
+    device_token_header: str | None,
+    source_ip: str,
+) -> dict:
+    db = get_db()
+    now = datetime.now(UTC)
+    normalized_device_id = str(device_id or "").strip()
+    token = str(device_token_header or "").strip()
+    if not normalized_device_id or not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Canal do dispositivo invalido")
+
+    device = await db.turnstile_devices.find_one({"device_id": normalized_device_id}, {"_id": 0})
+    if not device:
+        await _log_security_event(
+            device_id=normalized_device_id,
+            owner_id=None,
+            gym_id=None,
+            event="auth_failure",
+            reason="unknown_device_channel",
+            ip=source_ip,
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Dispositivo invalido")
+
+    if _hash_token(token) != device.get("token_hash"):
+        await _register_auth_failure(device, reason="invalid_device_channel_token", ip=source_ip)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalido")
+
+    await db.turnstile_devices.update_one(
+        {"device_id": normalized_device_id},
+        {
+            "$set": {
+                "last_seen_at": now,
+                "updated_at": now,
+                "invalid_auth_attempts": 0,
+                "blocked_until": None,
+            }
+        },
+    )
+    return device
+
+
+def _manual_release_message(student_name: str | None, direction: str) -> str:
+    normalized_direction = _normalize_direction(direction)
+    if normalized_direction == DIRECTION_EXIT:
+        return f"SAIDA {str(student_name or 'ALUNO').strip()[:9].upper()}"
+    return f"ENTRADA {str(student_name or 'ALUNO').strip()[:7].upper()}"
+
+
+async def _expire_manual_release_commands(*, owner_id: str | None = None, now: datetime | None = None) -> int:
+    db = get_db()
+    current_now = now or datetime.now(UTC)
+    query: dict = {
+        "command_type": "manual_turnstile_release",
+        "status": {"$in": ["pending", "claimed"]},
+        "expires_at": {"$lte": current_now},
+    }
+    if owner_id:
+        query["owner_id"] = owner_id
+
+    stale = (
+        await db.catraca_commands.find(query, {"_id": 0, "cmd_id": 1})
+        .limit(500)
+        .to_list(500)
+    )
+    expired_count = 0
+    for item in stale:
+        cmd_id = str(item.get("cmd_id") or "").strip()
+        if not cmd_id:
+            continue
+        result = await db.catraca_commands.update_one(
+            {
+                "cmd_id": cmd_id,
+                "command_type": "manual_turnstile_release",
+                "status": {"$in": ["pending", "claimed"]},
+            },
+            {
+                "$set": {
+                    "status": "expired",
+                    "expired_at": current_now,
+                    "updated_at": current_now,
+                }
+            },
+        )
+        if int(getattr(result, "modified_count", 0) or 0) > 0:
+            expired_count += 1
+    return expired_count
+
+
+async def _load_latest_student_contract(*, owner_id: str, student_id: str) -> dict | None:
+    db = get_db()
+    docs = (
+        await db.student_contracts.find(
+            {"owner_id": owner_id, "student_id": student_id},
+            {"_id": 0},
+        )
+        .sort("created_at", -1)
+        .limit(20)
+        .to_list(20)
+    )
+    if not docs:
+        return None
+    for item in docs:
+        refreshed, _, _ = await refresh_contract_state(db, item)
+        status_value = str(refreshed.get("contract_status") or "").lower()
+        if status_value in {"active", "pending_activation", "frozen", "scheduled_cancel", "scheduled_freeze"}:
+            return refreshed
+    refreshed, _, _ = await refresh_contract_state(db, docs[0])
+    return refreshed
+
+
+def _is_daily_contract_eligible(contract: dict | None, *, now: datetime) -> tuple[bool, str]:
+    if not contract:
+        return False, "daily_contract_missing"
+    if int(contract.get("duration_days") or 0) != 1:
+        return False, "daily_contract_duration_invalid"
+    contract_status = str(contract.get("contract_status") or "").lower()
+    financial_status = str(contract.get("financial_status") or "").lower()
+    access_status = str(contract.get("access_status") or "").lower()
+    if contract_status not in {"active", "pending_activation", "scheduled_cancel"}:
+        return False, "daily_contract_inactive"
+    if financial_status != "paid":
+        return False, "daily_contract_unpaid"
+    if access_status not in {"allowed", "grace_period"}:
+        return False, "daily_contract_access_blocked"
+
+    start = _coerce_datetime_utc(contract.get("current_period_start"))
+    end = _coerce_datetime_utc(contract.get("current_period_end"))
+    if not start or not end:
+        return False, "daily_contract_period_invalid"
+
+    _, now_day_end = sao_paulo_day_bounds((to_sao_paulo(now) or now.astimezone(SAO_PAULO_TZ)).date())
+    now_day_start, _ = sao_paulo_day_bounds((to_sao_paulo(now) or now.astimezone(SAO_PAULO_TZ)).date())
+    if end < now_day_start or start > now_day_end:
+        return False, "daily_contract_outside_current_day"
+    return True, "ok"
+
+
+async def _claim_next_manual_release(
+    *,
+    device: dict,
+    now: datetime,
+) -> dict | None:
+    db = get_db()
+    await _expire_manual_release_commands(owner_id=device.get("owner_id"), now=now)
+    pending = (
+        await db.catraca_commands.find(
+            {
+                "owner_id": device["owner_id"],
+                "command_type": "manual_turnstile_release",
+                "status": "pending",
+                "expires_at": {"$gt": now},
+                "$or": [
+                    {"device_id": None},
+                    {"device_id": ""},
+                    {"device_id": device["device_id"]},
+                ],
+            },
+            {"_id": 0},
+        )
+        .sort("created_at", 1)
+        .limit(5)
+        .to_list(5)
+    )
+    for item in pending:
+        cmd_id = str(item.get("cmd_id") or "").strip()
+        if not cmd_id:
+            continue
+        result = await db.catraca_commands.update_one(
+            {
+                "cmd_id": cmd_id,
+                "status": "pending",
+                "command_type": "manual_turnstile_release",
+            },
+            {
+                "$set": {
+                    "status": "claimed",
+                    "claimed_at": now,
+                    "claimed_by_device_id": device["device_id"],
+                    "updated_at": now,
+                }
+            },
+        )
+        if int(getattr(result, "modified_count", 0) or 0) > 0:
+            claimed = await db.catraca_commands.find_one({"cmd_id": cmd_id}, {"_id": 0})
+            return claimed
+    return None
+
+
 @router.post("/devices")
 async def create_device(payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     db = get_db()
@@ -919,6 +1121,189 @@ async def turnstile_control_action(
         actor_id=actor.get("employee_id") or actor.get("owner_id"),
         actor_role=str(actor.get("role") or "").upper() or None,
     )
+
+
+@router.post("/manual-releases")
+async def create_manual_turnstile_release(
+    payload: ManualReleaseCreateIn,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION")),
+):
+    db = get_db()
+    now = datetime.now(UTC)
+    student = await db.students.find_one(
+        {
+            "owner_id": actor["owner_id"],
+            "student_id": payload.student_id,
+            "is_employee_shadow": {"$ne": True},
+        },
+        {"_id": 0},
+    )
+    if not student:
+        raise HTTPException(status_code=404, detail="Aluno nao encontrado")
+
+    try:
+        student = await _refresh_student_contract_snapshot(student, now)
+    except Exception as exc:  # pragma: no cover - resiliencia runtime
+        log_event(
+            "manual_release_contract_refresh_error",
+            owner_id=actor.get("owner_id"),
+            student_id=payload.student_id,
+            error=str(exc),
+        )
+
+    allow_base, reason, details = _evaluate_student_access(student, now)
+    if not allow_base:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Aluno nao esta apto para liberacao manual: {reason}",
+        )
+
+    latest_contract = await _load_latest_student_contract(
+        owner_id=actor["owner_id"],
+        student_id=payload.student_id,
+    )
+    daily_ok, daily_reason = _is_daily_contract_eligible(latest_contract, now=now)
+    if not daily_ok:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Aluno nao se enquadra como diario elegivel: {daily_reason}",
+        )
+
+    release_direction = _normalize_direction(payload.direction)
+    if release_direction not in MANUAL_RELEASE_DIRECTION_VALUES:
+        raise HTTPException(status_code=400, detail="direction invalida")
+
+    expires_at = now + timedelta(seconds=45)
+    message = _manual_release_message(student.get("nome"), release_direction)
+    doc = {
+        "cmd_id": f"cmd_{secrets.token_hex(6)}",
+        "owner_id": actor["owner_id"],
+        "gym_id": actor.get("gym_id"),
+        "device_id": str(payload.device_id or "").strip() or None,
+        "action": f"manual_release_{release_direction}",
+        "target_scope": "students",
+        "message": message,
+        "status": "pending",
+        "command_type": "manual_turnstile_release",
+        "release_direction": release_direction,
+        "student_id": student["student_id"],
+        "student_name": student.get("nome"),
+        "contract_id": (latest_contract or {}).get("contract_id"),
+        "reason": payload.reason,
+        "actor_type": actor.get("actor_type", "owner"),
+        "actor_role": str(actor.get("role") or "").upper() or None,
+        "actor_id": actor.get("employee_id") or actor.get("owner_id"),
+        "expires_at": expires_at,
+        "eligibility_reason": daily_reason,
+        "eligibility_snapshot": {
+            "contract_status": (latest_contract or {}).get("contract_status"),
+            "financial_status": (latest_contract or {}).get("financial_status"),
+            "access_status": (latest_contract or {}).get("access_status"),
+            "duration_days": (latest_contract or {}).get("duration_days"),
+            "student_access_reason": reason,
+            "student_access_detail": details,
+        },
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.catraca_commands.insert_one(doc)
+    await db.audit_logs.insert_one(
+        {
+            "owner_id": actor["owner_id"],
+            "event": "turnstile.manual_release.created",
+            "student_id": student["student_id"],
+            "contract_id": (latest_contract or {}).get("contract_id"),
+            "direction": release_direction,
+            "reason": payload.reason,
+            "actor_id": actor.get("employee_id") or actor.get("owner_id"),
+            "actor_role": str(actor.get("role") or "").upper() or None,
+            "created_at": now,
+        }
+    )
+    return {
+        "cmd_id": doc["cmd_id"],
+        "status": doc["status"],
+        "direction": release_direction,
+        "student_id": student["student_id"],
+        "student_name": student.get("nome"),
+        "contract_id": (latest_contract or {}).get("contract_id"),
+        "expires_at": expires_at,
+        "message": message,
+    }
+
+
+@router.post("/devices/{device_id}/manual-releases/pull")
+async def pull_manual_turnstile_release(
+    device_id: str,
+    request: Request,
+    x_device_token: str | None = Header(default=None),
+):
+    source_ip = get_client_ip(request)
+    now = datetime.now(UTC)
+    device = await _authenticate_gateway_device_channel(
+        device_id=device_id,
+        device_token_header=x_device_token,
+        source_ip=source_ip,
+    )
+    command = await _claim_next_manual_release(device=device, now=now)
+    if not command:
+        return Response(status_code=204)
+    return {
+        "release_id": command["cmd_id"],
+        "direction": command.get("release_direction"),
+        "message": command.get("message") or "LIBERADO",
+        "reason": command.get("reason"),
+        "student_id": command.get("student_id"),
+        "student_name": command.get("student_name"),
+        "expires_at": command.get("expires_at"),
+    }
+
+
+@router.post("/devices/{device_id}/manual-releases/{release_id}/ack")
+async def acknowledge_manual_turnstile_release(
+    device_id: str,
+    release_id: str,
+    payload: dict,
+    request: Request,
+    x_device_token: str | None = Header(default=None),
+):
+    db = get_db()
+    source_ip = get_client_ip(request)
+    now = datetime.now(UTC)
+    await _authenticate_gateway_device_channel(
+        device_id=device_id,
+        device_token_header=x_device_token,
+        source_ip=source_ip,
+    )
+    current = await db.catraca_commands.find_one(
+        {"cmd_id": release_id, "command_type": "manual_turnstile_release"},
+        {"_id": 0},
+    )
+    if not current:
+        raise HTTPException(status_code=404, detail="Liberacao manual nao encontrada")
+    if str(current.get("claimed_by_device_id") or "") not in {"", device_id}:
+        raise HTTPException(status_code=409, detail="Liberacao vinculada a outro dispositivo")
+
+    next_status = str(payload.get("status") or "").strip().lower()
+    if next_status not in {"executed", "failed", "expired"}:
+        next_status = "executed" if bool(payload.get("success", True)) else "failed"
+
+    await db.catraca_commands.update_one(
+        {"cmd_id": release_id, "command_type": "manual_turnstile_release"},
+        {
+            "$set": {
+                "status": next_status,
+                "acknowledged_at": now,
+                "executed_at": now if next_status == "executed" else None,
+                "failed_at": now if next_status == "failed" else None,
+                "expired_at": now if next_status == "expired" else current.get("expired_at"),
+                "acknowledged_by_device_id": device_id,
+                "error": str(payload.get("error") or "").strip() or None,
+                "updated_at": now,
+            }
+        },
+    )
+    return {"release_id": release_id, "status": next_status}
 
 
 @router.post("/decision")
@@ -1133,6 +1518,15 @@ async def turnstile_decision(
             "created_at": now,
         }
     )
+    if allow_now and student and subject_type == "student":
+        await touch_student_usage(
+            db,
+            owner_id=device["owner_id"],
+            student_id=student["student_id"],
+            usage_at=now,
+            source="catraca",
+            updated_at=now,
+        )
 
     log_event(
         "turnstile_access_decision",

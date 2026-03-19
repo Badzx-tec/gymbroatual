@@ -21,6 +21,7 @@ ACTIVE_LIKE_CONTRACT_STATUSES = {
     "scheduled_freeze",
 }
 AUTO_STATUS_SOURCE_FINANCIAL = "financeiro_inadimplente"
+MIN_CONTRACT_AMOUNT = 0.01
 
 
 def student_billing_grace_days() -> int:
@@ -53,6 +54,13 @@ def clean_doc(doc: dict | None) -> dict | None:
     sanitized = dict(doc)
     sanitized.pop("_id", None)
     return sanitized
+
+
+def money_value(value, *, default: float = 0.0) -> float:
+    try:
+        return round(float(value), 2)
+    except (TypeError, ValueError):
+        return round(float(default), 2)
 
 
 def utc_now() -> datetime:
@@ -89,6 +97,54 @@ def coerce_datetime_utc(value) -> datetime | None:
 def period_end(start: datetime, duration_days: int | None) -> datetime:
     safe_days = max(1, int(duration_days or 1))
     return start + timedelta(days=safe_days)
+
+
+def resolve_contract_amounts(
+    *,
+    base_amount,
+    discount_amount=0.0,
+) -> tuple[float, float, float]:
+    gross = money_value(base_amount)
+    discount = money_value(discount_amount)
+    if gross <= 0:
+        raise ValueError("Valor base do contrato invalido")
+    if discount < 0:
+        raise ValueError("Desconto invalido")
+    net = money_value(gross - discount)
+    if net < MIN_CONTRACT_AMOUNT:
+        raise ValueError("Desconto nao pode zerar ou negativar o contrato")
+    return gross, discount, net
+
+
+def sync_contract_amount_fields(contract: dict) -> dict:
+    normalized = dict(contract)
+    current_amount = money_value(normalized.get("amount"))
+    base_amount = normalized.get("original_amount")
+    discount_amount = normalized.get("discount_amount")
+
+    if base_amount is None:
+        base_amount = current_amount
+    if discount_amount is None:
+        discount_amount = max(0.0, money_value(base_amount) - current_amount)
+
+    gross = money_value(base_amount, default=current_amount)
+    discount = max(0.0, money_value(discount_amount))
+    net = money_value(gross - discount)
+
+    if net < MIN_CONTRACT_AMOUNT:
+        if current_amount >= MIN_CONTRACT_AMOUNT:
+            net = current_amount
+            gross = max(gross, net)
+            discount = max(0.0, money_value(gross - net))
+        else:
+            gross = max(gross, MIN_CONTRACT_AMOUNT)
+            discount = 0.0
+            net = gross
+
+    normalized["original_amount"] = gross
+    normalized["discount_amount"] = discount
+    normalized["amount"] = net
+    return normalized
 
 
 def billing_cycle_from_duration(duration_days: int | None) -> str:
@@ -294,6 +350,8 @@ def normalize_contract_document(contract: dict, *, now: datetime | None = None) 
     normalized.setdefault("freeze_periods", [])
     normalized.setdefault("auto_renew", False)
     normalized.setdefault("amount", float(normalized.get("amount") or 0))
+    normalized.setdefault("original_amount", normalized.get("amount"))
+    normalized.setdefault("discount_amount", 0.0)
     normalized.setdefault("currency", "BRL")
     normalized.setdefault("duration_days", duration_days)
     normalized.setdefault("manual_end_override", bool(normalized.get("manual_end_override", False)))
@@ -307,6 +365,7 @@ def normalize_contract_document(contract: dict, *, now: datetime | None = None) 
     normalized["current_period_end"] = end
     normalized["contract_status"] = contract_status
     normalized["financial_status"] = financial_status
+    normalized = sync_contract_amount_fields(normalized)
 
     events.extend(_apply_scheduled_actions(normalized, now=current_now))
     contract_status = str(normalized.get("contract_status") or contract_status).lower()

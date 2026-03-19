@@ -3,6 +3,7 @@ import React from 'react';
 import Button from '../../components/ui/Button';
 import SelectField from '../../components/ui/SelectField';
 import SidePanel from '../../components/ui/SidePanel';
+import { SAO_PAULO_TIME_ZONE } from '../../utils/timezone';
 
 const statusOptions = [
   { value: 'active', label: 'Ativo' },
@@ -130,6 +131,9 @@ export default function ContractsFilters({
                 className="h-11 w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
               />
             </label>
+            <p className="text-xs text-zinc-500">
+              As datas desta tela sao interpretadas em {SAO_PAULO_TIME_ZONE}.
+            </p>
           </div>
         </section>
 

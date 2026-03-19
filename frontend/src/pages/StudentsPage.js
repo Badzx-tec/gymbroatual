@@ -33,6 +33,7 @@ import {
   pushCredentialHistory,
 } from '../utils/credentialHistory';
 import { getStoredUser } from '../lib/session';
+import { formatDateTimeInTimeZone, SAO_PAULO_TIME_ZONE } from '../utils/timezone';
 
 const emptyStudent = {
   nome: '',
@@ -69,6 +70,28 @@ const normalizeCpfInput = (value) => {
 
 function statusTone(status) {
   return String(status || '').toLowerCase() === 'ativo' ? 'success' : 'danger';
+}
+
+function usageTone(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'active_recent') return 'success';
+  if (normalized === 'inactive_recent') return 'warning';
+  return 'neutral';
+}
+
+function usageLabel(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'active_recent') return 'Uso recente';
+  if (normalized === 'inactive_recent') return 'Sem uso recente';
+  return 'Sem historico';
+}
+
+function formatDateOnly(value) {
+  return formatDateTimeInTimeZone(value, { dateOnly: true });
+}
+
+function formatDateTime(value) {
+  return formatDateTimeInTimeZone(value);
 }
 
 function studentMatchesSearch(student, query) {
@@ -276,6 +299,7 @@ export default function StudentsPage() {
   const [plans, setPlans] = useState([]);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [usageFilter, setUsageFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [formMode, setFormMode] = useState('');
   const [form, setForm] = useState(emptyStudent);
@@ -518,7 +542,9 @@ export default function StudentsPage() {
     const inactive = students.filter((student) => String(student.status || '').toLowerCase() === 'inativo').length;
     const withLogin = students.filter((student) => student.auth_login_enabled !== false).length;
     const withBiometry = students.filter((student) => Boolean(student.biometria_id)).length;
-    return { active, inactive, withLogin, withBiometry };
+    const activeRecent = students.filter((student) => String(student.operational_usage_status || '').toLowerCase() === 'active_recent').length;
+    const inactiveRecent = students.filter((student) => String(student.operational_usage_status || '').toLowerCase() === 'inactive_recent').length;
+    return { active, inactive, withLogin, withBiometry, activeRecent, inactiveRecent };
   }, [students]);
 
   const visibleStudents = useMemo(() => {
@@ -529,6 +555,12 @@ export default function StudentsPage() {
         if (filterStatus && String(student?.status || '').toLowerCase() !== String(filterStatus).toLowerCase()) {
           return false;
         }
+        if (
+          usageFilter
+          && String(student?.operational_usage_status || '').toLowerCase() !== String(usageFilter).toLowerCase()
+        ) {
+          return false;
+        }
         return true;
       })
       .sort((left, right) =>
@@ -536,7 +568,7 @@ export default function StudentsPage() {
           sensitivity: 'base',
         })
       );
-  }, [filterStatus, search, students]);
+  }, [filterStatus, search, students, usageFilter]);
 
   if (loading) return <LoadingScreen label="Carregando alunos..." />;
 
@@ -546,7 +578,7 @@ export default function StudentsPage() {
         eyebrow="Operacao"
         title="Alunos"
         subtitle={
-          search || filterStatus
+          search || filterStatus || usageFilter
             ? `${visibleStudents.length} alunos encontrados${students.length !== visibleStudents.length ? ` de ${students.length}` : ''}, em ordem alfabetica.`
             : `${visibleStudents.length} alunos em ordem alfabetica para operacao diaria, credenciais e acesso.`
         }
@@ -570,11 +602,13 @@ export default function StudentsPage() {
         }
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <StatCard label="Ativos" value={studentStats.active} icon={User} accent="success" />
         <StatCard label="Inativos" value={studentStats.inactive} icon={User} accent="danger" />
         <StatCard label="Login liberado" value={studentStats.withLogin} icon={ShieldCheck} accent="info" />
         <StatCard label="Biometria cadastrada" value={studentStats.withBiometry} icon={Fingerprint} accent="warning" />
+        <StatCard label="Uso recente" value={studentStats.activeRecent} icon={Users} accent="success" />
+        <StatCard label="Sem uso recente" value={studentStats.inactiveRecent} icon={Users} accent="warning" />
       </div>
 
       {credentialPanel ? (
@@ -587,8 +621,8 @@ export default function StudentsPage() {
       ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <SectionCard title="Busca e filtros" description="Use busca rapida e status para localizar alunos sem poluir a listagem.">
-          <div className="grid gap-3 md:grid-cols-[minmax(280px,1fr)_220px]">
+        <SectionCard title="Busca e filtros" description="Use busca rapida, status e uso operacional real sem poluir a listagem.">
+          <div className="grid gap-3 md:grid-cols-[minmax(280px,1fr)_220px_240px]">
             <SearchInput
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -599,7 +633,16 @@ export default function StudentsPage() {
               <option value="ativo">Ativos</option>
               <option value="inativo">Inativos</option>
             </SelectField>
+            <SelectField label="" value={usageFilter} onChange={(event) => setUsageFilter(event.target.value)}>
+              <option value="">Todo uso operacional</option>
+              <option value="active_recent">Uso recente</option>
+              <option value="inactive_recent">Sem uso recente</option>
+              <option value="unknown">Sem historico</option>
+            </SelectField>
           </div>
+          <p className="mt-3 text-xs text-[var(--text-muted)]">
+            O uso operacional considera ultima catraca autorizada ou presenca manual, sem alterar o status financeiro do aluno. Datas em {SAO_PAULO_TIME_ZONE}.
+          </p>
         </SectionCard>
 
         <SectionCard
@@ -623,7 +666,7 @@ export default function StudentsPage() {
                   <div>
                     <p className="text-sm font-semibold text-[var(--text-primary)]">{item.title}</p>
                     <p className="mt-1 text-xs text-[var(--text-muted)]">
-                      {item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : '-'}
+                      {item.created_at ? formatDateTime(item.created_at) : '-'}
                     </p>
                   </div>
                   <Button size="sm" variant="ghost" onClick={() => setCredentialPanel(item)}>
@@ -642,16 +685,17 @@ export default function StudentsPage() {
         </SectionCard>
       </div>
 
-      <SectionCard title="Base de alunos" description="Lista operacional com leitura rapida de plano, status e vencimento." bodyClassName="p-0">
+      <SectionCard title="Base de alunos" description="Lista operacional com leitura rapida de plano, status, uso real e vencimento." bodyClassName="p-0">
         {visibleStudents.length > 0 ? (
           <div className="overflow-x-auto">
-            <table data-testid="students-table" className="w-full min-w-[980px] text-sm">
+            <table data-testid="students-table" className="w-full min-w-[1120px] text-sm">
               <thead>
                 <tr className="border-b border-[var(--surface-border)] text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
                   <th className="px-5 py-4">Aluno</th>
                   <th className="px-5 py-4">CPF</th>
                   <th className="px-5 py-4">Plano</th>
                   <th className="px-5 py-4">Status</th>
+                  <th className="px-5 py-4">Uso real</th>
                   <th className="px-5 py-4">Vencimento</th>
                   <th className="px-5 py-4 text-right">Acoes</th>
                 </tr>
@@ -670,8 +714,16 @@ export default function StudentsPage() {
                     <td className="px-5 py-4">
                       <StatusBadge label={String(student.status || '').toLowerCase() === 'ativo' ? 'Ativo' : 'Inativo'} tone={statusTone(student.status)} />
                     </td>
+                    <td className="px-5 py-4">
+                      <div className="space-y-1">
+                        <StatusBadge label={usageLabel(student.operational_usage_status)} tone={usageTone(student.operational_usage_status)} />
+                        <p className="text-xs text-[var(--text-muted)]">
+                          {student.last_real_usage_at ? formatDateTime(student.last_real_usage_at) : 'Sem registro operacional'}
+                        </p>
+                      </div>
+                    </td>
                     <td className="px-5 py-4 text-[var(--text-secondary)]">
-                      {student.data_vencimento ? new Date(student.data_vencimento).toLocaleDateString('pt-BR') : '-'}
+                      {student.data_vencimento ? formatDateOnly(student.data_vencimento) : '-'}
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex justify-end gap-2">
@@ -703,7 +755,7 @@ export default function StudentsPage() {
               icon={Users}
               title="Nenhum aluno encontrado"
               description={
-                search || filterStatus
+                search || filterStatus || usageFilter
                   ? 'Ajuste a busca ou os filtros para localizar outro aluno.'
                   : 'Cadastre o primeiro aluno para iniciar a operacao.'
               }
@@ -727,10 +779,11 @@ export default function StudentsPage() {
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge label={String(selectedStudent.status || '').toLowerCase() === 'ativo' ? 'Ativo' : 'Inativo'} tone={statusTone(selectedStudent.status)} />
+              <StatusBadge label={usageLabel(selectedStudent.operational_usage_status)} tone={usageTone(selectedStudent.operational_usage_status)} />
               <StatusBadge label={selectedStudent.auth_login_enabled !== false ? 'Login liberado' : 'Sem login'} tone={selectedStudent.auth_login_enabled !== false ? 'info' : 'neutral'} />
             </div>
 
-            <div className="grid gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4 md:grid-cols-2">
+            <div className="grid gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4 md:grid-cols-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Contato</p>
                 <p className="mt-1 text-sm text-[var(--text-primary)]">{selectedStudent.email || 'Sem e-mail'}</p>
@@ -739,7 +792,14 @@ export default function StudentsPage() {
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Plano</p>
                 <p className="mt-1 text-sm text-[var(--text-primary)]">{getPlanName(selectedStudent.plano_id)}</p>
-                <p className="mt-1 text-sm text-[var(--text-secondary)]">Vence em {selectedStudent.data_vencimento ? new Date(selectedStudent.data_vencimento).toLocaleDateString('pt-BR') : '-'}</p>
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">Vence em {selectedStudent.data_vencimento ? formatDateOnly(selectedStudent.data_vencimento) : '-'}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Uso operacional</p>
+                <p className="mt-1 text-sm text-[var(--text-primary)]">{usageLabel(selectedStudent.operational_usage_status)}</p>
+                <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                  Ultimo registro: {selectedStudent.last_real_usage_at ? formatDateTime(selectedStudent.last_real_usage_at) : 'Sem historico'}
+                </p>
               </div>
             </div>
 
@@ -771,7 +831,7 @@ export default function StudentsPage() {
                 {passkeys.length > 0 ? passkeys.map((passkey, index) => (
                   <div key={`${passkey.id}-${index}`} className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4">
                     <p className="font-mono text-xs text-[var(--text-primary)]">{passkey.id}</p>
-                    <p className="mt-1 text-xs text-[var(--text-muted)]">Criado em {new Date(passkey.created_at).toLocaleString('pt-BR')}</p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">Criado em {formatDateTime(passkey.created_at)}</p>
                   </div>
                 )) : <EmptyState icon={Fingerprint} title="Sem passkeys registradas" description="Registre uma passkey neste painel para habilitar autenticacao moderna do aluno." />}
               </div>

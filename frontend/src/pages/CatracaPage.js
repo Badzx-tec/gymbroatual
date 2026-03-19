@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
@@ -33,6 +33,10 @@ import {
 } from '../utils/credentialHistory';
 import { getStoredUser } from '../lib/session';
 import { directionLabel, subjectTypeLabel } from '../utils/labels';
+import {
+  SAO_PAULO_TIME_ZONE,
+  formatDateTimeInTimeZone,
+} from '../utils/timezone';
 
 const REASON_LABELS = {
   ok: 'Acesso valido',
@@ -83,12 +87,7 @@ const CONTROL_SCOPE_OPTIONS = [
 const CATRACA_TOKEN_HISTORY_KEY = 'gymbro_catraca_token_history';
 
 function formatDateTime(value) {
-  if (!value) return '-';
-  try {
-    return new Date(value).toLocaleString('pt-BR');
-  } catch {
-    return String(value);
-  }
+  return formatDateTimeInTimeZone(value);
 }
 
 function reasonLabel(reason) {
@@ -219,6 +218,12 @@ export default function CatracaPage() {
     reason: '',
     since_minutes: 60,
   });
+  const [manualReleaseSearch, setManualReleaseSearch] = useState('');
+  const [manualReleaseCandidates, setManualReleaseCandidates] = useState([]);
+  const [manualReleaseLoading, setManualReleaseLoading] = useState(false);
+  const [manualReleaseSelectedStudent, setManualReleaseSelectedStudent] = useState(null);
+  const [manualReleaseReason, setManualReleaseReason] = useState('');
+  const [manualReleaseSubmitting, setManualReleaseSubmitting] = useState(false);
 
   const openTokenPanel = (payload) => {
     if (!payload?.fields?.length) return;
@@ -237,7 +242,7 @@ export default function CatracaPage() {
     toast.success('Historico de tokens limpo.');
   };
 
-  const load = React.useCallback(async ({ silent = false } = {}) => {
+  const load = useCallback(async ({ silent = false } = {}) => {
     if (silent) {
       setRefreshing(true);
     } else {
@@ -277,6 +282,41 @@ export default function CatracaPage() {
     }, 8000);
     return () => clearInterval(interval);
   }, [load]);
+
+  useEffect(() => {
+    let active = true;
+    const term = manualReleaseSearch.trim();
+
+    if (!term) {
+      setManualReleaseCandidates([]);
+      setManualReleaseLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    setManualReleaseLoading(true);
+    const handle = setTimeout(async () => {
+      try {
+        const result = await api.listStudents(term, '');
+        if (active) {
+          setManualReleaseCandidates(Array.isArray(result) ? result : []);
+        }
+      } catch (err) {
+        if (active) {
+          setManualReleaseCandidates([]);
+          toast.error(err?.message || 'Falha ao buscar alunos para liberacao manual.');
+        }
+      } finally {
+        if (active) setManualReleaseLoading(false);
+      }
+    }, 280);
+
+    return () => {
+      active = false;
+      clearTimeout(handle);
+    };
+  }, [manualReleaseSearch]);
 
   const createDevice = async () => {
     if (!canManageDevices) {
@@ -344,6 +384,50 @@ export default function CatracaPage() {
       load({ silent: true });
     } catch (err) {
       toast.error(err?.message || 'Erro ao rotacionar token.');
+    }
+  };
+
+  const submitManualRelease = async (direction) => {
+    if (!canIssueCommands) {
+      toast.error('Seu perfil nao pode liberar acesso manualmente.');
+      return;
+    }
+    if (!manualReleaseSelectedStudent?.student_id) {
+      toast.error('Selecione um aluno antes de liberar a catraca.');
+      return;
+    }
+    const reason = manualReleaseReason.trim();
+    if (!reason) {
+      toast.error('Informe o motivo operacional.');
+      return;
+    }
+
+    setManualReleaseSubmitting(true);
+    try {
+      await api.turnstileManualRelease({
+        student_id: manualReleaseSelectedStudent.student_id,
+        student_name: manualReleaseSelectedStudent.nome || manualReleaseSelectedStudent.name || '',
+        direction,
+        release_direction: direction,
+        reason,
+        scope: 'student_daily',
+        duration_days: 1,
+        time_zone: SAO_PAULO_TIME_ZONE,
+        requested_by_role: role,
+        source: 'frontend_operational_manual_release',
+      });
+      toast.success(
+        `${direction === 'entry' ? 'Liberacao de entrada' : 'Liberacao de saida'} solicitada para ${manualReleaseSelectedStudent.nome || manualReleaseSelectedStudent.name || manualReleaseSelectedStudent.student_id}.`
+      );
+      setManualReleaseReason('');
+      setManualReleaseSearch('');
+      setManualReleaseCandidates([]);
+      setManualReleaseSelectedStudent(null);
+      await load({ silent: true });
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao solicitar liberacao manual.');
+    } finally {
+      setManualReleaseSubmitting(false);
     }
   };
 
@@ -515,6 +599,138 @@ export default function CatracaPage() {
         </div>
       </SectionCard>
 
+      <SectionCard
+        title="Liberacao manual operacional"
+        description="Atalho isolado para alunos diarios sem biometria cadastrada. Exige motivo e permanece auditavel."
+      >
+        <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+          <div className="space-y-3">
+            <SearchInput
+              value={manualReleaseSearch}
+              onChange={(event) => setManualReleaseSearch(event.target.value)}
+              placeholder="Buscar aluno para liberacao manual"
+              aria-label="Buscar aluno para liberacao manual"
+            />
+            <p className="text-xs text-zinc-500">
+              Digite nome, matricula ou parte do cadastro. A liberacao manual e separada do controle global da catraca.
+            </p>
+            <div className="max-h-72 space-y-2 overflow-auto pr-1">
+              {manualReleaseLoading ? (
+                <div className="rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4 text-sm text-zinc-400">
+                  Buscando alunos...
+                </div>
+              ) : manualReleaseSearch.trim() ? (
+                manualReleaseCandidates.length > 0 ? (
+                  manualReleaseCandidates.map((student) => {
+                    const selected = manualReleaseSelectedStudent?.student_id === student.student_id;
+                    return (
+                      <button
+                        key={student.student_id}
+                        type="button"
+                        onClick={() => setManualReleaseSelectedStudent(student)}
+                        className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                          selected
+                            ? 'border-[color:rgb(var(--brand-primary-rgb)/0.55)] bg-[color:rgb(var(--brand-primary-rgb)/0.10)]'
+                            : 'border-zinc-900 bg-zinc-950/60 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-semibold text-zinc-100">{student.nome || student.name || student.student_id}</p>
+                          <span className="rounded-md border border-zinc-700 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-zinc-400">
+                            {student.student_id}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          {student.status ? `Status: ${student.status}` : 'Cadastro encontrado'} |{' '}
+                          {student.biometria_id || student.biometry_id ? 'Biometria cadastrada' : 'Sem biometria cadastrada'}
+                        </p>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4 text-sm text-zinc-400">
+                    Nenhum aluno encontrado para o termo informado.
+                  </div>
+                )
+              ) : (
+                <div className="rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4 text-sm text-zinc-400">
+                  Comece a digitar para localizar o aluno da liberacao manual.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-4">
+            {manualReleaseSelectedStudent ? (
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-zinc-100">
+                  {manualReleaseSelectedStudent.nome || manualReleaseSelectedStudent.name || manualReleaseSelectedStudent.student_id}
+                </p>
+                <p className="text-xs text-zinc-500">Aluno: {manualReleaseSelectedStudent.student_id}</p>
+                <p className="text-xs text-zinc-500">
+                  {manualReleaseSelectedStudent.status ? `Status: ${manualReleaseSelectedStudent.status}` : 'Status nao informado'}
+                </p>
+                <p className="text-xs text-zinc-500">
+                  {manualReleaseSelectedStudent.biometria_id || manualReleaseSelectedStudent.biometry_id
+                    ? 'Biometria cadastrada'
+                    : 'Sem biometria cadastrada'}
+                </p>
+              </div>
+            ) : (
+              <EmptyState
+                icon={ScanLine}
+                title="Selecione um aluno"
+                description="A liberacao manual so fica disponivel depois que um aluno for escolhido."
+              />
+            )}
+
+            <label className="block space-y-1.5">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Motivo operacional</span>
+              <textarea
+                value={manualReleaseReason}
+                onChange={(event) => setManualReleaseReason(event.target.value)}
+                placeholder="Ex.: aluno diario sem biometria para entrada assistida"
+                rows={4}
+                className="min-h-[110px] w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
+              />
+            </label>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => submitManualRelease('entry')}
+                disabled={
+                  !canIssueCommands
+                  || manualReleaseSubmitting
+                  || !manualReleaseSelectedStudent
+                  || !manualReleaseReason.trim()
+                }
+              >
+                Liberar entrada
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => submitManualRelease('exit')}
+                disabled={
+                  !canIssueCommands
+                  || manualReleaseSubmitting
+                  || !manualReleaseSelectedStudent
+                  || !manualReleaseReason.trim()
+                }
+              >
+                Liberar saida
+              </Button>
+            </div>
+
+            <p className="text-xs text-zinc-500">
+              Uso reservado para alunos diarios no dia corrente em {SAO_PAULO_TIME_ZONE}. Cada liberacao precisa de justificativa.
+            </p>
+          </div>
+        </div>
+      </SectionCard>
+
       <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
         <SectionCard
           title="Dispositivos"
@@ -587,7 +803,7 @@ export default function CatracaPage() {
                   <div>
                     <p className="text-sm font-semibold text-zinc-100">{item.title}</p>
                     <p className="mt-1 text-xs text-zinc-500">
-                      {item.created_at ? new Date(item.created_at).toLocaleString('pt-BR') : '-'}
+                      {item.created_at ? formatDateTime(item.created_at) : '-'}
                     </p>
                   </div>
                   <Button size="sm" variant="ghost" onClick={() => setTokenPanel(item)}>

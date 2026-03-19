@@ -36,6 +36,7 @@ class ContractCreateIn(BaseModel):
     student_id: str
     plan_id: str | None = None
     amount: float | None = Field(default=None, gt=0)
+    discount_amount: float = Field(default=0, ge=0)
     duration_days: int | None = Field(default=None, ge=1, le=3650)
     billing_cycle: BillingCycle = "custom_days"
     billing_day: int | None = Field(default=None, ge=1, le=28)
@@ -53,6 +54,7 @@ class ContractCreateIn(BaseModel):
 
 class ContractUpdateIn(BaseModel):
     amount: float | None = Field(default=None, gt=0)
+    discount_amount: float | None = Field(default=None, ge=0)
     end_at: datetime | None = None
     auto_renew: bool | None = None
     billing_day: int | None = Field(default=None, ge=1, le=28)
@@ -112,6 +114,7 @@ class ContractOut(BaseModel):
     amount: float
     currency: str = "BRL"
     original_amount: float | None = None
+    discount_amount: float = 0
     duration_days: int | None = None
     billing_cycle: BillingCycle
     billing_day: int | None = None

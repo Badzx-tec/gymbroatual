@@ -108,6 +108,8 @@ async def init_indexes() -> None:
     await db.students.create_index([("owner_id", 1), ("cpf", 1)])
     await db.students.create_index([("owner_id", 1), ("tag_rfid", 1)])
     await db.students.create_index([("owner_id", 1), ("biometria_id", 1)])
+    await db.students.create_index([("owner_id", 1), ("last_real_usage_at", -1)])
+    await db.students.create_index([("owner_id", 1), ("operational_usage_status", 1)])
     await db.students.create_index([("email", 1)])
     await db.students.create_index([("cpf", 1)])
     await db.students.create_index([("auth_login_enabled", 1)])
@@ -132,6 +134,10 @@ async def init_indexes() -> None:
     await db.turnstile_security_events.create_index([("owner_id", 1), ("created_at", -1)])
     await db.notifications.create_index([("owner_id", 1), ("created_at", -1)])
     await db.catraca_commands.create_index([("owner_id", 1), ("created_at", -1)])
+    await db.catraca_commands.create_index(
+        [("owner_id", 1), ("command_type", 1), ("status", 1), ("expires_at", 1), ("created_at", 1)]
+    )
+    await db.catraca_commands.create_index([("device_id", 1), ("command_type", 1), ("status", 1)])
     await db.catraca_control_state.create_index([("owner_id", 1)], unique=True)
     await db.audit_logs.create_index([("owner_id", 1), ("created_at", -1)])
     await db.audit_logs.create_index([("event", 1), ("created_at", -1)])

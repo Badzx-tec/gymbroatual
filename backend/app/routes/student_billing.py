@@ -38,6 +38,8 @@ from app.services.student_contracts import (
     legacy_status,
     period_end,
     refresh_contract_state,
+    resolve_contract_amounts,
+    sync_contract_amount_fields,
     utc_now,
 )
 
@@ -50,6 +52,29 @@ def _safe_float(value, *, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return float(default)
+
+
+def _contract_amount_snapshot(contract: dict) -> tuple[float, float, float]:
+    normalized = sync_contract_amount_fields(contract)
+    return (
+        _safe_float(normalized.get("original_amount")),
+        _safe_float(normalized.get("discount_amount")),
+        _safe_float(normalized.get("amount")),
+    )
+
+
+def _resolve_contract_amount_inputs(
+    *,
+    base_amount,
+    discount_amount=0.0,
+) -> tuple[float, float, float]:
+    try:
+        return resolve_contract_amounts(
+            base_amount=base_amount,
+            discount_amount=discount_amount,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _build_charge(
@@ -240,6 +265,74 @@ async def _create_charge_and_link(
     contract["last_charge_id"] = charge["charge_id"]
     await _upsert_contract(contract)
     return charge
+
+
+async def _update_open_charge_amounts_for_contract(
+    *,
+    contract: dict,
+    actor: dict,
+    now: datetime,
+    reason: str,
+) -> tuple[int, list[str]]:
+    db = get_db()
+    mutable_statuses = ["open", "overdue", "failed", "partially_paid"]
+    target_amount = _safe_float(contract.get("amount"))
+    updated_count = 0
+    charge_ids: list[str] = []
+    mutable_charges = (
+        await db.student_charges.find(
+            {
+                "owner_id": contract["owner_id"],
+                "contract_id": contract["contract_id"],
+                "status": {"$in": mutable_statuses},
+            },
+            {"_id": 0, "charge_id": 1, "amount": 1},
+        )
+        .limit(5000)
+        .to_list(5000)
+    )
+
+    for item in mutable_charges:
+        charge_id = str(item.get("charge_id") or "").strip()
+        if not charge_id:
+            continue
+        current_amount = _safe_float(item.get("amount"))
+        if current_amount == target_amount:
+            continue
+        result = await db.student_charges.update_one(
+            {
+                "owner_id": contract["owner_id"],
+                "charge_id": charge_id,
+                "status": {"$in": mutable_statuses},
+            },
+            {
+                "$set": {
+                    "amount": target_amount,
+                    "updated_at": now,
+                    "discount_sync_reason": reason,
+                }
+            },
+        )
+        if int(getattr(result, "modified_count", 0) or 0) > 0:
+            updated_count += 1
+            charge_ids.append(charge_id)
+
+    if updated_count > 0:
+        await _record_event(
+            owner_id=contract["owner_id"],
+            gym_id=contract["gym_id"],
+            contract_id=contract["contract_id"],
+            event_type="contract_charge_amounts_synced",
+            payload={
+                "reason": reason,
+                "updated_count": updated_count,
+                "charge_ids": charge_ids[:100],
+                "amount": target_amount,
+            },
+            actor=actor,
+        )
+
+    return updated_count, charge_ids
 
 
 def _matches_status_filters(
@@ -540,10 +633,13 @@ async def create_contract(
             actor=actor,
         )
 
-    amount = payload.amount if payload.amount is not None else (plan_doc or {}).get("valor")
-    if amount is None:
+    base_amount = payload.amount if payload.amount is not None else (plan_doc or {}).get("valor")
+    if base_amount is None:
         raise HTTPException(status_code=400, detail="Informe amount ou selecione plano com valor")
-    amount = float(amount)
+    original_amount, discount_amount, amount = _resolve_contract_amount_inputs(
+        base_amount=base_amount,
+        discount_amount=payload.discount_amount,
+    )
 
     start_at = coerce_datetime_utc(payload.start_at) or now
     duration_days = (
@@ -571,7 +667,8 @@ async def create_contract(
         "plan_id": payload.plan_id,
         "plan_name": (plan_doc or {}).get("nome"),
         "amount": amount,
-        "original_amount": _safe_float((plan_doc or {}).get("valor"), default=amount),
+        "original_amount": original_amount,
+        "discount_amount": discount_amount,
         "currency": "BRL",
         "duration_days": duration_days,
         "billing_cycle": payload.billing_cycle,
@@ -620,13 +717,23 @@ async def create_contract(
             actor=actor,
             now=now,
         )
-    if plan_doc and payload.amount is not None and float(plan_doc.get("valor") or 0) != amount:
+    if plan_doc and payload.amount is not None and float(plan_doc.get("valor") or 0) != original_amount:
         append_manual_override(
             contract,
-            field="amount",
+            field="original_amount",
             before=float(plan_doc.get("valor") or 0),
-            after=amount,
+            after=original_amount,
             reason="manual_amount_override_create",
+            actor=actor,
+            now=now,
+        )
+    if discount_amount > 0:
+        append_manual_override(
+            contract,
+            field="discount_amount",
+            before=0.0,
+            after=discount_amount,
+            reason="manual_discount_override_create",
             actor=actor,
             now=now,
         )
@@ -663,6 +770,8 @@ async def create_contract(
             "student_id": contract["student_id"],
             "plan_id": contract.get("plan_id"),
             "amount": contract.get("amount"),
+            "original_amount": contract.get("original_amount"),
+            "discount_amount": contract.get("discount_amount"),
             "duration_days": contract.get("duration_days"),
             "manual_end_override": bool(manual_end),
             "initial_charge_id": (initial_charge or {}).get("charge_id"),
@@ -691,18 +800,43 @@ async def update_contract(
 
     data = payload.model_dump(exclude_none=True)
     reason = data.get("manual_override_reason")
+    current_original_amount, current_discount_amount, current_amount = _contract_amount_snapshot(contract)
+    pending_original_amount = current_original_amount
+    pending_discount_amount = current_discount_amount
+    amount_fields_changed = False
+
     if "amount" in data:
-        before = _safe_float(contract.get("amount"))
-        after = float(data["amount"])
-        contract["amount"] = after
+        pending_original_amount = float(data["amount"])
+        amount_fields_changed = True
         append_manual_override(
             contract,
-            field="amount",
-            before=before,
-            after=after,
+            field="original_amount",
+            before=current_original_amount,
+            after=pending_original_amount,
             reason=reason or "manual_amount_override",
             actor=actor,
             now=now,
+        )
+    if "discount_amount" in data:
+        pending_discount_amount = float(data["discount_amount"])
+        amount_fields_changed = True
+        append_manual_override(
+            contract,
+            field="discount_amount",
+            before=current_discount_amount,
+            after=pending_discount_amount,
+            reason=reason or "manual_discount_override",
+            actor=actor,
+            now=now,
+        )
+    if amount_fields_changed:
+        (
+            contract["original_amount"],
+            contract["discount_amount"],
+            contract["amount"],
+        ) = _resolve_contract_amount_inputs(
+            base_amount=pending_original_amount,
+            discount_amount=pending_discount_amount,
         )
     if "end_at" in data:
         end_at = coerce_datetime_utc(data["end_at"])
@@ -755,6 +889,13 @@ async def update_contract(
         contract["internal_notes"] = data["internal_notes"]
 
     contract = await _upsert_contract(contract)
+    if amount_fields_changed:
+        await _update_open_charge_amounts_for_contract(
+            contract=contract,
+            actor=actor,
+            now=now,
+            reason=reason or "contract_amount_update",
+        )
     contract, events, changed = await refresh_contract_state(get_db(), contract)
     if changed:
         for auto_event in events:
@@ -772,7 +913,14 @@ async def update_contract(
         gym_id=contract["gym_id"],
         contract_id=contract["contract_id"],
         event_type="contract_overridden",
-        payload={"reason": reason, "fields": sorted(set(data.keys()) - {"manual_override_reason"})},
+        payload={
+            "reason": reason,
+            "fields": sorted(set(data.keys()) - {"manual_override_reason"}),
+            "amount_before": current_amount,
+            "amount_after": contract.get("amount"),
+            "original_amount": contract.get("original_amount"),
+            "discount_amount": contract.get("discount_amount"),
+        },
         actor=actor,
     )
     return contract
@@ -1097,11 +1245,17 @@ async def change_plan(
     if payload.mode == "in_place":
         before_plan = contract.get("plan_id")
         before_amount = _safe_float(contract.get("amount"))
+        before_discount = _safe_float(contract.get("discount_amount"))
         before_duration = int(contract.get("duration_days") or target_duration)
+        next_original_amount, next_discount_amount, next_amount = _resolve_contract_amount_inputs(
+            base_amount=target_amount,
+            discount_amount=before_discount,
+        )
         contract["plan_id"] = payload.new_plan_id
         contract["plan_name"] = plan.get("nome")
-        contract["original_amount"] = _safe_float(plan.get("valor"), default=target_amount)
-        contract["amount"] = target_amount
+        contract["original_amount"] = next_original_amount
+        contract["discount_amount"] = next_discount_amount
+        contract["amount"] = next_amount
         contract["duration_days"] = target_duration
         if not bool(contract.get("manual_end_override")):
             start = coerce_datetime_utc(contract.get("current_period_start")) or now
@@ -1119,11 +1273,21 @@ async def change_plan(
             contract,
             field="amount",
             before=before_amount,
-            after=target_amount,
+            after=next_amount,
             reason=payload.notes or "manual_plan_change",
             actor=actor,
             now=now,
         )
+        if before_discount != next_discount_amount:
+            append_manual_override(
+                contract,
+                field="discount_amount",
+                before=before_discount,
+                after=next_discount_amount,
+                reason=payload.notes or "manual_plan_change",
+                actor=actor,
+                now=now,
+            )
         append_manual_override(
             contract,
             field="duration_days",
@@ -1134,6 +1298,12 @@ async def change_plan(
             now=now,
         )
         contract = await _upsert_contract(contract)
+        await _update_open_charge_amounts_for_contract(
+            contract=contract,
+            actor=actor,
+            now=now,
+            reason=payload.notes or "plan_change_in_place",
+        )
         contract, events, changed = await refresh_contract_state(db, contract)
         if changed:
             for auto_event in events:
@@ -1193,6 +1363,10 @@ async def change_plan(
 
     new_contract_status = "pending_activation" if effective_at > now else "active"
     new_financial_status = "pending" if payload.create_initial_charge else "paid"
+    next_original_amount, next_discount_amount, next_amount = _resolve_contract_amount_inputs(
+        base_amount=target_amount,
+        discount_amount=_safe_float(contract.get("discount_amount")),
+    )
     new_contract = {
         "contract_id": f"ctr_{secrets.token_hex(8)}",
         "owner_id": contract["owner_id"],
@@ -1201,8 +1375,9 @@ async def change_plan(
         "student_name": contract["student_name"],
         "plan_id": payload.new_plan_id,
         "plan_name": plan.get("nome"),
-        "amount": target_amount,
-        "original_amount": _safe_float(plan.get("valor"), default=target_amount),
+        "amount": next_amount,
+        "original_amount": next_original_amount,
+        "discount_amount": next_discount_amount,
         "currency": "BRL",
         "duration_days": target_duration,
         "billing_cycle": contract.get("billing_cycle") or "custom_days",

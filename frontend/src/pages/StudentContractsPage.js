@@ -16,14 +16,27 @@ import ContractDetailsDrawer from './contracts/ContractDetailsDrawer';
 import ContractsFilters from './contracts/ContractsFilters';
 import ContractsOverview from './contracts/ContractsOverview';
 import ContractsTable from './contracts/ContractsTable';
-import { toIsoDate, toLocalDateInput } from './contracts/contractsUtils';
+import {
+  formatContractValueBreakdown,
+  toIsoDate,
+  toLocalDateInput,
+} from './contracts/contractsUtils';
+import {
+  dateInputToIsoRangeEnd,
+  dateInputToIsoRangeStart,
+  toDateInputInTimeZone,
+  toMonthInputInTimeZone,
+} from '../utils/timezone';
 
 const SAVED_VIEW_KEY = 'gymbro_contracts_saved_view';
+const DEFAULT_SORT_BY = 'student';
+const DEFAULT_SORT_DIR = 'asc';
 
 const createFormDefault = {
   student_id: '',
   plan_id: '',
   amount: '',
+  discount_amount: '',
   duration_days: '',
   start_at: '',
   end_at: '',
@@ -50,12 +63,96 @@ function parseBool(value) {
   return raw === 'true' || raw === '1' || raw === 'yes';
 }
 
+const textCollator = new Intl.Collator('pt-BR', { sensitivity: 'base', numeric: true });
+const SETTLEMENT_ELIGIBLE_STATUSES = new Set(['open', 'overdue', 'failed', 'partially_paid']);
+
+function compareText(left, right, direction = 'asc') {
+  const result = textCollator.compare(String(left || ''), String(right || ''));
+  return direction === 'desc' ? -result : result;
+}
+
+function sortContractsForDisplay(rows, sortBy, sortDir) {
+  if (String(sortBy || '').toLowerCase() !== DEFAULT_SORT_BY) {
+    return Array.isArray(rows) ? rows : [];
+  }
+  const direction = String(sortDir || '').toLowerCase() === 'desc' ? 'desc' : 'asc';
+  return [...(Array.isArray(rows) ? rows : [])].sort((left, right) => {
+    const primary = compareText(left?.student_name || left?.nome || left?.student_id, right?.student_name || right?.nome || right?.student_id, direction);
+    if (primary !== 0) return primary;
+    const secondary = compareText(left?.student_id, right?.student_id, direction);
+    if (secondary !== 0) return secondary;
+    return compareText(left?.contract_id, right?.contract_id, direction);
+  });
+}
+
+function getTodayDateInputInSaoPaulo() {
+  return toDateInputInTimeZone(new Date().toISOString());
+}
+
+function getCurrentMonthInSaoPaulo() {
+  return toMonthInputInTimeZone(new Date().toISOString());
+}
+
+function getSettlementPreview(charges = [], actionDialog = null) {
+  if (!actionDialog?.kind || actionDialog.kind !== 'settle') {
+    return { charges: [], total: 0, count: 0 };
+  }
+
+  const mode = actionDialog.settleMode || 'all_overdue';
+  const days = Math.max(1, Number(actionDialog.settleDays || 0) || 0);
+  const month = actionDialog.settleMonth || getCurrentMonthInSaoPaulo();
+  const includeFutureOpen = Boolean(actionDialog.includeFutureOpen);
+  const todayInput = getTodayDateInputInSaoPaulo();
+  const todayEnd = new Date(dateInputToIsoRangeEnd(todayInput));
+  const todayStart = new Date(dateInputToIsoRangeStart(todayInput));
+  const daysStart = new Date(todayStart.getTime());
+  daysStart.setUTCDate(daysStart.getUTCDate() - (days - 1));
+
+  const eligible = (Array.isArray(charges) ? charges : []).filter((charge) => {
+    const status = String(charge?.status || '').toLowerCase();
+    if (!SETTLEMENT_ELIGIBLE_STATUSES.has(status)) {
+      return false;
+    }
+    const dueAt = charge?.due_at ? new Date(charge.due_at) : null;
+    if (mode === 'all_overdue') {
+      if (!includeFutureOpen && status === 'open') {
+        return Boolean(dueAt && !Number.isNaN(dueAt.getTime()) && dueAt <= todayEnd);
+      }
+      return true;
+    }
+    if (!dueAt || Number.isNaN(dueAt.getTime())) {
+      return false;
+    }
+    if (mode === 'days') {
+      return dueAt >= daysStart && dueAt <= todayEnd;
+    }
+    if (mode === 'month') {
+      return toMonthInputInTimeZone(charge.due_at) === month;
+    }
+    return true;
+  });
+
+  const total = eligible.reduce((sum, charge) => sum + Number(charge?.amount || 0), 0);
+
+  return {
+    charges: eligible,
+    total,
+    count: eligible.length,
+    mode,
+    days,
+    month,
+  };
+}
+
 function parseQuery(searchParams) {
+  const hasSortBy = searchParams.has('sortBy');
+  const hasSortDir = searchParams.has('sortDir');
   const page = parseIntOr(searchParams.get('page'), 1);
   const pageSize = parseIntOr(searchParams.get('pageSize'), 20);
-  const sortBy = searchParams.get('sortBy') || 'updatedAt';
-  const sortDir = searchParams.get('sortDir') || 'desc';
+  const sortBy = searchParams.get('sortBy') || DEFAULT_SORT_BY;
+  const sortDir = searchParams.get('sortDir') || DEFAULT_SORT_DIR;
   return {
+    hasExplicitSort: hasSortBy || hasSortDir,
     page,
     pageSize,
     q: searchParams.get('q') || '',
@@ -80,8 +177,14 @@ function buildQuery(nextState) {
   if (nextState.page && nextState.page !== 1) query.set('page', String(nextState.page));
   if (nextState.pageSize && nextState.pageSize !== 20) query.set('pageSize', String(nextState.pageSize));
   if (nextState.q) query.set('q', nextState.q);
-  if (nextState.sortBy && nextState.sortBy !== 'updatedAt') query.set('sortBy', nextState.sortBy);
-  if (nextState.sortDir && nextState.sortDir !== 'desc') query.set('sortDir', nextState.sortDir);
+  if (nextState.sortBy && nextState.sortDir) {
+    const isDefaultStudentSort =
+      nextState.sortBy === DEFAULT_SORT_BY && nextState.sortDir === DEFAULT_SORT_DIR;
+    if (!isDefaultStudentSort) {
+      query.set('sortBy', nextState.sortBy);
+      query.set('sortDir', nextState.sortDir);
+    }
+  }
   (nextState.status || []).filter(Boolean).forEach((value) => query.append('status', String(value)));
   (nextState.planoId || []).filter(Boolean).forEach((value) => query.append('planoId', String(value)));
   if (nextState.startDate) query.set('startDate', nextState.startDate);
@@ -202,7 +305,11 @@ export default function StudentContractsPage() {
         expiringInDays: queryState.expiringInDays || undefined,
         pendingOnly: queryState.pendingOnly,
       });
-      const nextRows = Array.isArray(response?.data) ? response.data : [];
+      const nextRows = sortContractsForDisplay(
+        Array.isArray(response?.data) ? response.data : [],
+        queryState.sortBy,
+        queryState.sortDir
+      );
       setRows(nextRows);
       setMeta(response?.meta || {});
       setSelectedIds((current) => current.filter((id) => nextRows.some((row) => row.contract_id === id)));
@@ -268,6 +375,33 @@ export default function StudentContractsPage() {
     setDetailOpen(true);
     loadDetail(queryState.contractId);
   }, [queryState.contractId, loadDetail]);
+
+  useEffect(() => {
+    if (actionDialog?.kind !== 'settle') return;
+    const contractId = String(actionDialog?.payload?.contract_id || '').trim();
+    if (!contractId) return;
+    if (detailOpen && queryState.contractId && queryState.contractId !== contractId) return;
+    if (detailLoading) return;
+    if (detailData?.contract?.contract_id === contractId) return;
+    loadDetail(contractId);
+  }, [actionDialog, detailData, detailLoading, detailOpen, loadDetail, queryState.contractId]);
+
+  const settlePreview = useMemo(() => {
+    if (actionDialog?.kind !== 'settle') return null;
+    const payload = actionDialog.payload || {};
+    const detailContractId = detailData?.contract?.contract_id;
+    const contractId = String(payload.contract_id || '').trim();
+    const detailMatches = contractId && detailContractId === contractId;
+    const previewCharges = detailMatches ? (detailData?.charges || []) : [];
+    const preview = getSettlementPreview(previewCharges, actionDialog);
+
+    return {
+      contract: detailMatches ? detailData?.contract || payload : payload,
+      detailMatches,
+      loading: detailLoading && !detailMatches,
+      ...preview,
+    };
+  }, [actionDialog, detailData, detailLoading]);
 
   const openFilters = () => {
     setFiltersDraft(normalizeDraftFromQuery(queryState));
@@ -376,6 +510,9 @@ export default function StudentContractsPage() {
       pauseDays: '7',
       includeFutureOpen: false,
       cancelMode: 'end_of_cycle',
+      settleMode: 'all_overdue',
+      settleDays: '7',
+      settleMonth: getCurrentMonthInSaoPaulo(),
     };
     if (kind === 'cancel') defaults.cancelMode = 'immediate';
     setActionDialog(defaults);
@@ -567,13 +704,33 @@ export default function StudentContractsPage() {
         toast.error('Contrato invalido.');
         return;
       }
+      const settleMode = actionDialog.settleMode || 'all_overdue';
+      const payload = {
+        payment_method: 'other',
+        reason: 'baixa manual na central de contratos',
+        settlement_mode: settleMode,
+      };
+      if (settleMode === 'all_overdue') {
+        payload.include_future_open = Boolean(actionDialog.includeFutureOpen);
+      }
+      if (settleMode === 'days') {
+        const days = Number(actionDialog.settleDays);
+        if (!Number.isFinite(days) || days <= 0) {
+          toast.error('Informe uma quantidade de dias valida.');
+          return;
+        }
+        payload.days = days;
+      }
+      if (settleMode === 'month') {
+        if (!actionDialog.settleMonth) {
+          toast.error('Selecione um mes valido.');
+          return;
+        }
+        payload.month = actionDialog.settleMonth;
+      }
       setBusyAction(true);
       try {
-        const response = await api.adminSettleOverdueContract(contractId, {
-          payment_method: 'other',
-          include_future_open: Boolean(actionDialog.includeFutureOpen),
-          reason: 'baixa manual na central de contratos',
-        });
+        const response = await api.adminSettleOverdueContract(contractId, payload);
         const updatedCharges = Number(response?.updated_charges || 0);
         if (updatedCharges > 0) {
           toast.success(`Contrato atualizado. Cobrancas baixadas: ${updatedCharges}.`);
@@ -581,7 +738,9 @@ export default function StudentContractsPage() {
           toast.success('Nenhuma cobranca pendente para baixa.');
         }
         await loadContracts();
-        await loadDetail(contractId);
+        if (detailData?.contract?.contract_id === contractId || queryState.contractId === contractId) {
+          await loadDetail(contractId);
+        }
         closeActionDialog();
       } catch (err) {
         toast.error(err?.message || 'Falha ao colocar contrato em dia.');
@@ -633,7 +792,7 @@ export default function StudentContractsPage() {
         );
         const success = results.filter((item) => item.status === 'fulfilled').length;
         const failed = results.length - success;
-        toast.success(`Lote concluido. Sucesso: ${success} â€¢ Falhas: ${failed}`);
+        toast.success(`Lote concluido. Sucesso: ${success} | Falhas: ${failed}`);
         setSelectedIds([]);
         await loadContracts();
         if (queryState.contractId) await loadDetail(queryState.contractId);
@@ -681,7 +840,7 @@ export default function StudentContractsPage() {
     if (actionDialog.kind === 'settle') {
       return {
         title: 'Colocar contrato em dia',
-        description: 'Baixe as pendencias deste contrato e recalcule o acesso do aluno.',
+        description: 'Escolha a regra de baixa antes de confirmar a atualizacao financeira e de acesso.',
         confirmLabel: 'Confirmar baixa',
         confirmVariant: 'primary',
       };
@@ -724,25 +883,120 @@ export default function StudentContractsPage() {
   const renderActionDialogBody = () => {
     if (!actionDialog?.kind) return null;
     if (actionDialog.kind === 'settle') {
+      const summaryContract = settlePreview?.contract || actionDialog.payload || {};
+      const valueBreakdown = formatContractValueBreakdown(summaryContract);
       return (
         <div className="space-y-4">
           <p className="text-sm text-[var(--text-secondary)]">
-            Registre o pagamento das cobrancas vencidas e recalcule a liberacao da catraca.
+            Registre a baixa das cobrancas elegiveis deste contrato sem alterar o fluxo atual da catraca.
           </p>
-          <label className="flex items-start gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
-            <input
-              type="checkbox"
-              className="mt-1 accent-[var(--brand-primary)]"
-              checked={Boolean(actionDialog.includeFutureOpen)}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SelectField
+              label="Modo de baixa"
+              value={actionDialog.settleMode || 'all_overdue'}
               onChange={(event) => setActionDialog((current) => ({
                 ...current,
-                includeFutureOpen: event.target.checked,
+                settleMode: event.target.value,
               }))}
-            />
-            <span>
-              Incluir tambem cobrancas futuras que ainda estao em aberto.
-            </span>
-          </label>
+            >
+              <option value="all_overdue">Todas as pendencias vencidas</option>
+              <option value="days">Ultimos N dias</option>
+              <option value="month">Mes especifico</option>
+            </SelectField>
+
+            {actionDialog.settleMode === 'days' ? (
+              <TextField
+                label="Quantidade de dias"
+                type="number"
+                min="1"
+                step="1"
+                value={actionDialog.settleDays}
+                onChange={(event) => setActionDialog((current) => ({
+                  ...current,
+                  settleDays: event.target.value,
+                }))}
+                placeholder="7"
+              />
+            ) : null}
+
+            {actionDialog.settleMode === 'month' ? (
+              <TextField
+                label="Mes de referencia"
+                type="month"
+                value={actionDialog.settleMonth}
+                onChange={(event) => setActionDialog((current) => ({
+                  ...current,
+                  settleMonth: event.target.value,
+                }))}
+              />
+            ) : null}
+          </div>
+
+          {actionDialog.settleMode === 'all_overdue' ? (
+            <label className="flex items-start gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+              <input
+                type="checkbox"
+                className="mt-1 accent-[var(--brand-primary)]"
+                checked={Boolean(actionDialog.includeFutureOpen)}
+                onChange={(event) => setActionDialog((current) => ({
+                  ...current,
+                  includeFutureOpen: event.target.checked,
+                }))}
+              />
+              <span>Incluir tambem cobrancas futuras que ainda estao em aberto.</span>
+            </label>
+          ) : null}
+
+          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 text-sm text-[var(--text-secondary)]">
+            {settlePreview?.loading ? (
+              <p>Carregando detalhes do contrato para montar a previa da baixa...</p>
+            ) : settlePreview?.detailMatches ? (
+              <div className="space-y-3">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Base</p>
+                    <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{valueBreakdown.originalLabel}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Desconto</p>
+                    <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                      {valueBreakdown.hasDiscount ? `- ${valueBreakdown.discountLabel}` : 'Nenhum'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Final</p>
+                    <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{valueBreakdown.finalLabel}</p>
+                  </div>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-canvas)] px-3 py-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">Cobrancas elegiveis</p>
+                    <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                      {settlePreview.count} registro(s)
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-canvas)] px-3 py-3">
+                    <p className="text-xs uppercase tracking-[0.18em] text-[var(--text-muted)]">Total previsto</p>
+                    <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                      {formatContractValueBreakdown({
+                        amount: settlePreview.total,
+                        original_amount: settlePreview.total,
+                      }).finalLabel}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-[var(--text-muted)]">
+                  {settlePreview.mode === 'all_overdue'
+                    ? 'Modo atual: todas as pendencias vencidas.'
+                    : settlePreview.mode === 'days'
+                      ? `Modo atual: atrasos dos ultimos ${settlePreview.days} dias.`
+                      : `Modo atual: pendencias do mes ${settlePreview.month}.`}
+                </p>
+              </div>
+            ) : (
+              <p>Abra o contrato ou aguarde o carregamento para visualizar a previsao de baixa.</p>
+            )}
+          </div>
         </div>
       );
     }
@@ -815,8 +1069,9 @@ export default function StudentContractsPage() {
     const selectedPlan = plansById.get(nextForm.plan_id);
     const duration = Number(nextForm.duration_days || selectedPlan?.duracao_dias || 0);
     if (!nextForm.start_at || duration <= 0) return nextForm;
-    const start = new Date(nextForm.start_at);
-    if (Number.isNaN(start.getTime())) return nextForm;
+    const startIso = toIsoDate(nextForm.start_at);
+    const start = startIso ? new Date(startIso) : null;
+    if (!start || Number.isNaN(start.getTime())) return nextForm;
     const end = new Date(start.getTime());
     end.setDate(end.getDate() + duration);
     return { ...nextForm, end_at: toLocalDateInput(end.toISOString()) };
@@ -834,10 +1089,21 @@ export default function StudentContractsPage() {
       toast.error('Sem permissao para criar contrato.');
       return;
     }
+    const baseAmount = Number(createForm.amount || 0);
+    const discountAmount = Number(createForm.discount_amount || 0);
+    if (discountAmount < 0) {
+      toast.error('Informe um desconto valido.');
+      return;
+    }
+    if (baseAmount > 0 && discountAmount >= baseAmount) {
+      toast.error('O desconto precisa ser menor que o valor base do contrato.');
+      return;
+    }
     const payload = {
       student_id: createForm.student_id,
       plan_id: createForm.plan_id || undefined,
       amount: createForm.amount ? Number(createForm.amount) : undefined,
+      discount_amount: createForm.discount_amount ? Number(createForm.discount_amount) : 0,
       duration_days: createForm.duration_days ? Number(createForm.duration_days) : undefined,
       start_at: toIsoDate(createForm.start_at) || undefined,
       end_at: toIsoDate(createForm.end_at) || undefined,
@@ -858,6 +1124,17 @@ export default function StudentContractsPage() {
       setBusyAction(false);
     }
   };
+
+  const createValueBreakdown = useMemo(() => {
+    const baseAmount = Number(createForm.amount || 0);
+    const discountAmount = Math.max(0, Number(createForm.discount_amount || 0));
+    const finalAmount = Math.max(0, baseAmount - discountAmount);
+    return formatContractValueBreakdown({
+      original_amount: baseAmount,
+      discount_amount: discountAmount,
+      amount: finalAmount,
+    });
+  }, [createForm.amount, createForm.discount_amount]);
 
   return (
     <div className="space-y-6">
@@ -915,6 +1192,10 @@ export default function StudentContractsPage() {
             placeholder="Buscar por aluno, ID, plano ou contrato"
             aria-label="Busca global de contratos"
           />
+          <p className="mt-2 text-xs text-[var(--text-muted)]">
+            A busca considera aluno, matricula, plano e identificador do contrato. O sort padrao segue o aluno
+            quando a URL nao traz ordenacao explicita.
+          </p>
         </div>
       </SectionCard>
 
@@ -1086,6 +1367,16 @@ export default function StudentContractsPage() {
           />
 
           <TextField
+            label="Desconto"
+            type="number"
+            min="0"
+            step="0.01"
+            value={createForm.discount_amount}
+            onChange={(event) => setCreateForm((prev) => ({ ...prev, discount_amount: event.target.value }))}
+            placeholder="0,00"
+          />
+
+          <TextField
             label="Duracao em dias"
             type="number"
             min="1"
@@ -1134,6 +1425,28 @@ export default function StudentContractsPage() {
               Criar cobranca inicial ao salvar
             </span>
           </label>
+
+          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 md:col-span-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
+              Resumo financeiro
+            </p>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div>
+                <p className="text-xs text-[var(--text-muted)]">Valor base</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{createValueBreakdown.originalLabel}</p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--text-muted)]">Desconto</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
+                  {createValueBreakdown.hasDiscount ? `- ${createValueBreakdown.discountLabel}` : 'Nenhum'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--text-muted)]">Valor final</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{createValueBreakdown.finalLabel}</p>
+              </div>
+            </div>
+          </div>
         </form>
       </Dialog>
     </div>

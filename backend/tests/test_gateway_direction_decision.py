@@ -52,3 +52,41 @@ def test_normalize_decision_deny_both():
     assert decision["allow_entry"] is False
     assert decision["allow_exit"] is False
     assert decision["release_direction"] is None
+
+
+def test_process_manual_release_queue_acknowledges_execution():
+    gateway = _load_gateway_module()
+    sent = {}
+    acknowledged = []
+
+    class _DummyWriter:
+        pass
+
+    async def fake_pull(_client):
+        return {
+            "release_id": "rel_1",
+            "direction": "entry",
+            "message": "ENTRADA ALUNO",
+            "student_id": "std_1",
+        }
+
+    async def fake_ack(_client, *, release_id, status_value, error=None):
+        acknowledged.append((release_id, status_value, error))
+
+    async def fake_send(_writer, packet, tx_type, **metadata):
+        sent["packet"] = packet
+        sent["tx_type"] = tx_type
+        sent["metadata"] = metadata
+
+    gateway.pull_manual_release = fake_pull
+    gateway.acknowledge_manual_release = fake_ack
+    gateway._safe_send = fake_send
+
+    import asyncio
+
+    asyncio.run(gateway.process_manual_release_queue(object(), _DummyWriter()))
+
+    assert sent["tx_type"] == "manual_release"
+    assert sent["metadata"]["release_id"] == "rel_1"
+    assert sent["metadata"]["release_direction"] == "entry"
+    assert acknowledged == [("rel_1", "executed", None)]

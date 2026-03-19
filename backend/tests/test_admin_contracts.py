@@ -215,6 +215,37 @@ async def test_admin_contracts_list_filters_and_sorts(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_admin_contracts_list_can_sort_by_student_name(monkeypatch):
+    db = FakeDb()
+    actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER", "actor_type": "owner"}
+
+    monkeypatch.setattr(admin_contracts, "get_db", lambda: db)
+
+    async def _refresh_identity(_db, item):
+        return item, [], False
+
+    monkeypatch.setattr(student_billing, "refresh_contract_state", _refresh_identity)
+    monkeypatch.setattr(student_billing, "_sanitize_contract_for_role", lambda item, role: item)
+
+    result = await admin_contracts.list_admin_contracts(
+        page=1,
+        page_size=20,
+        q="",
+        sort_by="student",
+        sort_dir="asc",
+        status=[],
+        plano_id=[],
+        start_date_raw=None,
+        end_date_raw=None,
+        expiring_in_days=None,
+        pending_only=False,
+        actor=actor,
+    )
+
+    assert [item["contract_id"] for item in result["data"]] == ["ctr_ana_1", "ctr_ana_2", "ctr_beto"]
+
+
+@pytest.mark.asyncio
 async def test_admin_contract_cancel_records_audit(monkeypatch):
     db = FakeDb()
     actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "MANAGER", "actor_type": "employee", "employee_id": "emp_1"}
@@ -396,3 +427,99 @@ async def test_settle_overdue_updates_charges_and_contract(monkeypatch):
     assert all(item.get("status") == "paid" for item in affected)
     assert all(item.get("payment_method") == "pix" for item in affected)
     assert any(item.get("action") == "settle_overdue" for item in db.contract_audit.docs)
+
+
+@pytest.mark.asyncio
+async def test_settle_overdue_can_limit_to_recent_days(monkeypatch):
+    db = FakeDb()
+    actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "RECEPTION", "actor_type": "employee", "employee_id": "emp_9"}
+    now = datetime(2026, 3, 3, 11, 0, tzinfo=timezone.utc)
+
+    for doc in db.student_contracts.docs:
+        if doc.get("contract_id") == "ctr_ana_2":
+            doc["financial_status"] = "overdue"
+            doc["access_status"] = "blocked"
+            doc["status"] = "past_due"
+            break
+
+    db.student_charges.docs = [
+        {
+            "charge_id": "chg_recent",
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "student_id": "std_2",
+            "contract_id": "ctr_ana_2",
+            "amount": 220.0,
+            "status": "overdue",
+            "due_at": now - timedelta(days=1),
+            "updated_at": now - timedelta(days=1),
+        },
+        {
+            "charge_id": "chg_old",
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "student_id": "std_2",
+            "contract_id": "ctr_ana_2",
+            "amount": 220.0,
+            "status": "overdue",
+            "due_at": now - timedelta(days=10),
+            "updated_at": now - timedelta(days=10),
+        },
+        {
+            "charge_id": "chg_future",
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "student_id": "std_2",
+            "contract_id": "ctr_ana_2",
+            "amount": 220.0,
+            "status": "open",
+            "due_at": now + timedelta(days=10),
+            "updated_at": now - timedelta(days=1),
+        },
+    ]
+
+    monkeypatch.setattr(admin_contracts, "get_db", lambda: db)
+    monkeypatch.setattr(admin_contracts, "utc_now", lambda: now)
+
+    async def _load_contract(contract_id, _actor, refresh=True):
+        assert contract_id == "ctr_ana_2"
+        return next(item for item in db.student_contracts.docs if item.get("contract_id") == contract_id)
+
+    async def _refresh_contract_state(_db, contract, now=None):
+        refreshed = dict(contract)
+        has_open = any(
+            item.get("owner_id") == refreshed["owner_id"]
+            and item.get("contract_id") == refreshed["contract_id"]
+            and item.get("status") in {"open", "overdue", "failed", "partially_paid"}
+            for item in db.student_charges.docs
+        )
+        refreshed["financial_status"] = "pending" if has_open else "paid"
+        refreshed["access_status"] = "allowed"
+        refreshed["status"] = "active"
+        refreshed["updated_at"] = now or refreshed.get("updated_at")
+        return refreshed, [], True
+
+    async def _noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(student_billing, "_load_contract_for_owner", _load_contract)
+    monkeypatch.setattr(student_billing, "refresh_contract_state", _refresh_contract_state)
+    monkeypatch.setattr(student_billing, "_record_event", _noop)
+    monkeypatch.setattr(student_billing, "_sync_student_contract_projection", _noop)
+
+    result = await admin_contracts.settle_admin_contract_overdue(
+        contract_id="ctr_ana_2",
+        payload=admin_contracts.AdminSettleOverdueIn(
+            payment_method="cash",
+            settlement_mode="days",
+            days=3,
+            reason="janela_recente",
+        ),
+        actor=actor,
+    )
+
+    assert result["updated_charges"] == 1
+    assert result["contract"]["financial_status"] == "pending"
+    assert next(item for item in db.student_charges.docs if item["charge_id"] == "chg_recent")["status"] == "paid"
+    assert next(item for item in db.student_charges.docs if item["charge_id"] == "chg_old")["status"] == "overdue"
+    assert next(item for item in db.student_charges.docs if item["charge_id"] == "chg_future")["status"] == "open"

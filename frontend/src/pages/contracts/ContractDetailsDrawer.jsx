@@ -11,7 +11,7 @@ import {
   contractBadge,
   financialBadge,
   formatDate,
-  formatMoney,
+  formatContractValueBreakdown,
   normalizeEventLabel,
 } from './contractsUtils';
 
@@ -58,6 +58,7 @@ export default function ContractDetailsDrawer({
   const charges = detail?.charges || [];
   const events = detail?.events || [];
   const audits = detail?.audits || [];
+  const valueBreakdown = formatContractValueBreakdown(contract || {});
 
   return (
     <SidePanel
@@ -96,7 +97,16 @@ export default function ContractDetailsDrawer({
           <SectionCard
             title={contract.student_name}
             description={contract.plan_name || contract.plan_id || '-'}
-            actions={<p className="text-lg font-semibold text-zinc-100">{formatMoney(contract.amount)}</p>}
+            actions={
+              <div className="text-right">
+                <p className="text-lg font-semibold text-zinc-100">{valueBreakdown.finalLabel}</p>
+                {valueBreakdown.hasDiscount ? (
+                  <p className="text-[11px] text-zinc-500">
+                    Base {valueBreakdown.originalLabel} | Desconto {valueBreakdown.discountLabel}
+                  </p>
+                ) : null}
+              </div>
+            }
           >
             <div className="space-y-4">
               <BadgeRow contract={contract} />
@@ -105,6 +115,22 @@ export default function ContractDetailsDrawer({
                 <p>Vigencia: {formatDate(contract.current_period_start)} ate {formatDate(contract.current_period_end)}</p>
                 <p>Proxima cobranca: {formatDate(contract.next_charge_due_at)}</p>
                 <p>Atualizado em {formatDate(contract.updated_at)}</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Base</p>
+                  <p className="mt-1 text-sm font-semibold text-zinc-100">{valueBreakdown.originalLabel}</p>
+                </div>
+                <div className="rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Desconto</p>
+                  <p className="mt-1 text-sm font-semibold text-zinc-100">
+                    {valueBreakdown.hasDiscount ? `- ${valueBreakdown.discountLabel}` : 'Nenhum'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Final</p>
+                  <p className="mt-1 text-sm font-semibold text-zinc-100">{valueBreakdown.finalLabel}</p>
+                </div>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
                 <Button variant="secondary" size="sm" onClick={() => onAction('renew', contract)}>
@@ -177,13 +203,19 @@ export default function ContractDetailsDrawer({
                   const badge = financialBadge(charge.status);
                   const isPaid = String(charge.status || '').toLowerCase() === 'paid';
                   const isActionable = !['canceled', 'refunded'].includes(String(charge.status || '').toLowerCase());
+                  const chargeBreakdown = formatContractValueBreakdown(charge);
                   return (
                     <li
                       key={charge.charge_id}
                       className="flex flex-col gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="space-y-1">
-                        <p className="text-sm font-semibold text-zinc-100">{formatMoney(charge.amount)}</p>
+                        <p className="text-sm font-semibold text-zinc-100">{chargeBreakdown.finalLabel}</p>
+                        {chargeBreakdown.hasDiscount ? (
+                          <p className="text-[11px] text-zinc-500">
+                            Base {chargeBreakdown.originalLabel} | Desconto {chargeBreakdown.discountLabel}
+                          </p>
+                        ) : null}
                         <p className="text-xs text-zinc-500">Vencimento: {formatDate(charge.due_at)}</p>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">

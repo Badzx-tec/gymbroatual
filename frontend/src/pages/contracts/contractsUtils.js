@@ -1,33 +1,57 @@
 import { accessStatusLabel, contractStatusLabel, financialStatusLabel } from '../../utils/labels';
+import {
+  dateTimeLocalToIsoInTimeZone,
+  formatCurrency,
+  formatDateTimeInTimeZone,
+  toDateInputInTimeZone,
+  toDateTimeLocalInTimeZone,
+  safeNumber,
+} from '../../utils/timezone';
 
 export function formatMoney(value) {
-  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return formatCurrency(value);
 }
 
 export function formatDate(value) {
-  if (!value) return '-';
-  try {
-    return new Date(value).toLocaleString('pt-BR');
-  } catch {
-    return String(value || '-');
-  }
+  return formatDateTimeInTimeZone(value);
 }
 
 export function toIsoDate(value) {
-  if (!value) return null;
-  try {
-    return new Date(value).toISOString();
-  } catch {
-    return null;
-  }
+  return dateTimeLocalToIsoInTimeZone(value);
 }
 
 export function toLocalDateInput(value) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  return toDateTimeLocalInTimeZone(value);
+}
+
+export function toDateInput(value) {
+  return toDateInputInTimeZone(value);
+}
+
+export function getContractValueBreakdown(contract = {}) {
+  const originalAmount = safeNumber(contract.original_amount, safeNumber(contract.amount));
+  const finalAmount = safeNumber(contract.amount, originalAmount);
+  const discountAmountRaw = contract.discount_amount;
+  const discountAmount = Number.isFinite(Number(discountAmountRaw))
+    ? Math.max(0, Number(discountAmountRaw))
+    : Math.max(0, originalAmount - finalAmount);
+
+  return {
+    originalAmount,
+    discountAmount,
+    finalAmount,
+    hasDiscount: discountAmount > 0 || originalAmount !== finalAmount,
+  };
+}
+
+export function formatContractValueBreakdown(contract = {}) {
+  const breakdown = getContractValueBreakdown(contract);
+  return {
+    ...breakdown,
+    originalLabel: formatMoney(breakdown.originalAmount),
+    discountLabel: formatMoney(breakdown.discountAmount),
+    finalLabel: formatMoney(breakdown.finalAmount),
+  };
 }
 
 export function badgeClass(status) {

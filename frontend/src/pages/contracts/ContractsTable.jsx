@@ -1,10 +1,16 @@
 import React from 'react';
 import { ChevronDown, ChevronUp, MoreHorizontal, RefreshCw } from 'lucide-react';
 
-import { accessBadge, contractBadge, financialBadge, formatDate, formatMoney } from './contractsUtils';
+import {
+  accessBadge,
+  contractBadge,
+  financialBadge,
+  formatDate,
+  formatContractValueBreakdown,
+} from './contractsUtils';
 
 const sortableHeaders = [
-  { key: 'student', label: 'Cliente/Aluno', sortable: false },
+  { key: 'student', label: 'Cliente/Aluno', sortable: true },
   { key: 'plan', label: 'Plano', sortable: false },
   { key: 'startDate', label: 'Inicio', sortable: true },
   { key: 'endDate', label: 'Fim', sortable: true },
@@ -51,7 +57,7 @@ function Pagination({ page, pageSize, total, onPageChange, onPageSizeChange }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 px-3 py-3 text-xs text-zinc-400">
       <p>
-        Pagina {page} de {totalPages} • {total} contratos
+        Pagina {page} de {totalPages} | {total} contratos
       </p>
       <div className="flex items-center gap-2">
         <select
@@ -211,6 +217,7 @@ export default function ContractsTable({
                   const contract = contractBadge(row.contract_status);
                   const financial = financialBadge(row.financial_status);
                   const access = accessBadge(row.access_status);
+                  const valueBreakdown = formatContractValueBreakdown(row);
                   const menuOpen = openMenuFor === row.contract_id;
 
                   return (
@@ -240,7 +247,16 @@ export default function ContractsTable({
                           <span className={`rounded-md border px-2 py-1 text-[11px] font-semibold uppercase ${access.className}`}>{access.label}</span>
                         </div>
                       </td>
-                      <td className="px-2 py-3 text-zinc-100">{formatMoney(row.amount)}</td>
+                      <td className="px-2 py-3">
+                        <div className="space-y-1">
+                          <p className="font-semibold text-zinc-100">{valueBreakdown.finalLabel}</p>
+                          {valueBreakdown.hasDiscount ? (
+                            <p className="text-[11px] text-zinc-500">
+                              Base {valueBreakdown.originalLabel} | Desconto {valueBreakdown.discountLabel}
+                            </p>
+                          ) : null}
+                        </div>
+                      </td>
                       <td className="px-2 py-3 text-zinc-400">{formatDate(row.updated_at)}</td>
                       <td className="relative px-2 py-3">
                         <button
