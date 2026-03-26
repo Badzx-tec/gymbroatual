@@ -45,7 +45,10 @@ async def _ensure_matricula_unique_index(
 
     expected_partial = {matricula_field: {"$type": "string"}}
     if current:
-        if not current.get("unique") or current.get("partialFilterExpression") != expected_partial:
+        if (
+            not current.get("unique")
+            or current.get("partialFilterExpression") != expected_partial
+        ):
             await collection.drop_index(index_name)
 
     try:
@@ -71,8 +74,12 @@ async def init_indexes() -> None:
     await db.invoices.create_index([("owner_id", 1), ("created_at", -1)])
     await db.payment_attempts.create_index([("owner_id", 1), ("created_at", -1)])
     await db.subscription_events.create_index([("owner_id", 1), ("created_at", -1)])
-    await db.student_contracts.create_index([("owner_id", 1), ("contract_id", 1)], unique=True)
-    await db.student_contracts.create_index([("owner_id", 1), ("student_id", 1), ("status", 1)])
+    await db.student_contracts.create_index(
+        [("owner_id", 1), ("contract_id", 1)], unique=True
+    )
+    await db.student_contracts.create_index(
+        [("owner_id", 1), ("student_id", 1), ("status", 1)]
+    )
     await db.student_contracts.create_index(
         [("owner_id", 1), ("student_id", 1), ("contract_status", 1)]
     )
@@ -80,25 +87,47 @@ async def init_indexes() -> None:
     await db.student_contracts.create_index([("owner_id", 1), ("financial_status", 1)])
     await db.student_contracts.create_index([("owner_id", 1), ("access_status", 1)])
     await db.student_contracts.create_index([("owner_id", 1), ("plan_id", 1)])
-    await db.student_contracts.create_index([("owner_id", 1), ("current_period_end", 1)])
-    await db.student_contracts.create_index([("owner_id", 1), ("current_period_start", 1)])
+    await db.student_contracts.create_index(
+        [("owner_id", 1), ("current_period_end", 1)]
+    )
+    await db.student_contracts.create_index(
+        [("owner_id", 1), ("current_period_start", 1)]
+    )
     await db.student_contracts.create_index([("owner_id", 1), ("updated_at", -1)])
     await db.student_contracts.create_index([("owner_id", 1), ("next_billing_at", 1)])
     await db.student_contracts.create_index([("owner_id", 1), ("grace_until", 1)])
     await db.student_contracts.create_index([("owner_id", 1), ("next_retry_at", 1)])
-    await db.student_charges.create_index([("owner_id", 1), ("charge_id", 1)], unique=True)
-    await db.student_charges.create_index([("owner_id", 1), ("contract_id", 1), ("due_at", -1)])
-    await db.student_charges.create_index([("owner_id", 1), ("contract_id", 1), ("status", 1)])
-    await db.student_charges.create_index([("owner_id", 1), ("student_id", 1), ("status", 1)])
-    await db.student_charges.create_index([("owner_id", 1), ("status", 1), ("due_at", 1)])
+    await db.student_charges.create_index(
+        [("owner_id", 1), ("charge_id", 1)], unique=True
+    )
+    await db.student_charges.create_index(
+        [("owner_id", 1), ("contract_id", 1), ("due_at", -1)]
+    )
+    await db.student_charges.create_index(
+        [("owner_id", 1), ("contract_id", 1), ("status", 1)]
+    )
+    await db.student_charges.create_index(
+        [("owner_id", 1), ("student_id", 1), ("status", 1)]
+    )
+    await db.student_charges.create_index(
+        [("owner_id", 1), ("status", 1), ("due_at", 1)]
+    )
     await db.student_billing_events.create_index([("owner_id", 1), ("created_at", -1)])
-    await db.student_billing_events.create_index([("owner_id", 1), ("contract_id", 1), ("created_at", -1)])
-    await db.contract_audit.create_index([("owner_id", 1), ("contract_id", 1), ("created_at", -1)])
-    await db.contract_audit.create_index([("owner_id", 1), ("action", 1), ("created_at", -1)])
+    await db.student_billing_events.create_index(
+        [("owner_id", 1), ("contract_id", 1), ("created_at", -1)]
+    )
+    await db.contract_audit.create_index(
+        [("owner_id", 1), ("contract_id", 1), ("created_at", -1)]
+    )
+    await db.contract_audit.create_index(
+        [("owner_id", 1), ("action", 1), ("created_at", -1)]
+    )
     await db.student_billing_reconcile_runs.create_index(
         [("owner_id", 1), ("run_id", 1)], unique=True
     )
-    await db.student_billing_reconcile_runs.create_index([("owner_id", 1), ("started_at", -1)])
+    await db.student_billing_reconcile_runs.create_index(
+        [("owner_id", 1), ("started_at", -1)]
+    )
     await db.students.create_index([("owner_id", 1), ("student_id", 1)], unique=True)
     await db.students.create_index("student_id", unique=True)
     await _ensure_matricula_unique_index(db.students)
@@ -119,25 +148,44 @@ async def init_indexes() -> None:
     await db.employees.create_index([("owner_id", 1), ("tag_rfid", 1)])
     await db.employees.create_index([("owner_id", 1), ("biometria_id", 1)])
     await db.employees.create_index([("owner_id", 1), ("keypad_code", 1)])
-    await db.biometrics.create_index([("owner_id", 1), ("subject_type", 1), ("subject_id", 1)])
+    await db.biometrics.create_index(
+        [("owner_id", 1), ("subject_type", 1), ("subject_id", 1)]
+    )
+    await db.biometrics.create_index(
+        [("owner_id", 1), ("subject_type", 1), ("external_id", 1)]
+    )
     await db.employee_invites.create_index("token", unique=True)
     await db.employee_invites.create_index("expires_at")
     await db.billing_events.create_index("event_id", unique=True)
     await db.billing_events.create_index([("owner_id", 1), ("received_at", -1)])
-    await db.turnstile_devices.create_index([("owner_id", 1), ("device_id", 1)], unique=True)
+    await db.turnstile_devices.create_index(
+        [("owner_id", 1), ("device_id", 1)], unique=True
+    )
     await db.turnstile_devices.create_index("device_id")
     await db.access_logs.create_index([("owner_id", 1), ("created_at", -1)])
     await db.access_logs.create_index([("owner_id", 1), ("timestamp", -1)])
     await db.turnstile_events.create_index([("owner_id", 1), ("created_at", -1)])
-    await db.turnstile_nonces.create_index([("device_id", 1), ("nonce", 1)], unique=True)
+    await db.turnstile_nonces.create_index(
+        [("device_id", 1), ("nonce", 1)], unique=True
+    )
     await db.turnstile_nonces.create_index("expires_at", expireAfterSeconds=0)
-    await db.turnstile_security_events.create_index([("owner_id", 1), ("created_at", -1)])
+    await db.turnstile_security_events.create_index(
+        [("owner_id", 1), ("created_at", -1)]
+    )
     await db.notifications.create_index([("owner_id", 1), ("created_at", -1)])
     await db.catraca_commands.create_index([("owner_id", 1), ("created_at", -1)])
     await db.catraca_commands.create_index(
-        [("owner_id", 1), ("command_type", 1), ("status", 1), ("expires_at", 1), ("created_at", 1)]
+        [
+            ("owner_id", 1),
+            ("command_type", 1),
+            ("status", 1),
+            ("expires_at", 1),
+            ("created_at", 1),
+        ]
     )
-    await db.catraca_commands.create_index([("device_id", 1), ("command_type", 1), ("status", 1)])
+    await db.catraca_commands.create_index(
+        [("device_id", 1), ("command_type", 1), ("status", 1)]
+    )
     await db.catraca_control_state.create_index([("owner_id", 1)], unique=True)
     await db.audit_logs.create_index([("owner_id", 1), ("created_at", -1)])
     await db.audit_logs.create_index([("event", 1), ("created_at", -1)])

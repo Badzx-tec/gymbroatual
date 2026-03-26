@@ -14,7 +14,12 @@ from app.models.students import (
     TolletusEnrollStartIn,
     TolletusStatusOut,
 )
+from app.services.biometric_credentials import (
+    mask_biometric_credential,
+    normalize_biometric_credential,
+)
 from app.services.crypto import encrypt_template
+from app.services.observability import log_event
 
 router = APIRouter()
 
@@ -24,6 +29,20 @@ def _resolve_client():
         return get_tolletus_client()
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def _resolve_credential_id(
+    payload_external_id: str | None, provider_result: dict
+) -> str:
+    credential_id = normalize_biometric_credential(
+        payload_external_id or provider_result.get("external_id")
+    )
+    if not credential_id:
+        raise HTTPException(
+            status_code=502,
+            detail="Tolletus enroll confirm sem external_id utilizavel",
+        )
+    return credential_id
 
 
 @router.post("/enroll/start")
@@ -66,6 +85,7 @@ async def enroll_confirm(
     provider_result = await client.enroll_confirm(
         payload.student_id, payload.device_id, payload.template
     )
+    credential_id = _resolve_credential_id(payload.external_id, provider_result)
 
     now = datetime.now(UTC)
     biometric_doc = {
@@ -76,7 +96,7 @@ async def enroll_confirm(
         "provider": "tolletus",
         "template_encrypted": encrypt_template(payload.template),
         "device_id": payload.device_id,
-        "external_id": payload.external_id or provider_result.get("external_id"),
+        "external_id": credential_id,
         "enrolled_at": now,
         "updated_at": now,
     }
@@ -85,10 +105,29 @@ async def enroll_confirm(
         {"$set": biometric_doc},
         upsert=True,
     )
+    await db.students.update_one(
+        {"student_id": payload.student_id, "owner_id": owner["owner_id"]},
+        {
+            "$set": {
+                "biometria_id": credential_id,
+                "updated_at": now,
+            }
+        },
+    )
+    log_event(
+        "tolletus_student_enroll_confirm",
+        owner_id=owner["owner_id"],
+        student_id=payload.student_id,
+        device_id=payload.device_id,
+        provider="tolletus",
+        credential_masked=mask_biometric_credential(credential_id),
+        linked=True,
+    )
     return {
         "message": "Biometria cadastrada",
         "student_id": payload.student_id,
         "provider": "tolletus",
+        "biometria_id": credential_id,
     }
 
 
@@ -163,7 +202,7 @@ async def employee_enroll_confirm(
     )
 
     now = datetime.now(UTC)
-    credential_id = payload.external_id or provider_result.get("external_id")
+    credential_id = _resolve_credential_id(payload.external_id, provider_result)
     biometric_doc = {
         "employee_id": payload.employee_id,
         "subject_type": "employee",
@@ -188,6 +227,15 @@ async def employee_enroll_confirm(
     await db.employees.update_one(
         {"employee_id": payload.employee_id, "owner_id": owner["owner_id"]},
         {"$set": employee_update},
+    )
+    log_event(
+        "tolletus_employee_enroll_confirm",
+        owner_id=owner["owner_id"],
+        employee_id=payload.employee_id,
+        device_id=payload.device_id,
+        provider="tolletus",
+        credential_masked=mask_biometric_credential(credential_id),
+        linked=True,
     )
 
     return {
@@ -229,5 +277,6 @@ async def employee_biometric_status(
         has_biometric=True,
         enrolled_at=biometric.get("enrolled_at"),
         provider=biometric.get("provider"),
-        biometria_id=(employee or {}).get("biometria_id") or biometric.get("external_id"),
+        biometria_id=(employee or {}).get("biometria_id")
+        or biometric.get("external_id"),
     )

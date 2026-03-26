@@ -4,7 +4,16 @@ import secrets
 from datetime import date, datetime, time, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 
@@ -13,11 +22,20 @@ from app.core.deps import require_roles
 from app.core.http import get_client_ip
 from app.core.time import SAO_PAULO_TZ, UTC, sao_paulo_day_bounds, to_sao_paulo
 from app.db.mongo import get_db
+from app.services.biometric_credentials import (
+    biometric_lookup_candidates,
+    biometric_lookup_regex,
+    mask_biometric_credential,
+    normalize_biometric_credential,
+)
 from app.services.internal_codes import normalize_internal_code
 from app.services.observability import log_event
-from app.services.student_contracts import derive_student_operational_status, refresh_contract_state
-from app.services.subscription import subscription_allows_login
+from app.services.student_contracts import (
+    derive_student_operational_status,
+    refresh_contract_state,
+)
 from app.services.student_usage import touch_student_usage
+from app.services.subscription import subscription_allows_login
 
 router = APIRouter()
 
@@ -144,7 +162,9 @@ def _sanitize_turnstile_control_state(doc: dict | None) -> dict:
     return {
         "owner_id": current.get("owner_id"),
         "gym_id": current.get("gym_id"),
-        "subject_controls": _normalize_subject_controls(current.get("subject_controls")),
+        "subject_controls": _normalize_subject_controls(
+            current.get("subject_controls")
+        ),
         "last_action": current.get("last_action"),
         "last_scope": current.get("last_scope"),
         "updated_at": current.get("updated_at"),
@@ -153,7 +173,9 @@ def _sanitize_turnstile_control_state(doc: dict | None) -> dict:
     }
 
 
-def _resolve_directional_allowance(direction: str, allow_entry: bool, allow_exit: bool) -> bool:
+def _resolve_directional_allowance(
+    direction: str, allow_entry: bool, allow_exit: bool
+) -> bool:
     normalized = _normalize_direction(direction)
     if normalized == DIRECTION_ENTRY:
         return allow_entry
@@ -175,7 +197,9 @@ def _default_control_state(*, owner_id: str, gym_id: str | None) -> dict:
     }
 
 
-async def get_turnstile_control_state(*, owner_id: str, gym_id: str | None = None) -> dict:
+async def get_turnstile_control_state(
+    *, owner_id: str, gym_id: str | None = None
+) -> dict:
     db = get_db()
     stored = await db.catraca_control_state.find_one({"owner_id": owner_id}, {"_id": 0})
     if not stored:
@@ -261,7 +285,9 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _signature_payload(method: str, credential: str, timestamp: str, nonce: str) -> bytes:
+def _signature_payload(
+    method: str, credential: str, timestamp: str, nonce: str
+) -> bytes:
     return f"{method}:{credential}:{timestamp}:{nonce}".encode("utf-8")
 
 
@@ -361,13 +387,7 @@ def _is_inside_time_window(current: time, start: time, end: time) -> bool:
 
 
 def _mask_credential(raw_value: str | None) -> str | None:
-    value = str(raw_value or "").strip()
-    if not value:
-        return None
-    if len(value) <= 4:
-        return "*" * len(value)
-    visible = value[-4:]
-    return f"{'*' * max(0, len(value) - 4)}{visible}"
+    return mask_biometric_credential(raw_value)
 
 
 def _sanitize_access_log_output(entry: dict) -> dict:
@@ -378,16 +398,21 @@ def _sanitize_access_log_output(entry: dict) -> dict:
     return safe
 
 
-def _credential_query_for_method(*, owner_id: str, method: str, credential: str) -> dict | None:
+def _credential_query_for_method(
+    *, owner_id: str, method: str, credential: str
+) -> dict | None:
     normalized_method = _normalize_method(method)
     cleaned_credential = str(credential or "").strip()
     if not cleaned_credential:
         return None
 
     if normalized_method == "biometry":
+        normalized_credential = normalize_biometric_credential(cleaned_credential)
+        if not normalized_credential:
+            return None
         return {
             "owner_id": owner_id,
-            "biometria_id": cleaned_credential,
+            "biometria_id": normalized_credential,
         }
 
     if normalized_method == "rfid":
@@ -418,7 +443,106 @@ def _credential_query_for_method(*, owner_id: str, method: str, credential: str)
     return None
 
 
-def _evaluate_student_access(student: dict | None, now: datetime) -> tuple[bool, str, dict]:
+def _merge_lookup_details(details: dict, lookup: dict | None) -> dict:
+    if not lookup:
+        return details
+    return {
+        **details,
+        "lookup_path": lookup.get("lookup_path"),
+        "lookup_result": lookup.get("lookup_result"),
+        "fallback_used": bool(lookup.get("fallback_used")),
+        "credential_masked": lookup.get("credential_masked"),
+        "match_strategy": lookup.get("match_strategy"),
+    }
+
+
+async def _find_student_by_biometry(
+    *, owner_id: str, credential: str
+) -> tuple[dict | None, dict]:
+    db = get_db()
+    normalized_credential = normalize_biometric_credential(credential)
+    lookup = {
+        "lookup_path": "students.biometria_id",
+        "lookup_result": "not_found",
+        "fallback_used": False,
+        "credential_masked": mask_biometric_credential(credential),
+        "match_strategy": "direct",
+    }
+
+    if not normalized_credential:
+        lookup["lookup_result"] = "missing_credential"
+        lookup["match_strategy"] = "missing"
+        return None, lookup
+
+    student = await db.students.find_one(
+        {"owner_id": owner_id, "biometria_id": normalized_credential},
+        {"_id": 0},
+    )
+    if student:
+        lookup["lookup_result"] = "matched"
+        return student, lookup
+
+    candidates = biometric_lookup_candidates(credential)
+    biometric_doc = None
+    if candidates:
+        biometric_doc = await db.biometrics.find_one(
+            {
+                "owner_id": owner_id,
+                "subject_type": "student",
+                "external_id": {"$in": candidates},
+            },
+            {"_id": 0},
+        )
+        if biometric_doc:
+            lookup["match_strategy"] = "external_id_exact"
+
+    if not biometric_doc:
+        regex = biometric_lookup_regex(credential)
+        if regex:
+            biometric_doc = await db.biometrics.find_one(
+                {
+                    "owner_id": owner_id,
+                    "subject_type": "student",
+                    "external_id": {"$regex": regex},
+                },
+                {"_id": 0},
+            )
+            if biometric_doc:
+                lookup["match_strategy"] = "external_id_normalized"
+
+    if not biometric_doc:
+        lookup["lookup_path"] = "students.biometria_id+biometrics.external_id"
+        return None, lookup
+
+    lookup["lookup_path"] = "biometrics.external_id"
+    legacy_student_id = biometric_doc.get("student_id")
+    subject_id = biometric_doc.get("subject_id") or legacy_student_id
+    if not subject_id:
+        lookup["lookup_result"] = "biometric_record_missing_subject_id"
+        return None, lookup
+
+    student = await db.students.find_one(
+        {"owner_id": owner_id, "student_id": subject_id},
+        {"_id": 0},
+    )
+    if not student and legacy_student_id and legacy_student_id != subject_id:
+        student = await db.students.find_one(
+            {"owner_id": owner_id, "student_id": legacy_student_id},
+            {"_id": 0},
+        )
+
+    if not student:
+        lookup["lookup_result"] = "biometric_record_without_student"
+        return None, lookup
+
+    lookup["lookup_result"] = "matched"
+    lookup["fallback_used"] = True
+    return student, lookup
+
+
+def _evaluate_student_access(
+    student: dict | None, now: datetime
+) -> tuple[bool, str, dict]:
     if not student:
         return False, "student_not_found", {"rule": "student_exists"}
 
@@ -449,7 +573,10 @@ def _evaluate_student_access(student: dict | None, now: datetime) -> tuple[bool,
         return (
             False,
             "student_blocked_until",
-            {"blocked_until": blocked_until.isoformat(), "reason": student.get("block_reason")},
+            {
+                "blocked_until": blocked_until.isoformat(),
+                "reason": student.get("block_reason"),
+            },
         )
 
     allowed_weekdays = _normalize_weekdays(
@@ -459,10 +586,15 @@ def _evaluate_student_access(student: dict | None, now: datetime) -> tuple[bool,
         return (
             False,
             "outside_allowed_weekday",
-            {"allowed_weekdays": sorted(allowed_weekdays), "current_weekday": now.weekday()},
+            {
+                "allowed_weekdays": sorted(allowed_weekdays),
+                "current_weekday": now.weekday(),
+            },
         )
 
-    start = _parse_hhmm(student.get("allowed_time_start") or student.get("horario_inicio"))
+    start = _parse_hhmm(
+        student.get("allowed_time_start") or student.get("horario_inicio")
+    )
     end = _parse_hhmm(student.get("allowed_time_end") or student.get("horario_fim"))
     if start and end and not _is_inside_time_window(now.time(), start, end):
         return (
@@ -491,13 +623,17 @@ def _evaluate_student_access(student: dict | None, now: datetime) -> tuple[bool,
             {
                 "rule": "grace_period",
                 "contract_access_status": "grace_period",
-                "grace_until": contract_grace_until.isoformat() if contract_grace_until else None,
+                "grace_until": (
+                    contract_grace_until.isoformat() if contract_grace_until else None
+                ),
             },
         )
     return True, "ok", {"rule": "all_checks_passed"}
 
 
-def _evaluate_employee_access(employee: dict | None, now: datetime) -> tuple[bool, str, dict]:
+def _evaluate_employee_access(
+    employee: dict | None, now: datetime
+) -> tuple[bool, str, dict]:
     if not employee:
         return False, "employee_not_found", {"rule": "employee_exists"}
 
@@ -522,10 +658,15 @@ def _evaluate_employee_access(employee: dict | None, now: datetime) -> tuple[boo
         return (
             False,
             "employee_outside_allowed_weekday",
-            {"allowed_weekdays": sorted(allowed_weekdays), "current_weekday": now.weekday()},
+            {
+                "allowed_weekdays": sorted(allowed_weekdays),
+                "current_weekday": now.weekday(),
+            },
         )
 
-    start = _parse_hhmm(employee.get("allowed_time_start") or employee.get("horario_inicio"))
+    start = _parse_hhmm(
+        employee.get("allowed_time_start") or employee.get("horario_inicio")
+    )
     end = _parse_hhmm(employee.get("allowed_time_end") or employee.get("horario_fim"))
     if start and end and not _is_inside_time_window(now.time(), start, end):
         return (
@@ -566,7 +707,10 @@ def _evaluate_owner_access(owner: dict | None, now: datetime) -> tuple[bool, str
         return (
             False,
             "owner_outside_allowed_weekday",
-            {"allowed_weekdays": sorted(allowed_weekdays), "current_weekday": now.weekday()},
+            {
+                "allowed_weekdays": sorted(allowed_weekdays),
+                "current_weekday": now.weekday(),
+            },
         )
 
     start = _parse_hhmm(owner.get("allowed_time_start") or owner.get("horario_inicio"))
@@ -589,7 +733,10 @@ async def _refresh_student_contract_snapshot(student: dict, now: datetime) -> di
     db = get_db()
     latest = (
         await db.student_contracts.find(
-            {"owner_id": student.get("owner_id"), "student_id": student.get("student_id")},
+            {
+                "owner_id": student.get("owner_id"),
+                "student_id": student.get("student_id"),
+            },
             {"_id": 0},
         )
         .sort("created_at", -1)
@@ -620,14 +767,19 @@ async def _refresh_student_contract_snapshot(student: dict, now: datetime) -> di
     current_status = str(student.get("status") or "ativo").strip().lower()
     if current_status != desired_status:
         updates["status"] = desired_status
-    current_auto_source = str(student.get("auto_status_source") or "").strip().lower() or None
+    current_auto_source = (
+        str(student.get("auto_status_source") or "").strip().lower() or None
+    )
     if current_auto_source != desired_auto_source:
         updates["auto_status_source"] = desired_auto_source
 
     should_update = any(student.get(key) != value for key, value in updates.items())
     if should_update:
         await db.students.update_one(
-            {"owner_id": student.get("owner_id"), "student_id": student.get("student_id")},
+            {
+                "owner_id": student.get("owner_id"),
+                "student_id": student.get("student_id"),
+            },
             {"$set": {**updates, "updated_at": now}},
         )
     return {**student, **updates}
@@ -673,7 +825,9 @@ async def _register_auth_failure(
         blocked_until = now + timedelta(seconds=settings.gateway_block_seconds)
         update["blocked_until"] = blocked_until
 
-    await db.turnstile_devices.update_one({"device_id": device["device_id"]}, {"$set": update})
+    await db.turnstile_devices.update_one(
+        {"device_id": device["device_id"]}, {"$set": update}
+    )
     await _log_security_event(
         device_id=device["device_id"],
         owner_id=device.get("owner_id"),
@@ -730,7 +884,14 @@ async def _authenticate_gateway_request(
     signature = str(payload.get("signature", ""))
     token = str(device_token_header or "").strip()
 
-    if not device_id or not method or not timestamp or not nonce or not signature or not token:
+    if (
+        not device_id
+        or not method
+        or not timestamp
+        or not nonce
+        or not signature
+        or not token
+    ):
         await _log_security_event(
             device_id=device_id or "unknown",
             owner_id=None,
@@ -745,7 +906,9 @@ async def _authenticate_gateway_request(
         )
 
     if method not in ALLOWED_METHODS:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Metodo invalido")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Metodo invalido"
+        )
 
     device = await db.turnstile_devices.find_one({"device_id": device_id}, {"_id": 0})
     if not device:
@@ -757,10 +920,14 @@ async def _authenticate_gateway_request(
             reason="unknown_device",
             ip=source_ip,
         )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Dispositivo invalido")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Dispositivo invalido"
+        )
 
     if not device.get("is_active", True):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Dispositivo inativo")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Dispositivo inativo"
+        )
 
     blocked_until = _coerce_datetime_utc(device.get("blocked_until"))
     if blocked_until and blocked_until > now:
@@ -780,7 +947,9 @@ async def _authenticate_gateway_request(
 
     if _hash_token(token) != device.get("token_hash"):
         await _register_auth_failure(device, reason="invalid_token", ip=source_ip)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalido")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalido"
+        )
 
     try:
         parsed_timestamp = _parse_timestamp_utc(timestamp)
@@ -808,13 +977,19 @@ async def _authenticate_gateway_request(
     ).hexdigest()
     if not hmac.compare_digest(expected, signature):
         await _register_auth_failure(device, reason="invalid_signature", ip=source_ip)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Assinatura invalida")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Assinatura invalida"
+        )
 
     try:
         await _register_nonce(device_id=device_id, nonce=nonce, now=now)
     except DuplicateKeyError:
-        await _register_auth_failure(device, reason="nonce_replay_detected", ip=source_ip)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Nonce reutilizado")
+        await _register_auth_failure(
+            device, reason="nonce_replay_detected", ip=source_ip
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Nonce reutilizado"
+        )
 
     await db.turnstile_devices.update_one(
         {"device_id": device_id},
@@ -849,9 +1024,14 @@ async def _authenticate_gateway_device_channel(
     normalized_device_id = str(device_id or "").strip()
     token = str(device_token_header or "").strip()
     if not normalized_device_id or not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Canal do dispositivo invalido")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Canal do dispositivo invalido",
+        )
 
-    device = await db.turnstile_devices.find_one({"device_id": normalized_device_id}, {"_id": 0})
+    device = await db.turnstile_devices.find_one(
+        {"device_id": normalized_device_id}, {"_id": 0}
+    )
     if not device:
         await _log_security_event(
             device_id=normalized_device_id,
@@ -861,11 +1041,17 @@ async def _authenticate_gateway_device_channel(
             reason="unknown_device_channel",
             ip=source_ip,
         )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Dispositivo invalido")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Dispositivo invalido"
+        )
 
     if _hash_token(token) != device.get("token_hash"):
-        await _register_auth_failure(device, reason="invalid_device_channel_token", ip=source_ip)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalido")
+        await _register_auth_failure(
+            device, reason="invalid_device_channel_token", ip=source_ip
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalido"
+        )
 
     await db.turnstile_devices.update_one(
         {"device_id": normalized_device_id},
@@ -888,7 +1074,9 @@ def _manual_release_message(student_name: str | None, direction: str) -> str:
     return f"ENTRADA {str(student_name or 'ALUNO').strip()[:7].upper()}"
 
 
-async def _expire_manual_release_commands(*, owner_id: str | None = None, now: datetime | None = None) -> int:
+async def _expire_manual_release_commands(
+    *, owner_id: str | None = None, now: datetime | None = None
+) -> int:
     db = get_db()
     current_now = now or datetime.now(UTC)
     query: dict = {
@@ -928,7 +1116,9 @@ async def _expire_manual_release_commands(*, owner_id: str | None = None, now: d
     return expired_count
 
 
-async def _load_latest_student_contract(*, owner_id: str, student_id: str) -> dict | None:
+async def _load_latest_student_contract(
+    *, owner_id: str, student_id: str
+) -> dict | None:
     db = get_db()
     docs = (
         await db.student_contracts.find(
@@ -944,13 +1134,21 @@ async def _load_latest_student_contract(*, owner_id: str, student_id: str) -> di
     for item in docs:
         refreshed, _, _ = await refresh_contract_state(db, item)
         status_value = str(refreshed.get("contract_status") or "").lower()
-        if status_value in {"active", "pending_activation", "frozen", "scheduled_cancel", "scheduled_freeze"}:
+        if status_value in {
+            "active",
+            "pending_activation",
+            "frozen",
+            "scheduled_cancel",
+            "scheduled_freeze",
+        }:
             return refreshed
     refreshed, _, _ = await refresh_contract_state(db, docs[0])
     return refreshed
 
 
-def _is_daily_contract_eligible(contract: dict | None, *, now: datetime) -> tuple[bool, str]:
+def _is_daily_contract_eligible(
+    contract: dict | None, *, now: datetime
+) -> tuple[bool, str]:
     if not contract:
         return False, "daily_contract_missing"
     if int(contract.get("duration_days") or 0) != 1:
@@ -970,8 +1168,12 @@ def _is_daily_contract_eligible(contract: dict | None, *, now: datetime) -> tupl
     if not start or not end:
         return False, "daily_contract_period_invalid"
 
-    _, now_day_end = sao_paulo_day_bounds((to_sao_paulo(now) or now.astimezone(SAO_PAULO_TZ)).date())
-    now_day_start, _ = sao_paulo_day_bounds((to_sao_paulo(now) or now.astimezone(SAO_PAULO_TZ)).date())
+    _, now_day_end = sao_paulo_day_bounds(
+        (to_sao_paulo(now) or now.astimezone(SAO_PAULO_TZ)).date()
+    )
+    now_day_start, _ = sao_paulo_day_bounds(
+        (to_sao_paulo(now) or now.astimezone(SAO_PAULO_TZ)).date()
+    )
     if end < now_day_start or start > now_day_end:
         return False, "daily_contract_outside_current_day"
     return True, "ok"
@@ -1029,14 +1231,18 @@ async def _claim_next_manual_release(
 
 
 @router.post("/devices")
-async def create_device(payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
+async def create_device(
+    payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))
+):
     db = get_db()
     now = datetime.now(UTC)
     raw_token = secrets.token_urlsafe(32)
     device_id = str(payload.get("device_id") or f"dev_{secrets.token_hex(6)}").strip()
     if not device_id:
         raise HTTPException(status_code=400, detail="device_id invalido")
-    if await db.turnstile_devices.find_one({"device_id": device_id}, {"_id": 0, "device_id": 1}):
+    if await db.turnstile_devices.find_one(
+        {"device_id": device_id}, {"_id": 0, "device_id": 1}
+    ):
         raise HTTPException(status_code=409, detail="device_id ja cadastrado")
 
     device = {
@@ -1056,7 +1262,11 @@ async def create_device(payload: dict, actor: dict = Depends(require_roles("OWNE
         await db.turnstile_devices.insert_one(device)
     except DuplicateKeyError as exc:
         raise HTTPException(status_code=409, detail="device_id ja cadastrado") from exc
-    return {"device_id": device["device_id"], "token": raw_token, "name": device["name"]}
+    return {
+        "device_id": device["device_id"],
+        "token": raw_token,
+        "name": device["name"],
+    }
 
 
 @router.post("/devices/{device_id}/rotate-token")
@@ -1084,7 +1294,9 @@ async def rotate_device_token(
 
 
 @router.get("/devices")
-async def list_devices(actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION"))):
+async def list_devices(
+    actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION"))
+):
     db = get_db()
     return (
         await db.turnstile_devices.find(
@@ -1282,7 +1494,9 @@ async def acknowledge_manual_turnstile_release(
     if not current:
         raise HTTPException(status_code=404, detail="Liberacao manual nao encontrada")
     if str(current.get("claimed_by_device_id") or "") not in {"", device_id}:
-        raise HTTPException(status_code=409, detail="Liberacao vinculada a outro dispositivo")
+        raise HTTPException(
+            status_code=409, detail="Liberacao vinculada a outro dispositivo"
+        )
 
     next_status = str(payload.get("status") or "").strip().lower()
     if next_status not in {"executed", "failed", "expired"}:
@@ -1296,7 +1510,9 @@ async def acknowledge_manual_turnstile_release(
                 "acknowledged_at": now,
                 "executed_at": now if next_status == "executed" else None,
                 "failed_at": now if next_status == "failed" else None,
-                "expired_at": now if next_status == "expired" else current.get("expired_at"),
+                "expired_at": (
+                    now if next_status == "expired" else current.get("expired_at")
+                ),
                 "acknowledged_by_device_id": device_id,
                 "error": str(payload.get("error") or "").strip() or None,
                 "updated_at": now,
@@ -1320,13 +1536,17 @@ async def turnstile_decision(
         source_ip=source_ip,
     )
     now = datetime.now(UTC)
-    event_direction = _normalize_direction(payload.get("direction") or normalized.get("direction"))
+    event_direction = _normalize_direction(
+        payload.get("direction") or normalized.get("direction")
+    )
     control_state = await get_turnstile_control_state(
         owner_id=device["owner_id"],
         gym_id=device.get("gym_id"),
     )
 
-    subscription = await db.subscriptions.find_one({"owner_id": device["owner_id"]}, {"_id": 0})
+    subscription = await db.subscriptions.find_one(
+        {"owner_id": device["owner_id"]}, {"_id": 0}
+    )
     if not subscription_allows_login(subscription):
         reason = "academy_subscription_inactive"
         details = {
@@ -1365,8 +1585,14 @@ async def turnstile_decision(
             "allow": False,
             "allow_entry": False,
             "allow_exit": False,
-            "direction": event_direction if event_direction != DIRECTION_UNKNOWN else DIRECTION_ENTRY,
-            "command_direction": event_direction if event_direction != DIRECTION_UNKNOWN else None,
+            "direction": (
+                event_direction
+                if event_direction != DIRECTION_UNKNOWN
+                else DIRECTION_ENTRY
+            ),
+            "command_direction": (
+                event_direction if event_direction != DIRECTION_UNKNOWN else None
+            ),
             "message": "Assinatura da academia inativa",
             "beep": 2,
             "led": "red",
@@ -1380,11 +1606,14 @@ async def turnstile_decision(
     )
 
     student = None
-    if credential_query:
-        student = await db.students.find_one(
-            credential_query,
-            {"_id": 0},
+    biometric_lookup: dict | None = None
+    if credential_query and normalized["method"] == "biometry":
+        student, biometric_lookup = await _find_student_by_biometry(
+            owner_id=device["owner_id"],
+            credential=normalized["credential"],
         )
+    elif credential_query:
+        student = await db.students.find_one(credential_query, {"_id": 0})
 
     employee = None
     owner_account = None
@@ -1426,6 +1655,7 @@ async def turnstile_decision(
                 error=str(exc),
             )
         allow_base, reason, details = _evaluate_student_access(student, now)
+        details = _merge_lookup_details(details, biometric_lookup)
         subject_type = "student"
         subject_id = student.get("student_id")
         subject_name = student.get("nome") or student.get("name")
@@ -1437,6 +1667,24 @@ async def turnstile_decision(
         )
         if employee:
             allow_base, reason, details = _evaluate_employee_access(employee, now)
+            details = _merge_lookup_details(
+                details,
+                {
+                    "lookup_path": (
+                        "employees.biometria_id"
+                        if normalized["method"] == "biometry"
+                        else None
+                    ),
+                    "lookup_result": (
+                        "matched" if normalized["method"] == "biometry" else None
+                    ),
+                    "fallback_used": False,
+                    "credential_masked": _mask_credential(normalized["credential"]),
+                    "match_strategy": (
+                        "direct" if normalized["method"] == "biometry" else None
+                    ),
+                },
+            )
             subject_type = "employee"
             subject_id = employee.get("employee_id")
             subject_name = employee.get("name")
@@ -1448,13 +1696,35 @@ async def turnstile_decision(
             )
             if owner_account:
                 allow_base, reason, details = _evaluate_owner_access(owner_account, now)
+                details = _merge_lookup_details(
+                    details,
+                    {
+                        "lookup_path": (
+                            "owners.biometria_id"
+                            if normalized["method"] == "biometry"
+                            else None
+                        ),
+                        "lookup_result": (
+                            "matched" if normalized["method"] == "biometry" else None
+                        ),
+                        "fallback_used": False,
+                        "credential_masked": _mask_credential(normalized["credential"]),
+                        "match_strategy": (
+                            "direct" if normalized["method"] == "biometry" else None
+                        ),
+                    },
+                )
                 subject_type = "owner"
                 subject_id = owner_account.get("owner_id")
                 subject_name = owner_account.get("name")
                 subject_role = "OWNER"
+            elif biometric_lookup:
+                details = _merge_lookup_details(details, biometric_lookup)
 
     if allow_base:
-        subject_controls = _normalize_subject_controls(control_state.get("subject_controls"))
+        subject_controls = _normalize_subject_controls(
+            control_state.get("subject_controls")
+        )
         subject_control = subject_controls.get(subject_type or "")
         if isinstance(subject_control, dict):
             allow_entry = not bool(subject_control.get("entry_locked", False))
@@ -1463,22 +1733,27 @@ async def turnstile_decision(
             allow_entry = True
             allow_exit = True
 
-        allow_now = _resolve_directional_allowance(event_direction, allow_entry, allow_exit)
+        allow_now = _resolve_directional_allowance(
+            event_direction, allow_entry, allow_exit
+        )
         if not allow_now:
             reason = "turnstile_direction_locked"
-            details = {
-                "rule": "turnstile_control_state",
-                "requested_direction": event_direction,
-                "entry_locked": not allow_entry,
-                "exit_locked": not allow_exit,
-                "scope_subject_type": subject_type,
-                "updated_at": (
-                    control_state.get("updated_at").isoformat()
-                    if isinstance(control_state.get("updated_at"), datetime)
-                    else control_state.get("updated_at")
-                ),
-                "updated_role": control_state.get("updated_role"),
-            }
+            details = _merge_lookup_details(
+                {
+                    "rule": "turnstile_control_state",
+                    "requested_direction": event_direction,
+                    "entry_locked": not allow_entry,
+                    "exit_locked": not allow_exit,
+                    "scope_subject_type": subject_type,
+                    "updated_at": (
+                        control_state.get("updated_at").isoformat()
+                        if isinstance(control_state.get("updated_at"), datetime)
+                        else control_state.get("updated_at")
+                    ),
+                    "updated_role": control_state.get("updated_role"),
+                },
+                biometric_lookup,
+            )
     else:
         allow_entry = False
         allow_exit = False
@@ -1539,6 +1814,10 @@ async def turnstile_decision(
         direction=event_direction,
         allow_entry=allow_entry,
         allow_exit=allow_exit,
+        lookup_path=details.get("lookup_path"),
+        lookup_result=details.get("lookup_result"),
+        fallback_used=details.get("fallback_used"),
+        credential_masked=details.get("credential_masked"),
     )
 
     if allow_now:
@@ -1554,8 +1833,12 @@ async def turnstile_decision(
         "allow": allow_now,
         "allow_entry": allow_entry,
         "allow_exit": allow_exit,
-        "direction": event_direction if event_direction != DIRECTION_UNKNOWN else DIRECTION_ENTRY,
-        "command_direction": event_direction if event_direction != DIRECTION_UNKNOWN else None,
+        "direction": (
+            event_direction if event_direction != DIRECTION_UNKNOWN else DIRECTION_ENTRY
+        ),
+        "command_direction": (
+            event_direction if event_direction != DIRECTION_UNKNOWN else None
+        ),
         "message": message,
         "beep": 1 if allow_now else 2,
         "led": "green" if allow_now else "red",
@@ -1585,7 +1868,9 @@ async def turnstile_event(
         "device_id": normalized["device_id"],
         "method": normalized["method"],
         "credential": normalized["credential"],
-        "direction": _normalize_direction(payload.get("direction") or normalized.get("direction")),
+        "direction": _normalize_direction(
+            payload.get("direction") or normalized.get("direction")
+        ),
         "decision": payload.get("decision"),
         "message": payload.get("message"),
         "reason": str(payload.get("reason") or "").strip().lower() or None,
@@ -1676,7 +1961,9 @@ async def list_access_logs(
     if normalized_device_id:
         query["device_id"] = normalized_device_id
     if since_minutes > 0:
-        query["created_at"] = {"$gte": datetime.now(UTC) - timedelta(minutes=since_minutes)}
+        query["created_at"] = {
+            "$gte": datetime.now(UTC) - timedelta(minutes=since_minutes)
+        }
 
     rows = (
         await db.access_logs.find(query, {"_id": 0})
@@ -1709,33 +1996,32 @@ async def get_access_summary(
     window_stats = await _count_window(window_start)
     day_stats = await _count_window(day_start)
 
-    deny_reasons_raw = (
-        await db.access_logs.aggregate(
-            [
-                {
-                    "$match": {
-                        "owner_id": owner_id,
-                        "created_at": {"$gte": day_start},
-                        "decision": "deny",
-                    }
-                },
-                {"$group": {"_id": "$reason", "count": {"$sum": 1}}},
-                {"$sort": {"count": -1}},
-                {"$limit": 5},
-            ]
-        ).to_list(5)
-    )
+    deny_reasons_raw = await db.access_logs.aggregate(
+        [
+            {
+                "$match": {
+                    "owner_id": owner_id,
+                    "created_at": {"$gte": day_start},
+                    "decision": "deny",
+                }
+            },
+            {"$group": {"_id": "$reason", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 5},
+        ]
+    ).to_list(5)
     deny_reasons = [
-        {"reason": str(item.get("_id") or "unknown"), "count": int(item.get("count") or 0)}
+        {
+            "reason": str(item.get("_id") or "unknown"),
+            "count": int(item.get("count") or 0),
+        }
         for item in deny_reasons_raw
     ]
 
-    devices = (
-        await db.turnstile_devices.find(
-            {"owner_id": owner_id},
-            {"_id": 0, "device_id": 1, "last_seen_at": 1, "blocked_until": 1},
-        ).to_list(300)
-    )
+    devices = await db.turnstile_devices.find(
+        {"owner_id": owner_id},
+        {"_id": 0, "device_id": 1, "last_seen_at": 1, "blocked_until": 1},
+    ).to_list(300)
     devices_online_5m = sum(
         1
         for item in devices
