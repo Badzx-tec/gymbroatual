@@ -42,3 +42,5 @@ deploy/www/
 backups/
 frontend/playwright-report/
 frontend/test-results/
+.gitignore
+.skills

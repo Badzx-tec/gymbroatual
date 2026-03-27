@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 LegacyContractStatus = Literal["active", "past_due", "canceled", "expired"]
 ContractLifecycleStatus = Literal[
@@ -30,6 +30,41 @@ ChargeCleanupScope = Literal["pending", "overdue"]
 BillingCycle = Literal["monthly", "quarterly", "semiannual", "annual", "custom_days"]
 CancelMode = Literal["immediate", "end_of_cycle", "scheduled"]
 ChangePlanMode = Literal["new_contract", "in_place"]
+DurationUnit = Literal["days", "months"]
+
+
+def _normalize_duration_payload(values: dict, *, days_key: str) -> dict:
+    raw_unit = values.get("duration_unit")
+    raw_value = values.get("duration_value")
+    raw_days = values.get(days_key)
+
+    unit = str(raw_unit or "").strip().lower() or None
+    if unit and unit not in {"days", "months"}:
+        raise ValueError("duration_unit invalida")
+
+    if raw_value is None and raw_days is None and raw_unit is None:
+        return values
+
+    if raw_value is None:
+        if raw_days is None:
+            raise ValueError("duration_value obrigatoria quando duration_unit informado")
+        raw_value = raw_days
+        unit = unit or "days"
+    elif unit is None:
+        unit = "days"
+
+    try:
+        duration_value = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("duration_value invalido") from exc
+    if duration_value < 1:
+        raise ValueError("duration_value invalido")
+
+    normalized_unit = unit or "days"
+    values["duration_unit"] = normalized_unit
+    values["duration_value"] = duration_value
+    values[days_key] = duration_value if normalized_unit == "days" else duration_value * 30
+    return values
 
 
 class ContractCreateIn(BaseModel):
@@ -37,6 +72,8 @@ class ContractCreateIn(BaseModel):
     plan_id: str | None = None
     amount: float | None = Field(default=None, gt=0)
     discount_amount: float = Field(default=0, ge=0)
+    duration_unit: DurationUnit | None = None
+    duration_value: int | None = Field(default=None, ge=1, le=3650)
     duration_days: int | None = Field(default=None, ge=1, le=3650)
     billing_cycle: BillingCycle = "custom_days"
     billing_day: int | None = Field(default=None, ge=1, le=28)
@@ -50,6 +87,13 @@ class ContractCreateIn(BaseModel):
     terms_accepted: bool = False
     create_initial_charge: bool = True
     replace_active_contract: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_duration_fields(cls, values):
+        if not isinstance(values, dict):
+            return values
+        return _normalize_duration_payload(values, days_key="duration_days")
 
 
 class ContractUpdateIn(BaseModel):
@@ -65,12 +109,21 @@ class ContractUpdateIn(BaseModel):
 
 
 class ContractRenewIn(BaseModel):
+    duration_unit: DurationUnit | None = None
+    duration_value: int | None = Field(default=None, ge=1, le=3650)
     duration_days: int | None = Field(default=None, ge=1, le=3650)
     start_at: datetime | None = None
     end_at: datetime | None = None
     create_charge: bool = True
     amount: float | None = Field(default=None, gt=0)
     notes: str | None = Field(default=None, max_length=240)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_duration_fields(cls, values):
+        if not isinstance(values, dict):
+            return values
+        return _normalize_duration_payload(values, days_key="duration_days")
 
 
 class ContractFreezeIn(BaseModel):
@@ -98,9 +151,36 @@ class ContractChangePlanIn(BaseModel):
     mode: ChangePlanMode = "new_contract"
     effective_at: datetime | None = None
     amount: float | None = Field(default=None, gt=0)
+    duration_unit: DurationUnit | None = None
+    duration_value: int | None = Field(default=None, ge=1, le=3650)
     duration_days: int | None = Field(default=None, ge=1, le=3650)
     create_initial_charge: bool = True
     notes: str | None = Field(default=None, max_length=240)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_duration_fields(cls, values):
+        if not isinstance(values, dict):
+            return values
+        return _normalize_duration_payload(values, days_key="duration_days")
+
+
+class ContractAdjustValidityIn(BaseModel):
+    end_at: datetime
+    reason: str | None = Field(default=None, max_length=240)
+
+
+class ContractAdjustBillingIn(BaseModel):
+    due_at: datetime | None = None
+    billing_day: int | None = Field(default=None, ge=1, le=28)
+    update_open_charges: bool = True
+    reason: str | None = Field(default=None, max_length=240)
+
+    @model_validator(mode="after")
+    def validate_change_request(self):
+        if self.due_at is None and self.billing_day is None:
+            raise ValueError("Informe due_at e/ou billing_day")
+        return self
 
 
 class ContractOut(BaseModel):
@@ -115,6 +195,8 @@ class ContractOut(BaseModel):
     currency: str = "BRL"
     original_amount: float | None = None
     discount_amount: float = 0
+    duration_unit: DurationUnit = "days"
+    duration_value: int = 30
     duration_days: int | None = None
     billing_cycle: BillingCycle
     billing_day: int | None = None

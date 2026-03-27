@@ -196,6 +196,10 @@ export const api = {
     request(`/api/admin/contratos/${contractId}/cancelar`, { method: 'POST', body: JSON.stringify(data) }),
   adminPauseContract: (contractId, data = {}) =>
     request(`/api/admin/contratos/${contractId}/pausar`, { method: 'POST', body: JSON.stringify(data) }),
+  adminAdjustContractValidity: (contractId, data = {}) =>
+    request(`/api/admin/contratos/${contractId}/ajustar-validade`, { method: 'POST', body: JSON.stringify(data) }),
+  adminAdjustContractBilling: (contractId, data = {}) =>
+    request(`/api/admin/contratos/${contractId}/ajustar-cobranca`, { method: 'POST', body: JSON.stringify(data) }),
   adminSettleOverdueContract: (contractId, data = {}) =>
     request(`/api/admin/contratos/${contractId}/quitar-atrasos`, { method: 'POST', body: JSON.stringify(data) }),
   adminRemoveCanceledContracts: (data = {}) =>
@@ -364,6 +368,8 @@ export const api = {
   catracaControlState: () => request('/api/catraca/control-state'),
   turnstileManualRelease: (data) =>
     request('/api/turnstiles/manual-releases', { method: 'POST', body: JSON.stringify(data) }),
+  turnstileQuickRelease: (data) =>
+    request('/api/turnstiles/quick-releases', { method: 'POST', body: JSON.stringify(data) }),
 
   exportStudentsExcel: () => request('/api/reports/students/excel', { isBlob: true }).then((b) => downloadBlob(b, 'alunos_gymbro.xlsx')),
   exportStudentsPdf: () => request('/api/reports/students/pdf', { isBlob: true }).then((b) => downloadBlob(b, 'alunos_gymbro.pdf')),

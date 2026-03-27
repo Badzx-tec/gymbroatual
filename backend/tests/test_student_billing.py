@@ -8,6 +8,8 @@ from app.models.student_billing import (
     ChargeCleanupIn,
     ChargeMarkPaidIn,
     ChargeMarkUnpaidIn,
+    ContractAdjustBillingIn,
+    ContractAdjustValidityIn,
     ContractCreateIn,
     ContractUpdateIn,
 )
@@ -193,6 +195,9 @@ async def test_create_contract_with_plan_creates_initial_charge_and_updates_stud
     assert contract["manual_end_override"] is False
     assert contract["dunning_level"] == 0
     assert contract["grace_until"] is None
+    assert contract["duration_unit"] == "days"
+    assert contract["duration_value"] == 30
+    assert contract["duration_days"] == 30
     assert contract["current_period_end"] == start_at + timedelta(days=30)
     assert charge["status"] == "open"
     assert updated_student["plano_id"] == "pln_1"
@@ -222,6 +227,333 @@ async def test_create_contract_respects_manual_period_end_override(monkeypatch):
     assert contract["current_period_end"] == manual_end
     assert refreshed["current_period_end"] == manual_end
     assert len(refreshed.get("manual_overrides") or []) >= 1
+
+
+@pytest.mark.asyncio
+async def test_create_contract_uses_real_calendar_months_for_month_duration(monkeypatch):
+    db = FakeDb()
+    db.plans.docs.append(
+        {
+            "plan_id": "pln_monthly_real",
+            "owner_id": "own_1",
+            "nome": "Mensal Calendario",
+            "valor": 199.9,
+            "duration_unit": "months",
+            "duration_value": 1,
+            "duracao_dias": 30,
+        }
+    )
+    fixed_now = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+    monkeypatch.setattr(student_billing, "utc_now", lambda: fixed_now)
+
+    start_at = datetime(2026, 1, 31, 12, 0, tzinfo=timezone.utc)
+    result = await student_billing.create_contract(
+        payload=ContractCreateIn(
+            student_id="std_1",
+            plan_id="pln_monthly_real",
+            start_at=start_at,
+        ),
+        actor={"owner_id": "own_1", "gym_id": "gym_1", "role": "OWNER"},
+    )
+
+    contract = result["contract"]
+    assert contract["duration_unit"] == "months"
+    assert contract["duration_value"] == 1
+    assert contract["duration_days"] == 28
+    assert contract["current_period_end"] == datetime(2026, 2, 28, 12, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_adjust_contract_validity_reactivates_expired_contract(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+
+    now = datetime.now(timezone.utc)
+    db.student_contracts.docs.append(
+        {
+            "contract_id": "ctr_expired",
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "student_id": "std_1",
+            "student_name": "Aluno Teste",
+            "plan_id": "pln_1",
+            "plan_name": "Mensal",
+            "amount": 149.9,
+            "currency": "BRL",
+            "duration_unit": "days",
+            "duration_value": 30,
+            "duration_days": 30,
+            "billing_cycle": "monthly",
+            "billing_day": 10,
+            "manual_end_override": False,
+            "current_period_start": now - timedelta(days=10),
+            "current_period_end": now - timedelta(days=1),
+            "next_billing_at": now - timedelta(days=1),
+            "contract_status": "expired",
+            "financial_status": "paid",
+            "access_status": "blocked",
+            "status": "expired",
+            "auto_renew": False,
+            "notes": None,
+            "internal_notes": None,
+            "grace_until": None,
+            "dunning_level": 0,
+            "next_retry_at": None,
+            "cancel_reason": None,
+            "freeze_reason": None,
+            "canceled_at": None,
+            "ended_at": now - timedelta(days=1),
+            "last_payment_at": now - timedelta(days=2),
+            "last_charge_id": None,
+            "manual_overrides": [],
+            "scheduled_actions": [],
+            "freeze_periods": [],
+            "created_at": now - timedelta(days=40),
+            "updated_at": now - timedelta(days=1),
+        }
+    )
+
+    result = await student_billing.adjust_contract_validity(
+        contract_id="ctr_expired",
+        payload=ContractAdjustValidityIn(
+            end_at=now + timedelta(days=20),
+            reason="cortesia_operacional",
+        ),
+        actor={"owner_id": "own_1", "gym_id": "gym_1", "role": "MANAGER"},
+    )
+
+    contract = result["contract"]
+    updated_student = await db.students.find_one({"owner_id": "own_1", "student_id": "std_1"})
+
+    assert contract["current_period_end"] == now + timedelta(days=20)
+    assert contract["contract_status"] == "active"
+    assert contract["manual_end_override"] is True
+    assert contract["ended_at"] is None
+    assert len(contract["manual_overrides"]) >= 1
+    assert updated_student["plan_expires_at"] == now + timedelta(days=20)
+    assert any(item["event_type"] == "contract_validity_adjusted" for item in db.student_billing_events.docs)
+
+
+@pytest.mark.asyncio
+async def test_adjust_contract_validity_rejects_end_before_start(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+
+    now = datetime.now(timezone.utc)
+    db.student_contracts.docs.append(
+        {
+            "contract_id": "ctr_invalid_validity",
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "student_id": "std_1",
+            "student_name": "Aluno Teste",
+            "plan_id": "pln_1",
+            "plan_name": "Mensal",
+            "amount": 149.9,
+            "currency": "BRL",
+            "duration_unit": "days",
+            "duration_value": 30,
+            "duration_days": 30,
+            "billing_cycle": "monthly",
+            "billing_day": 10,
+            "manual_end_override": False,
+            "current_period_start": now,
+            "current_period_end": now + timedelta(days=30),
+            "next_billing_at": now,
+            "contract_status": "active",
+            "financial_status": "paid",
+            "access_status": "allowed",
+            "status": "active",
+            "auto_renew": False,
+            "manual_overrides": [],
+            "scheduled_actions": [],
+            "freeze_periods": [],
+            "created_at": now - timedelta(days=5),
+            "updated_at": now - timedelta(days=1),
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await student_billing.adjust_contract_validity(
+            contract_id="ctr_invalid_validity",
+            payload=ContractAdjustValidityIn(
+                end_at=now,
+                reason="erro_operacional",
+            ),
+            actor={"owner_id": "own_1", "gym_id": "gym_1", "role": "MANAGER"},
+        )
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "Validade do contrato invalida"
+
+
+@pytest.mark.asyncio
+async def test_adjust_contract_billing_updates_only_mutable_charges(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+
+    now = datetime.now(timezone.utc)
+    original_end = now + timedelta(days=25)
+    db.student_contracts.docs.append(
+        {
+            "contract_id": "ctr_billing_adjust",
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "student_id": "std_1",
+            "student_name": "Aluno Teste",
+            "plan_id": "pln_1",
+            "plan_name": "Mensal",
+            "amount": 149.9,
+            "currency": "BRL",
+            "duration_unit": "days",
+            "duration_value": 30,
+            "duration_days": 30,
+            "billing_cycle": "monthly",
+            "billing_day": 5,
+            "manual_end_override": False,
+            "current_period_start": now - timedelta(days=5),
+            "current_period_end": original_end,
+            "next_billing_at": now,
+            "contract_status": "active",
+            "financial_status": "pending",
+            "access_status": "blocked",
+            "status": "active",
+            "auto_renew": True,
+            "manual_overrides": [],
+            "scheduled_actions": [],
+            "freeze_periods": [],
+            "created_at": now - timedelta(days=20),
+            "updated_at": now - timedelta(days=1),
+        }
+    )
+    db.student_charges.docs.extend(
+        [
+            {
+                "charge_id": "chg_open_adjust",
+                "contract_id": "ctr_billing_adjust",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "student_id": "std_1",
+                "amount": 149.9,
+                "currency": "BRL",
+                "due_at": now - timedelta(days=1),
+                "status": "open",
+                "period_start": now - timedelta(days=5),
+                "period_end": original_end,
+                "created_at": now - timedelta(days=2),
+                "updated_at": now - timedelta(days=2),
+            },
+            {
+                "charge_id": "chg_overdue_adjust",
+                "contract_id": "ctr_billing_adjust",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "student_id": "std_1",
+                "amount": 149.9,
+                "currency": "BRL",
+                "due_at": now - timedelta(days=4),
+                "status": "overdue",
+                "period_start": now - timedelta(days=5),
+                "period_end": original_end,
+                "created_at": now - timedelta(days=5),
+                "updated_at": now - timedelta(days=4),
+            },
+            {
+                "charge_id": "chg_failed_adjust",
+                "contract_id": "ctr_billing_adjust",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "student_id": "std_1",
+                "amount": 149.9,
+                "currency": "BRL",
+                "due_at": now - timedelta(days=3),
+                "status": "failed",
+                "period_start": now - timedelta(days=5),
+                "period_end": original_end,
+                "created_at": now - timedelta(days=4),
+                "updated_at": now - timedelta(days=3),
+            },
+            {
+                "charge_id": "chg_partial_adjust",
+                "contract_id": "ctr_billing_adjust",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "student_id": "std_1",
+                "amount": 149.9,
+                "currency": "BRL",
+                "due_at": now - timedelta(days=2),
+                "status": "partially_paid",
+                "period_start": now - timedelta(days=5),
+                "period_end": original_end,
+                "created_at": now - timedelta(days=3),
+                "updated_at": now - timedelta(days=2),
+            },
+            {
+                "charge_id": "chg_paid_adjust",
+                "contract_id": "ctr_billing_adjust",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "student_id": "std_1",
+                "amount": 149.9,
+                "currency": "BRL",
+                "due_at": now - timedelta(days=10),
+                "status": "paid",
+                "paid_at": now - timedelta(days=9),
+                "period_start": now - timedelta(days=35),
+                "period_end": now - timedelta(days=5),
+                "created_at": now - timedelta(days=35),
+                "updated_at": now - timedelta(days=9),
+            },
+        ]
+    )
+
+    new_due_at = now + timedelta(days=7)
+    result = await student_billing.adjust_contract_billing(
+        contract_id="ctr_billing_adjust",
+        payload=ContractAdjustBillingIn(
+            due_at=new_due_at,
+            billing_day=12,
+            update_open_charges=True,
+            reason="acerto_financeiro",
+        ),
+        actor={"owner_id": "own_1", "gym_id": "gym_1", "role": "MANAGER"},
+    )
+
+    contract = result["contract"]
+    paid_charge = await db.student_charges.find_one({"charge_id": "chg_paid_adjust", "owner_id": "own_1"})
+    mutable_charges = [
+        await db.student_charges.find_one({"charge_id": charge_id, "owner_id": "own_1"})
+        for charge_id in [
+            "chg_open_adjust",
+            "chg_overdue_adjust",
+            "chg_failed_adjust",
+            "chg_partial_adjust",
+        ]
+    ]
+
+    assert contract["billing_day"] == 12
+    assert contract["current_period_end"] == original_end
+    assert result["updated_charges"] == 4
+    assert set(result["charge_ids"]) == {
+        "chg_open_adjust",
+        "chg_overdue_adjust",
+        "chg_failed_adjust",
+        "chg_partial_adjust",
+    }
+    for charge in mutable_charges:
+        assert charge["due_at"] == new_due_at
+        assert charge["status"] == "open"
+    assert paid_charge["due_at"] == now - timedelta(days=10)
+    assert paid_charge["status"] == "paid"
+    assert any(
+        item["event_type"] == "contract_charge_due_dates_synced"
+        for item in db.student_billing_events.docs
+    )
+    assert any(
+        item["event_type"] == "contract_billing_adjusted"
+        for item in db.student_billing_events.docs
+    )
 
 
 @pytest.mark.asyncio

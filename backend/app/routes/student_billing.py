@@ -11,6 +11,8 @@ from app.models.student_billing import (
     BillingOverviewOut,
     ChargeCleanupIn,
     ChargeCleanupOut,
+    ContractAdjustBillingIn,
+    ContractAdjustValidityIn,
     ChargeCreateIn,
     ChargeMarkPaidIn,
     ChargeMarkUnpaidIn,
@@ -39,6 +41,9 @@ from app.services.student_contracts import (
     period_end,
     refresh_contract_state,
     resolve_contract_amounts,
+    resolve_duration_fields,
+    duration_days_compatibility,
+    billing_cycle_from_duration_fields,
     sync_contract_amount_fields,
     utc_now,
 )
@@ -75,6 +80,63 @@ def _resolve_contract_amount_inputs(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _duration_values_from_doc(doc: dict | None) -> tuple[str | None, int | None, int | None]:
+    if not isinstance(doc, dict):
+        return None, None, None
+    return (
+        doc.get("duration_unit"),
+        doc.get("duration_value"),
+        doc.get("duracao_dias") if "duracao_dias" in doc else doc.get("duration_days"),
+    )
+
+
+def _resolve_duration_selection(
+    *,
+    payload_unit=None,
+    payload_value=None,
+    payload_days=None,
+    sources: list[dict | None] | None = None,
+    default_days: int = 30,
+) -> tuple[str, int]:
+    candidate_unit = payload_unit
+    candidate_value = payload_value
+    candidate_days = payload_days
+
+    if candidate_value is not None or candidate_days is not None or candidate_unit is not None:
+        return resolve_duration_fields(
+            duration_unit=candidate_unit,
+            duration_value=candidate_value,
+            duration_days=candidate_days,
+            default_days=default_days,
+        )
+
+    for source in sources or []:
+        source_unit, source_value, source_days = _duration_values_from_doc(source)
+        if source_value is None and source_days is None and source_unit is None:
+            continue
+        return resolve_duration_fields(
+            duration_unit=source_unit,
+            duration_value=source_value,
+            duration_days=source_days,
+            default_days=default_days,
+        )
+
+    return resolve_duration_fields(default_days=default_days)
+
+
+def _resolve_duration_days_compatibility(
+    *,
+    start_at: datetime,
+    duration_unit: str,
+    duration_value: int,
+) -> int:
+    return duration_days_compatibility(
+        start=start_at,
+        duration_unit=duration_unit,
+        duration_value=duration_value,
+    )
 
 
 def _build_charge(
@@ -332,6 +394,77 @@ async def _update_open_charge_amounts_for_contract(
             actor=actor,
         )
 
+    return updated_count, charge_ids
+
+
+async def _update_financial_due_dates_for_contract(
+    *,
+    contract: dict,
+    due_at: datetime | None,
+    now: datetime,
+    reason: str,
+) -> tuple[int, list[str]]:
+    db = get_db()
+    if due_at is None:
+        return 0, []
+
+    mutable_statuses = ["open", "overdue", "failed", "partially_paid"]
+    updated_count = 0
+    charge_ids: list[str] = []
+    mutable_charges = (
+        await db.student_charges.find(
+            {
+                "owner_id": contract["owner_id"],
+                "contract_id": contract["contract_id"],
+                "status": {"$in": mutable_statuses},
+            },
+            {"_id": 0, "charge_id": 1, "due_at": 1},
+        )
+        .sort("due_at", 1)
+        .limit(5000)
+        .to_list(5000)
+    )
+
+    for item in mutable_charges:
+        charge_id = str(item.get("charge_id") or "").strip()
+        if not charge_id:
+            continue
+        current_due_at = coerce_datetime_utc(item.get("due_at"))
+        if current_due_at == due_at:
+            continue
+        current_status = "overdue" if due_at < now else "open"
+        result = await db.student_charges.update_one(
+            {
+                "owner_id": contract["owner_id"],
+                "charge_id": charge_id,
+                "status": {"$in": mutable_statuses},
+            },
+            {
+                "$set": {
+                    "due_at": due_at,
+                    "status": current_status,
+                    "updated_at": now,
+                    "billing_sync_reason": reason,
+                }
+            },
+        )
+        if int(getattr(result, "modified_count", 0) or 0) > 0:
+            updated_count += 1
+            charge_ids.append(charge_id)
+
+    if updated_count > 0:
+        await _record_event(
+            owner_id=contract["owner_id"],
+            gym_id=contract["gym_id"],
+            contract_id=contract["contract_id"],
+            event_type="contract_charge_due_dates_synced",
+            payload={
+                "reason": reason,
+                "due_at": due_at.isoformat(),
+                "updated_count": updated_count,
+                "charge_ids": charge_ids,
+            },
+        )
     return updated_count, charge_ids
 
 
@@ -642,12 +775,23 @@ async def create_contract(
     )
 
     start_at = coerce_datetime_utc(payload.start_at) or now
-    duration_days = (
-        int(payload.duration_days)
-        if payload.duration_days is not None
-        else int((plan_doc or {}).get("duracao_dias") or 30)
+    duration_unit, duration_value = _resolve_duration_selection(
+        payload_unit=payload.duration_unit,
+        payload_value=payload.duration_value,
+        payload_days=payload.duration_days,
+        sources=[plan_doc],
+        default_days=30,
     )
-    auto_end = period_end(start_at, duration_days)
+    duration_days = _resolve_duration_days_compatibility(
+        start_at=start_at,
+        duration_unit=duration_unit,
+        duration_value=duration_value,
+    )
+    auto_end = period_end(
+        start_at,
+        duration_unit=duration_unit,
+        duration_value=duration_value,
+    )
     manual_end = coerce_datetime_utc(payload.end_at)
     current_period_end = manual_end or auto_end
     if current_period_end <= start_at:
@@ -670,8 +814,17 @@ async def create_contract(
         "original_amount": original_amount,
         "discount_amount": discount_amount,
         "currency": "BRL",
+        "duration_unit": duration_unit,
+        "duration_value": duration_value,
         "duration_days": duration_days,
-        "billing_cycle": payload.billing_cycle,
+        "billing_cycle": (
+            payload.billing_cycle
+            if payload.billing_cycle != "custom_days"
+            else billing_cycle_from_duration_fields(
+                duration_unit=duration_unit,
+                duration_value=duration_value,
+            )
+        ),
         "billing_day": payload.billing_day or min(max(start_at.day, 1), 28),
         "manual_end_override": bool(manual_end),
         "current_period_start": start_at,
@@ -772,6 +925,8 @@ async def create_contract(
             "amount": contract.get("amount"),
             "original_amount": contract.get("original_amount"),
             "discount_amount": contract.get("discount_amount"),
+            "duration_unit": contract.get("duration_unit"),
+            "duration_value": contract.get("duration_value"),
             "duration_days": contract.get("duration_days"),
             "manual_end_override": bool(manual_end),
             "initial_charge_id": (initial_charge or {}).get("charge_id"),
@@ -926,6 +1081,163 @@ async def update_contract(
     return contract
 
 
+@router.post("/contracts/{contract_id}/adjust-validity")
+async def adjust_contract_validity(
+    contract_id: str,
+    payload: ContractAdjustValidityIn,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
+    db = get_db()
+    now = utc_now()
+    contract = await _load_contract_for_owner(contract_id, actor)
+    try:
+        ensure_transition(
+            contract,
+            allowed_from=MANAGEABLE_CONTRACT_STATUSES | {"expired"},
+            action="ajustar validade do contrato",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    end_at = coerce_datetime_utc(payload.end_at)
+    start_at = coerce_datetime_utc(contract.get("current_period_start")) or now
+    if not end_at or end_at <= start_at:
+        raise HTTPException(status_code=400, detail="Validade do contrato invalida")
+
+    before_end = coerce_datetime_utc(contract.get("current_period_end"))
+    before_status = str(contract.get("contract_status") or "").lower()
+    contract["current_period_end"] = end_at
+    contract["manual_end_override"] = True
+    reactivated = False
+    if before_status == "expired" and end_at > now:
+        contract["contract_status"] = "pending_activation" if start_at > now else "active"
+        contract["ended_at"] = None
+        reactivated = True
+
+    append_manual_override(
+        contract,
+        field="current_period_end",
+        before=before_end,
+        after=end_at,
+        reason=payload.reason or "manual_contract_validity_adjustment",
+        actor=actor,
+        now=now,
+    )
+
+    contract = await _upsert_contract(contract)
+    contract, events, changed = await refresh_contract_state(db, contract)
+    if changed:
+        for auto_event in events:
+            await _record_event(
+                owner_id=contract["owner_id"],
+                gym_id=contract["gym_id"],
+                contract_id=contract["contract_id"],
+                event_type=auto_event["event_type"],
+                payload=auto_event.get("payload") or {},
+                actor={"actor_type": "system", "role": "SYSTEM"},
+            )
+    await _sync_student_contract_projection(contract)
+    await _record_event(
+        owner_id=contract["owner_id"],
+        gym_id=contract["gym_id"],
+        contract_id=contract["contract_id"],
+        event_type="contract_validity_adjusted",
+        payload={
+            "reason": payload.reason,
+            "previous_end_at": before_end.isoformat() if before_end else None,
+            "current_period_end": end_at.isoformat(),
+            "previous_contract_status": before_status or None,
+            "contract_status": contract.get("contract_status"),
+            "reactivated": reactivated,
+        },
+        actor=actor,
+    )
+    return {"contract": clean_doc(contract)}
+
+
+@router.post("/contracts/{contract_id}/adjust-billing")
+async def adjust_contract_billing(
+    contract_id: str,
+    payload: ContractAdjustBillingIn,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
+    db = get_db()
+    now = utc_now()
+    contract = await _load_contract_for_owner(contract_id, actor)
+    try:
+        ensure_transition(
+            contract,
+            allowed_from=MANAGEABLE_CONTRACT_STATUSES | {"expired"},
+            action="ajustar cobranca do contrato",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    due_at = coerce_datetime_utc(payload.due_at)
+    billing_day_before = contract.get("billing_day")
+    updated_fields: list[str] = []
+    if payload.billing_day is not None:
+        contract["billing_day"] = int(payload.billing_day)
+        append_manual_override(
+            contract,
+            field="billing_day",
+            before=billing_day_before,
+            after=contract["billing_day"],
+            reason=payload.reason or "manual_contract_billing_adjustment",
+            actor=actor,
+            now=now,
+        )
+        updated_fields.append("billing_day")
+
+    contract = await _upsert_contract(contract)
+    updated_charges = 0
+    charge_ids: list[str] = []
+    if payload.update_open_charges and due_at is not None:
+        updated_charges, charge_ids = await _update_financial_due_dates_for_contract(
+            contract=contract,
+            due_at=due_at,
+            now=now,
+            reason=payload.reason or "manual_contract_billing_adjustment",
+        )
+        if updated_charges > 0:
+            updated_fields.append("charges_due_at")
+
+    contract, events, changed = await refresh_contract_state(db, contract)
+    if changed:
+        for auto_event in events:
+            await _record_event(
+                owner_id=contract["owner_id"],
+                gym_id=contract["gym_id"],
+                contract_id=contract["contract_id"],
+                event_type=auto_event["event_type"],
+                payload=auto_event.get("payload") or {},
+                actor={"actor_type": "system", "role": "SYSTEM"},
+            )
+    await _sync_student_contract_projection(contract)
+    await _record_event(
+        owner_id=contract["owner_id"],
+        gym_id=contract["gym_id"],
+        contract_id=contract["contract_id"],
+        event_type="contract_billing_adjusted",
+        payload={
+            "reason": payload.reason,
+            "due_at": due_at.isoformat() if due_at else None,
+            "billing_day_before": billing_day_before,
+            "billing_day": contract.get("billing_day"),
+            "update_open_charges": payload.update_open_charges,
+            "updated_charges": updated_charges,
+            "charge_ids": charge_ids[:100],
+            "updated_fields": updated_fields,
+        },
+        actor=actor,
+    )
+    return {
+        "contract": clean_doc(contract),
+        "updated_charges": updated_charges,
+        "charge_ids": charge_ids[:100],
+    }
+
+
 @router.post("/contracts/{contract_id}/renew")
 async def renew_contract(
     contract_id: str,
@@ -951,15 +1263,32 @@ async def renew_contract(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    duration_days = int(payload.duration_days or contract.get("duration_days") or 30)
+    duration_unit, duration_value = _resolve_duration_selection(
+        payload_unit=payload.duration_unit,
+        payload_value=payload.duration_value,
+        payload_days=payload.duration_days,
+        sources=[contract],
+        default_days=30,
+    )
     start_at = coerce_datetime_utc(payload.start_at)
     if not start_at:
         current_end = coerce_datetime_utc(contract.get("current_period_end")) or now
         start_at = current_end if current_end > now else now
-    end_at = coerce_datetime_utc(payload.end_at) or period_end(start_at, duration_days)
+    duration_days = _resolve_duration_days_compatibility(
+        start_at=start_at,
+        duration_unit=duration_unit,
+        duration_value=duration_value,
+    )
+    end_at = coerce_datetime_utc(payload.end_at) or period_end(
+        start_at,
+        duration_unit=duration_unit,
+        duration_value=duration_value,
+    )
     if end_at <= start_at:
         raise HTTPException(status_code=400, detail="Periodo de renovacao invalido")
 
+    contract["duration_unit"] = duration_unit
+    contract["duration_value"] = duration_value
     contract["duration_days"] = duration_days
     contract["current_period_start"] = start_at
     contract["current_period_end"] = end_at
@@ -1014,6 +1343,8 @@ async def renew_contract(
         payload={
             "start_at": start_at.isoformat(),
             "end_at": end_at.isoformat(),
+            "duration_unit": duration_unit,
+            "duration_value": duration_value,
             "duration_days": duration_days,
             "charge_id": (renewal_charge or {}).get("charge_id"),
             "notes": payload.notes,
@@ -1240,13 +1571,26 @@ async def change_plan(
 
     effective_at = coerce_datetime_utc(payload.effective_at) or now
     target_amount = float(payload.amount if payload.amount is not None else plan.get("valor") or contract.get("amount") or 0)
-    target_duration = int(payload.duration_days or plan.get("duracao_dias") or contract.get("duration_days") or 30)
+    duration_unit, duration_value = _resolve_duration_selection(
+        payload_unit=payload.duration_unit,
+        payload_value=payload.duration_value,
+        payload_days=payload.duration_days,
+        sources=[plan, contract],
+        default_days=30,
+    )
+    target_duration = _resolve_duration_days_compatibility(
+        start_at=effective_at,
+        duration_unit=duration_unit,
+        duration_value=duration_value,
+    )
 
     if payload.mode == "in_place":
         before_plan = contract.get("plan_id")
         before_amount = _safe_float(contract.get("amount"))
         before_discount = _safe_float(contract.get("discount_amount"))
         before_duration = int(contract.get("duration_days") or target_duration)
+        before_duration_unit = contract.get("duration_unit") or "days"
+        before_duration_value = int(contract.get("duration_value") or before_duration)
         next_original_amount, next_discount_amount, next_amount = _resolve_contract_amount_inputs(
             base_amount=target_amount,
             discount_amount=before_discount,
@@ -1256,10 +1600,16 @@ async def change_plan(
         contract["original_amount"] = next_original_amount
         contract["discount_amount"] = next_discount_amount
         contract["amount"] = next_amount
+        contract["duration_unit"] = duration_unit
+        contract["duration_value"] = duration_value
         contract["duration_days"] = target_duration
         if not bool(contract.get("manual_end_override")):
             start = coerce_datetime_utc(contract.get("current_period_start")) or now
-            contract["current_period_end"] = period_end(start, target_duration)
+            contract["current_period_end"] = period_end(
+                start,
+                duration_unit=duration_unit,
+                duration_value=duration_value,
+            )
         append_manual_override(
             contract,
             field="plan_id",
@@ -1284,6 +1634,26 @@ async def change_plan(
                 field="discount_amount",
                 before=before_discount,
                 after=next_discount_amount,
+            reason=payload.notes or "manual_plan_change",
+            actor=actor,
+            now=now,
+        )
+        if before_duration_unit != duration_unit:
+            append_manual_override(
+                contract,
+                field="duration_unit",
+                before=before_duration_unit,
+                after=duration_unit,
+                reason=payload.notes or "manual_plan_change",
+                actor=actor,
+                now=now,
+            )
+        if before_duration_value != duration_value:
+            append_manual_override(
+                contract,
+                field="duration_value",
+                before=before_duration_value,
+                after=duration_value,
                 reason=payload.notes or "manual_plan_change",
                 actor=actor,
                 now=now,
@@ -1379,12 +1749,18 @@ async def change_plan(
         "original_amount": next_original_amount,
         "discount_amount": next_discount_amount,
         "currency": "BRL",
+        "duration_unit": duration_unit,
+        "duration_value": duration_value,
         "duration_days": target_duration,
         "billing_cycle": contract.get("billing_cycle") or "custom_days",
         "billing_day": contract.get("billing_day") or min(max(effective_at.day, 1), 28),
         "manual_end_override": False,
         "current_period_start": effective_at,
-        "current_period_end": period_end(effective_at, target_duration),
+        "current_period_end": period_end(
+            effective_at,
+            duration_unit=duration_unit,
+            duration_value=duration_value,
+        ),
         "next_billing_at": effective_at,
         "contract_status": new_contract_status,
         "financial_status": new_financial_status,

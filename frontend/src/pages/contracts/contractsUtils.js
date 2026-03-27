@@ -1,5 +1,6 @@
 import { accessStatusLabel, contractStatusLabel, financialStatusLabel } from '../../utils/labels';
 import {
+  addDurationToDateTimeLocalInTimeZone,
   dateTimeLocalToIsoInTimeZone,
   formatCurrency,
   formatDateTimeInTimeZone,
@@ -26,6 +27,24 @@ export function toLocalDateInput(value) {
 
 export function toDateInput(value) {
   return toDateInputInTimeZone(value);
+}
+
+export function formatDurationLabel(durationValue, durationUnit, fallbackDays) {
+  const normalizedUnit = String(durationUnit || '').toLowerCase() === 'months' ? 'months' : 'days';
+  const rawValue = durationValue ?? fallbackDays;
+  const safeValue = Number(rawValue);
+  if (!Number.isFinite(safeValue) || safeValue <= 0) return '-';
+  if (normalizedUnit === 'months') {
+    return `${safeValue} ${safeValue === 1 ? 'mes' : 'meses'}`;
+  }
+  return `${safeValue} ${safeValue === 1 ? 'dia' : 'dias'}`;
+}
+
+export function calculateContractEndAt(startAt, durationUnit, durationValue) {
+  return addDurationToDateTimeLocalInTimeZone(startAt, {
+    durationUnit,
+    durationValue,
+  });
 }
 
 export function getContractValueBreakdown(contract = {}) {
