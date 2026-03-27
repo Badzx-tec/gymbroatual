@@ -9,12 +9,21 @@ import EmptyState from '../components/ui/EmptyState';
 import LoadingScreen from '../components/ui/LoadingScreen';
 import PageHeader from '../components/ui/PageHeader';
 import SearchInput from '../components/ui/SearchInput';
+import SelectField from '../components/ui/SelectField';
 import SectionCard from '../components/ui/SectionCard';
 import StatCard from '../components/ui/StatCard';
 import TextField from '../components/ui/TextField';
 import { getStoredUser } from '../lib/session';
+import { formatDurationLabel } from './contracts/contractsUtils';
 
-const emptyPlan = { nome: '', valor: '', duracao_dias: '', descricao: '', ativo: true };
+const emptyPlan = {
+  nome: '',
+  valor: '',
+  duration_value: '',
+  duration_unit: 'days',
+  descricao: '',
+  ativo: true,
+};
 
 function formatMoney(value) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -47,7 +56,9 @@ function PlanCard({ plan, onEdit, onDelete, canManagePlans }) {
         </div>
         <div className="rounded-xl border border-zinc-900 bg-zinc-900/60 px-4 py-3">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Duracao</p>
-          <p className="mt-2 text-lg font-semibold text-zinc-100">{plan.duracao_dias} dias</p>
+          <p className="mt-2 text-lg font-semibold text-zinc-100">
+            {formatDurationLabel(plan.duration_value, plan.duration_unit, plan.duracao_dias)}
+          </p>
         </div>
       </div>
 
@@ -112,9 +123,13 @@ export default function PlansPage() {
       acc.total += 1;
       if (plan.ativo) acc.active += 1;
       acc.revenue += Number(plan.valor || 0);
-      acc.avgDuration += Number(plan.duracao_dias || 0);
+      if (String(plan.duration_unit || '').toLowerCase() === 'months') {
+        acc.monthBased += 1;
+      } else {
+        acc.dayBased += 1;
+      }
       return acc;
-    }, { total: 0, active: 0, revenue: 0, avgDuration: 0 });
+    }, { total: 0, active: 0, revenue: 0, monthBased: 0, dayBased: 0 });
   }, [plans]);
 
   const openCreate = () => {
@@ -132,7 +147,14 @@ export default function PlansPage() {
       toast.error('Sem permissao para editar plano.');
       return;
     }
-    setForm({ nome: plan.nome, valor: String(plan.valor), duracao_dias: String(plan.duracao_dias), descricao: plan.descricao || '', ativo: plan.ativo });
+    setForm({
+      nome: plan.nome,
+      valor: String(plan.valor),
+      duration_value: String(plan.duration_value || plan.duracao_dias || ''),
+      duration_unit: plan.duration_unit || 'days',
+      descricao: plan.descricao || '',
+      ativo: plan.ativo,
+    });
     setEditId(plan.plan_id);
     setFormOpen(true);
   };
@@ -147,7 +169,8 @@ export default function PlansPage() {
     const payload = {
       ...form,
       valor: parseFloat(form.valor),
-      duracao_dias: parseInt(form.duracao_dias, 10),
+      duration_value: parseInt(form.duration_value, 10),
+      duration_unit: form.duration_unit,
     };
     try {
       if (editId) {
@@ -203,7 +226,7 @@ export default function PlansPage() {
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Planos" value={summary.total} hint={`${summary.active} ativos`} icon={Tag} accent="info" />
         <StatCard label="Preco acumulado" value={formatMoney(summary.revenue)} hint="Soma dos valores cadastrados" icon={Wallet} accent="success" />
-        <StatCard label="Duracao media" value={summary.total ? `${Math.round(summary.avgDuration / summary.total)} dias` : '-'} hint="Media simples da base" icon={Timer} accent="info" />
+        <StatCard label="Planos mensais" value={summary.monthBased} hint={`${summary.dayBased} com duracao em dias`} icon={Timer} accent="info" />
         <StatCard label="Visiveis no filtro" value={filteredPlans.length} hint="Resultados conforme busca e status" icon={Tag} accent="default" />
       </div>
 
@@ -234,7 +257,7 @@ export default function PlansPage() {
         open={formOpen}
         onClose={() => setFormOpen(false)}
         title={editId ? 'Editar plano' : 'Novo plano'}
-        description="Defina nome, valor, duracao e disponibilidade comercial deste plano."
+        description="Defina nome, valor, quantidade, unidade e disponibilidade comercial deste plano."
         actions={
           <>
             <Button type="button" variant="ghost" onClick={() => setFormOpen(false)}>Cancelar</Button>
@@ -245,7 +268,14 @@ export default function PlansPage() {
         <form id="plan-form" onSubmit={handleSave} className="grid gap-4 md:grid-cols-2">
           <TextField label="Nome" value={form.nome} onChange={(event) => setForm((prev) => ({ ...prev, nome: event.target.value }))} required className="md:col-span-2" />
           <TextField label="Valor (R$)" type="number" step="0.01" value={form.valor} onChange={(event) => setForm((prev) => ({ ...prev, valor: event.target.value }))} required />
-          <TextField label="Duracao (dias)" type="number" value={form.duracao_dias} onChange={(event) => setForm((prev) => ({ ...prev, duracao_dias: event.target.value }))} required />
+          <TextField label="Quantidade" type="number" min="1" value={form.duration_value} onChange={(event) => setForm((prev) => ({ ...prev, duration_value: event.target.value }))} required />
+          <SelectField label="Unidade" value={form.duration_unit} onChange={(event) => setForm((prev) => ({ ...prev, duration_unit: event.target.value }))}>
+            <option value="days">Dias</option>
+            <option value="months">Meses</option>
+          </SelectField>
+          <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300 md:col-span-2">
+            Resumo: <span className="font-semibold text-zinc-100">{formatDurationLabel(form.duration_value, form.duration_unit)}</span>
+          </div>
           <label className="block space-y-1.5 md:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Descricao</span>
             <textarea value={form.descricao} onChange={(event) => setForm((prev) => ({ ...prev, descricao: event.target.value }))} rows={4} className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]" />

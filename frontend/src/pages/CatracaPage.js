@@ -224,6 +224,7 @@ export default function CatracaPage() {
   const [manualReleaseSelectedStudent, setManualReleaseSelectedStudent] = useState(null);
   const [manualReleaseReason, setManualReleaseReason] = useState('');
   const [manualReleaseSubmitting, setManualReleaseSubmitting] = useState(false);
+  const [quickReleaseSubmitting, setQuickReleaseSubmitting] = useState(false);
 
   const openTokenPanel = (payload) => {
     if (!payload?.fields?.length) return;
@@ -408,12 +409,7 @@ export default function CatracaPage() {
         student_id: manualReleaseSelectedStudent.student_id,
         student_name: manualReleaseSelectedStudent.nome || manualReleaseSelectedStudent.name || '',
         direction,
-        release_direction: direction,
         reason,
-        scope: 'student_daily',
-        duration_days: 1,
-        time_zone: SAO_PAULO_TIME_ZONE,
-        requested_by_role: role,
         source: 'frontend_operational_manual_release',
       });
       toast.success(
@@ -428,6 +424,29 @@ export default function CatracaPage() {
       toast.error(err?.message || 'Falha ao solicitar liberacao manual.');
     } finally {
       setManualReleaseSubmitting(false);
+    }
+  };
+
+  const submitQuickRelease = async (direction) => {
+    if (!canIssueCommands) {
+      toast.error('Seu perfil nao pode liberar acesso manualmente.');
+      return;
+    }
+
+    setQuickReleaseSubmitting(true);
+    try {
+      await api.turnstileQuickRelease({
+        direction,
+        source: 'frontend_operational_quick_release',
+      });
+      toast.success(
+        `${direction === 'entry' ? 'Liberacao rapida de entrada' : 'Liberacao rapida de saida'} enviada para a catraca.`
+      );
+      await load({ silent: true });
+    } catch (err) {
+      toast.error(err?.message || 'Falha ao solicitar liberacao rapida.');
+    } finally {
+      setQuickReleaseSubmitting(false);
     }
   };
 
@@ -600,8 +619,8 @@ export default function CatracaPage() {
       </SectionCard>
 
       <SectionCard
-        title="Liberacao manual operacional"
-        description="Atalho isolado para alunos diarios sem biometria cadastrada. Exige motivo e permanece auditavel."
+        title="Liberacao manual assistida por aluno"
+        description="Fluxo auditavel para casos assistidos por aluno. Mantem selecao do cadastro e justificativa obrigatoria."
       >
         <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
           <div className="space-y-3">
@@ -612,7 +631,7 @@ export default function CatracaPage() {
               aria-label="Buscar aluno para liberacao manual"
             />
             <p className="text-xs text-zinc-500">
-              Digite nome, matricula ou parte do cadastro. A liberacao manual e separada do controle global da catraca.
+              Digite nome, matricula ou parte do cadastro. Este fluxo continua separado da liberacao rapida e do controle global da catraca.
             </p>
             <div className="max-h-72 space-y-2 overflow-auto pr-1">
               {manualReleaseLoading ? (
@@ -689,7 +708,7 @@ export default function CatracaPage() {
               <textarea
                 value={manualReleaseReason}
                 onChange={(event) => setManualReleaseReason(event.target.value)}
-                placeholder="Ex.: aluno diario sem biometria para entrada assistida"
+                placeholder="Ex.: aluno sem biometria no atendimento presencial"
                 rows={4}
                 className="min-h-[110px] w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
               />
@@ -725,8 +744,42 @@ export default function CatracaPage() {
             </div>
 
             <p className="text-xs text-zinc-500">
-              Uso reservado para alunos diarios no dia corrente em {SAO_PAULO_TIME_ZONE}. Cada liberacao precisa de justificativa.
+              Cada liberacao assistida continua exigindo justificativa e fica auditada na semantica operacional de {SAO_PAULO_TIME_ZONE}.
             </p>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Liberacao rapida"
+        description="Fluxo operacional imediato, sem aluno e sem justificativa obrigatoria. Continua auditavel com operador, horario, dispositivo e origem."
+      >
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
+          <div className="space-y-2">
+            <p className="text-sm text-zinc-300">
+              Use este atalho quando a operacao precisar apenas comandar a catraca agora, sem vincular aluno.
+            </p>
+            <p className="text-xs text-zinc-500">
+              O comando segue com origem explicita, direcao e horario operacional em {SAO_PAULO_TIME_ZONE}.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => submitQuickRelease('entry')}
+              disabled={!canIssueCommands || quickReleaseSubmitting}
+            >
+              Liberar entrada
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => submitQuickRelease('exit')}
+              disabled={!canIssueCommands || quickReleaseSubmitting}
+            >
+              Liberar saida
+            </Button>
           </div>
         </div>
       </SectionCard>

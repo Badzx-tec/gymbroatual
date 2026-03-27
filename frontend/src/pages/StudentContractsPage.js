@@ -17,7 +17,10 @@ import ContractsFilters from './contracts/ContractsFilters';
 import ContractsOverview from './contracts/ContractsOverview';
 import ContractsTable from './contracts/ContractsTable';
 import {
+  calculateContractEndAt,
+  formatDate,
   formatContractValueBreakdown,
+  formatDurationLabel,
   toIsoDate,
   toLocalDateInput,
 } from './contracts/contractsUtils';
@@ -37,9 +40,11 @@ const createFormDefault = {
   plan_id: '',
   amount: '',
   discount_amount: '',
-  duration_days: '',
+  duration_value: '',
+  duration_unit: 'days',
   start_at: '',
   end_at: '',
+  billing_day: '',
   auto_renew: false,
   create_initial_charge: true,
   payment_method: 'pix',
@@ -508,6 +513,10 @@ export default function StudentContractsPage() {
       kind,
       payload,
       pauseDays: '7',
+      validityEndAt: toLocalDateInput(payload.current_period_end || ''),
+      billingDueAt: toLocalDateInput(payload.next_charge_due_at || payload.next_billing_at || ''),
+      billingDay: payload.billing_day ? String(payload.billing_day) : '',
+      updateOpenCharges: true,
       includeFutureOpen: false,
       cancelMode: 'end_of_cycle',
       settleMode: 'all_overdue',
@@ -577,6 +586,22 @@ export default function StudentContractsPage() {
     if (action === 'settle') {
       if (!canSettleOverdue) {
         toast.error('Sem permissao para colocar contrato em dia.');
+        return;
+      }
+      openActionDialog(action, row);
+      return;
+    }
+    if (action === 'adjustValidity') {
+      if (!canManageContractRules) {
+        toast.error('Somente Dono da academia ou Diretor pode ajustar validade.');
+        return;
+      }
+      openActionDialog(action, row);
+      return;
+    }
+    if (action === 'adjustBilling') {
+      if (!canManageContractRules) {
+        toast.error('Somente Dono da academia ou Diretor pode ajustar cobranca.');
         return;
       }
       openActionDialog(action, row);
@@ -750,6 +775,66 @@ export default function StudentContractsPage() {
       return;
     }
 
+    if (actionDialog.kind === 'adjustValidity') {
+      if (!contractId) {
+        toast.error('Contrato invalido.');
+        return;
+      }
+      const endAt = toIsoDate(actionDialog.validityEndAt);
+      if (!endAt) {
+        toast.error('Informe uma validade final valida.');
+        return;
+      }
+      const success = await runMutation(
+        () => api.adminAdjustContractValidity(contractId, {
+          end_at: endAt,
+          reason: 'ajuste manual de validade na central de contratos',
+        }),
+        'Validade do contrato atualizada.',
+        contractId
+      );
+      if (success) closeActionDialog();
+      return;
+    }
+
+    if (actionDialog.kind === 'adjustBilling') {
+      if (!contractId) {
+        toast.error('Contrato invalido.');
+        return;
+      }
+      const dueAt = actionDialog.billingDueAt ? toIsoDate(actionDialog.billingDueAt) : undefined;
+      const billingDay = actionDialog.billingDay ? Number(actionDialog.billingDay) : undefined;
+      if (!dueAt && !billingDay) {
+        toast.error('Informe um vencimento da cobranca e/ou um dia de cobranca.');
+        return;
+      }
+      setBusyAction(true);
+      try {
+        const response = await api.adminAdjustContractBilling(contractId, {
+          due_at: dueAt,
+          billing_day: billingDay,
+          update_open_charges: Boolean(actionDialog.updateOpenCharges),
+          reason: 'ajuste manual de cobranca na central de contratos',
+        });
+        const updatedCharges = Number(response?.updated_charges || 0);
+        toast.success(
+          updatedCharges > 0
+            ? `Cobranca ajustada. Titulos atualizados: ${updatedCharges}.`
+            : 'Configuracao de cobranca atualizada.'
+        );
+        await loadContracts();
+        if (detailData?.contract?.contract_id === contractId || queryState.contractId === contractId) {
+          await loadDetail(contractId);
+        }
+        closeActionDialog();
+      } catch (err) {
+        toast.error(err?.message || 'Falha ao ajustar cobranca.');
+      } finally {
+        setBusyAction(false);
+      }
+      return;
+    }
+
     if (actionDialog.kind === 'pause') {
       const days = Number(actionDialog.pauseDays);
       if (!contractId) {
@@ -840,15 +925,31 @@ export default function StudentContractsPage() {
     if (actionDialog.kind === 'settle') {
       return {
         title: 'Colocar contrato em dia',
-        description: 'Escolha a regra de baixa antes de confirmar a atualizacao financeira e de acesso.',
+        description: 'Escolha a regra de baixa antes de confirmar a atualizacao financeira. A validade do acesso nao muda aqui.',
         confirmLabel: 'Confirmar baixa',
+        confirmVariant: 'primary',
+      };
+    }
+    if (actionDialog.kind === 'adjustValidity') {
+      return {
+        title: 'Ajustar validade do contrato',
+        description: 'Altere apenas a vigencia de acesso. Essa acao nao reescreve vencimentos financeiros anteriores.',
+        confirmLabel: 'Salvar validade',
+        confirmVariant: 'primary',
+      };
+    }
+    if (actionDialog.kind === 'adjustBilling') {
+      return {
+        title: 'Ajustar cobranca',
+        description: 'Altere apenas o vencimento financeiro e/ou o dia de cobranca, sem mexer na validade do acesso.',
+        confirmLabel: 'Salvar cobranca',
         confirmVariant: 'primary',
       };
     }
     if (actionDialog.kind === 'pause') {
       return {
         title: 'Pausar contrato',
-        description: 'Defina quantos dias a vigencia deve ser empurrada para frente.',
+        description: 'Defina quantos dias a validade do contrato deve ser empurrada para frente.',
         confirmLabel: 'Aplicar pausa',
         confirmVariant: 'primary',
       };
@@ -888,7 +989,7 @@ export default function StudentContractsPage() {
       return (
         <div className="space-y-4">
           <p className="text-sm text-[var(--text-secondary)]">
-            Registre a baixa das cobrancas elegiveis deste contrato sem alterar o fluxo atual da catraca.
+            Registre a baixa das cobrancas elegiveis deste contrato sem alterar a validade do acesso.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <SelectField
@@ -1000,6 +1101,65 @@ export default function StudentContractsPage() {
         </div>
       );
     }
+    if (actionDialog.kind === 'adjustValidity') {
+      return (
+        <div className="space-y-4">
+          <TextField
+            label="Validade do contrato"
+            type="datetime-local"
+            value={actionDialog.validityEndAt}
+            onChange={(event) => setActionDialog((current) => ({
+              ...current,
+              validityEndAt: event.target.value,
+            }))}
+          />
+          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+            A data informada sera interpretada na semantica operacional de America/Sao_Paulo.
+          </div>
+        </div>
+      );
+    }
+    if (actionDialog.kind === 'adjustBilling') {
+      return (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField
+              label="Vencimento da cobranca"
+              type="datetime-local"
+              value={actionDialog.billingDueAt}
+              onChange={(event) => setActionDialog((current) => ({
+                ...current,
+                billingDueAt: event.target.value,
+              }))}
+            />
+            <TextField
+              label="Dia de cobranca"
+              type="number"
+              min="1"
+              max="28"
+              value={actionDialog.billingDay}
+              onChange={(event) => setActionDialog((current) => ({
+                ...current,
+                billingDay: event.target.value,
+              }))}
+              placeholder="10"
+            />
+          </div>
+          <label className="flex items-start gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+            <input
+              type="checkbox"
+              className="mt-1 accent-[var(--brand-primary)]"
+              checked={Boolean(actionDialog.updateOpenCharges)}
+              onChange={(event) => setActionDialog((current) => ({
+                ...current,
+                updateOpenCharges: event.target.checked,
+              }))}
+            />
+            <span>Atualizar tambem as cobrancas abertas ou vencidas ja existentes.</span>
+          </label>
+        </div>
+      );
+    }
     if (actionDialog.kind === 'pause') {
       return (
         <TextField
@@ -1067,18 +1227,27 @@ export default function StudentContractsPage() {
   const recalcCreateEndAt = useCallback((nextForm) => {
     if (manualEndEdited) return nextForm;
     const selectedPlan = plansById.get(nextForm.plan_id);
-    const duration = Number(nextForm.duration_days || selectedPlan?.duracao_dias || 0);
-    if (!nextForm.start_at || duration <= 0) return nextForm;
-    const startIso = toIsoDate(nextForm.start_at);
-    const start = startIso ? new Date(startIso) : null;
-    if (!start || Number.isNaN(start.getTime())) return nextForm;
-    const end = new Date(start.getTime());
-    end.setDate(end.getDate() + duration);
-    return { ...nextForm, end_at: toLocalDateInput(end.toISOString()) };
+    const durationUnit = nextForm.duration_unit || selectedPlan?.duration_unit || 'days';
+    const durationValue = Number(
+      nextForm.duration_value
+        || selectedPlan?.duration_value
+        || selectedPlan?.duracao_dias
+        || 0
+    );
+    if (!nextForm.start_at || durationValue <= 0) return nextForm;
+    const endAt = calculateContractEndAt(nextForm.start_at, durationUnit, durationValue);
+    return endAt ? { ...nextForm, end_at: endAt } : nextForm;
   }, [manualEndEdited, plansById]);
 
   const openCreateModal = () => {
-    setCreateForm({ ...createFormDefault, start_at: toLocalDateInput(new Date().toISOString()) });
+    const startAt = toLocalDateInput(new Date().toISOString());
+    const billingDay = String(
+      Math.min(
+        Math.max(Number(String(startAt).split('T')[0]?.split('-')[2] || 1), 1),
+        28
+      )
+    );
+    setCreateForm({ ...createFormDefault, start_at: startAt, billing_day: billingDay });
     setManualEndEdited(false);
     setCreateOpen(true);
   };
@@ -1104,9 +1273,11 @@ export default function StudentContractsPage() {
       plan_id: createForm.plan_id || undefined,
       amount: createForm.amount ? Number(createForm.amount) : undefined,
       discount_amount: createForm.discount_amount ? Number(createForm.discount_amount) : 0,
-      duration_days: createForm.duration_days ? Number(createForm.duration_days) : undefined,
+      duration_value: createForm.duration_value ? Number(createForm.duration_value) : undefined,
+      duration_unit: createForm.duration_unit || 'days',
       start_at: toIsoDate(createForm.start_at) || undefined,
       end_at: toIsoDate(createForm.end_at) || undefined,
+      billing_day: createForm.billing_day ? Number(createForm.billing_day) : undefined,
       auto_renew: Boolean(createForm.auto_renew),
       create_initial_charge: Boolean(createForm.create_initial_charge),
       payment_method: createForm.payment_method || undefined,
@@ -1135,6 +1306,20 @@ export default function StudentContractsPage() {
       amount: finalAmount,
     });
   }, [createForm.amount, createForm.discount_amount]);
+
+  const createDurationLabel = useMemo(() => {
+    const selectedPlan = plansById.get(createForm.plan_id);
+    return formatDurationLabel(
+      createForm.duration_value || selectedPlan?.duration_value,
+      createForm.duration_unit || selectedPlan?.duration_unit,
+      selectedPlan?.duracao_dias
+    );
+  }, [createForm.duration_unit, createForm.duration_value, createForm.plan_id, plansById]);
+
+  const createEndPreviewLabel = useMemo(() => {
+    const endAtIso = toIsoDate(createForm.end_at);
+    return endAtIso ? formatDate(endAtIso) : '-';
+  }, [createForm.end_at]);
 
   return (
     <div className="space-y-6">
@@ -1296,7 +1481,7 @@ export default function StudentContractsPage() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         title="Novo contrato"
-        description="Cadastro rapido com calculo automatico de vigencia e configuracao da primeira cobranca."
+        description="Cadastro rapido com calculo automatico da validade em America/Sao_Paulo e configuracao financeira separada."
         size="lg"
         actions={
           <>
@@ -1331,8 +1516,15 @@ export default function StudentContractsPage() {
             onChange={(event) => {
               const next = { ...createForm, plan_id: event.target.value };
               const plan = plansById.get(event.target.value);
-              if (plan?.duracao_dias && !createForm.duration_days) next.duration_days = String(plan.duracao_dias);
+              if ((plan?.duration_value || plan?.duracao_dias) && !createForm.duration_value) {
+                next.duration_value = String(plan.duration_value || plan.duracao_dias);
+                next.duration_unit = plan.duration_unit || 'days';
+              }
               if (plan?.valor && !createForm.amount) next.amount = String(plan.valor);
+              if (plan && !createForm.billing_day && next.start_at) {
+                const startDay = Number(String(next.start_at).split('T')[0]?.split('-')[2] || 1);
+                next.billing_day = String(Math.min(Math.max(startDay, 1), 28));
+              }
               setCreateForm(recalcCreateEndAt(next));
             }}
           >
@@ -1377,23 +1569,32 @@ export default function StudentContractsPage() {
           />
 
           <TextField
-            label="Duracao em dias"
+            label="Quantidade"
             type="number"
             min="1"
-            value={createForm.duration_days}
-            onChange={(event) => setCreateForm((prev) => recalcCreateEndAt({ ...prev, duration_days: event.target.value }))}
-            placeholder="30"
+            value={createForm.duration_value}
+            onChange={(event) => setCreateForm((prev) => recalcCreateEndAt({ ...prev, duration_value: event.target.value }))}
+            placeholder="1"
           />
 
+          <SelectField
+            label="Unidade de duracao"
+            value={createForm.duration_unit}
+            onChange={(event) => setCreateForm((prev) => recalcCreateEndAt({ ...prev, duration_unit: event.target.value }))}
+          >
+            <option value="days">Dias</option>
+            <option value="months">Meses</option>
+          </SelectField>
+
           <TextField
-            label="Inicio"
+            label="Inicio da validade"
             type="datetime-local"
             value={createForm.start_at}
             onChange={(event) => setCreateForm((prev) => recalcCreateEndAt({ ...prev, start_at: event.target.value }))}
           />
 
           <TextField
-            label="Fim"
+            label="Validade do contrato"
             type="datetime-local"
             value={createForm.end_at}
             onChange={(event) => {
@@ -1401,6 +1602,22 @@ export default function StudentContractsPage() {
               setCreateForm((prev) => ({ ...prev, end_at: event.target.value }));
             }}
           />
+
+          <TextField
+            label="Dia de cobranca"
+            type="number"
+            min="1"
+            max="28"
+            value={createForm.billing_day}
+            onChange={(event) => setCreateForm((prev) => ({ ...prev, billing_day: event.target.value }))}
+            placeholder="10"
+          />
+
+          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Resumo de vigencia</p>
+            <p className="mt-2 text-sm text-[var(--text-primary)]">{createDurationLabel}</p>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">Fim calculado: {createEndPreviewLabel}</p>
+          </div>
 
           <label className="flex items-start gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
             <input
@@ -1428,7 +1645,7 @@ export default function StudentContractsPage() {
 
           <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 md:col-span-2">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
-              Resumo financeiro
+              Resumo financeiro e de vigencia
             </p>
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <div>
@@ -1444,6 +1661,20 @@ export default function StudentContractsPage() {
               <div>
                 <p className="text-xs text-[var(--text-muted)]">Valor final</p>
                 <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{createValueBreakdown.finalLabel}</p>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div>
+                <p className="text-xs text-[var(--text-muted)]">Duracao</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{createDurationLabel}</p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--text-muted)]">Validade final</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{createEndPreviewLabel}</p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--text-muted)]">Dia de cobranca</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{createForm.billing_day || '-'}</p>
               </div>
             </div>
           </div>

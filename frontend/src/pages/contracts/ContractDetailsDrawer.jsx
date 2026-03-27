@@ -12,6 +12,7 @@ import {
   financialBadge,
   formatDate,
   formatContractValueBreakdown,
+  formatDurationLabel,
   normalizeEventLabel,
 } from './contractsUtils';
 
@@ -112,8 +113,10 @@ export default function ContractDetailsDrawer({
               <BadgeRow contract={contract} />
               <div className="grid gap-2 text-sm text-zinc-400">
                 <p>Aluno: {contract.student_id}</p>
-                <p>Vigencia: {formatDate(contract.current_period_start)} ate {formatDate(contract.current_period_end)}</p>
-                <p>Proxima cobranca: {formatDate(contract.next_charge_due_at)}</p>
+                <p>Validade do contrato: {formatDate(contract.current_period_start)} ate {formatDate(contract.current_period_end)}</p>
+                <p>Vencimento da cobranca: {formatDate(contract.next_charge_due_at || contract.next_billing_at)}</p>
+                <p>Dia de cobranca: {contract.billing_day || '-'}</p>
+                <p>Duracao: {formatDurationLabel(contract.duration_value, contract.duration_unit, contract.duration_days)}</p>
                 <p>Atualizado em {formatDate(contract.updated_at)}</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-3">
@@ -132,9 +135,25 @@ export default function ContractDetailsDrawer({
                   <p className="mt-1 text-sm font-semibold text-zinc-100">{valueBreakdown.finalLabel}</p>
                 </div>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
                 <Button variant="secondary" size="sm" onClick={() => onAction('renew', contract)}>
                   Renovar
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!canManageContractRules}
+                  onClick={() => onAction('adjustValidity', contract)}
+                >
+                  Ajustar validade
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!canManageContractRules}
+                  onClick={() => onAction('adjustBilling', contract)}
+                >
+                  Ajustar cobranca
                 </Button>
                 <Button
                   variant="secondary"

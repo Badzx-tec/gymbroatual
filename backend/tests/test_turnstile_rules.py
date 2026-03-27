@@ -727,6 +727,8 @@ async def test_manual_release_flow_for_daily_student_is_claimed_and_acknowledged
                 "gym_id": "gym_1",
                 "student_id": "std_daily",
                 "student_name": "Aluno Diario",
+                "duration_unit": "days",
+                "duration_value": 1,
                 "duration_days": 1,
                 "contract_status": "active",
                 "financial_status": "paid",
@@ -786,3 +788,76 @@ async def test_manual_release_flow_for_daily_student_is_claimed_and_acknowledged
     assert acknowledged["status"] == "executed"
     assert command["status"] == "executed"
     assert len(db.audit_logs.docs) == 1
+
+
+def test_daily_contract_eligibility_uses_sao_paulo_day_boundary():
+    now = datetime(2026, 3, 26, 2, 30, tzinfo=timezone.utc)
+    contract = {
+        "duration_unit": "days",
+        "duration_value": 1,
+        "duration_days": 1,
+        "contract_status": "active",
+        "financial_status": "paid",
+        "access_status": "allowed",
+        "current_period_start": datetime(2026, 3, 25, 3, 0, tzinfo=timezone.utc),
+        "current_period_end": datetime(2026, 3, 26, 2, 59, 59, tzinfo=timezone.utc),
+    }
+
+    allowed, reason = turnstiles._is_daily_contract_eligible(contract, now=now)
+
+    assert allowed is True
+    assert reason == "ok"
+
+
+@pytest.mark.asyncio
+async def test_quick_release_flow_is_claimed_and_acknowledged(monkeypatch):
+    db = _FakeDb()
+    db.catraca_commands = _FakeCollection([])
+    db.audit_logs = _FakeCollection([])
+
+    async def fake_gateway_auth(*_args, **_kwargs):
+        return {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"}
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_device_channel", fake_gateway_auth)
+
+    created = await turnstiles.create_quick_turnstile_release(
+        payload=turnstiles.QuickReleaseCreateIn(
+            direction="exit",
+            source="frontend_operational_quick_release",
+        ),
+        actor={
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "role": "RECEPTION",
+            "actor_type": "employee",
+            "employee_id": "emp_1",
+        },
+    )
+
+    pulled = await turnstiles.pull_manual_turnstile_release(
+        device_id="dev_1",
+        request=_DummyRequest(),
+        x_device_token="token",
+    )
+    acknowledged = await turnstiles.acknowledge_manual_turnstile_release(
+        device_id="dev_1",
+        release_id=created["cmd_id"],
+        payload={"status": "executed", "success": True},
+        request=_DummyRequest(),
+        x_device_token="token",
+    )
+
+    command = await db.catraca_commands.find_one({"cmd_id": created["cmd_id"]})
+
+    assert created["status"] == "pending"
+    assert created["direction"] == "exit"
+    assert pulled["release_id"] == created["cmd_id"]
+    assert pulled["direction"] == "exit"
+    assert pulled["student_id"] is None
+    assert pulled["command_type"] == "quick_turnstile_release"
+    assert acknowledged["status"] == "executed"
+    assert command["action"] == "quick_release_exit"
+    assert command["status"] == "executed"
+    assert len(db.audit_logs.docs) == 1
+    assert db.audit_logs.docs[0]["event"] == "turnstile.quick_release.created"

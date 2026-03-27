@@ -70,6 +70,14 @@ function parseDateOnly(value) {
   return { year, month, day };
 }
 
+function padDateToken(value) {
+  return String(value).padStart(2, '0');
+}
+
+function daysInMonth(year, month) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
 function localPartsToUtcIso(parts, timeZone = SAO_PAULO_TIME_ZONE) {
   if (!parts) return null;
   const utcGuess = new Date(
@@ -119,6 +127,39 @@ export function toDateTimeLocalInTimeZone(value, { timeZone = SAO_PAULO_TIME_ZON
 export function dateTimeLocalToIsoInTimeZone(value, { timeZone = SAO_PAULO_TIME_ZONE } = {}) {
   const parts = parseDateTimeLocal(value);
   return localPartsToUtcIso(parts, timeZone);
+}
+
+export function addDurationToDateTimeLocalInTimeZone(
+  value,
+  {
+    durationUnit = 'days',
+    durationValue = 0,
+    timeZone = SAO_PAULO_TIME_ZONE,
+  } = {}
+) {
+  const safeDuration = Number(durationValue);
+  if (!value || !Number.isFinite(safeDuration) || safeDuration <= 0) return '';
+  const normalizedUnit = String(durationUnit || 'days').toLowerCase() === 'months' ? 'months' : 'days';
+
+  if (normalizedUnit === 'months') {
+    const parts = parseDateTimeLocal(value);
+    if (!parts) return '';
+    const monthIndex = (parts.month - 1) + safeDuration;
+    const nextYear = parts.year + Math.floor(monthIndex / 12);
+    const nextMonth = (monthIndex % 12) + 1;
+    const nextDay = Math.min(parts.day, daysInMonth(nextYear, nextMonth));
+    return [
+      `${nextYear}-${padDateToken(nextMonth)}-${padDateToken(nextDay)}`,
+      `${padDateToken(parts.hour || 0)}:${padDateToken(parts.minute || 0)}`,
+    ].join('T');
+  }
+
+  const startIso = dateTimeLocalToIsoInTimeZone(value, { timeZone });
+  const startDate = toDate(startIso);
+  if (!isValidDate(startDate)) return '';
+  const endDate = new Date(startDate.getTime());
+  endDate.setUTCDate(endDate.getUTCDate() + safeDuration);
+  return toDateTimeLocalInTimeZone(endDate.toISOString(), { timeZone });
 }
 
 export function dateInputToIsoRangeStart(value, { timeZone = SAO_PAULO_TIME_ZONE } = {}) {

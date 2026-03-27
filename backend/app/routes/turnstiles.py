@@ -66,6 +66,7 @@ WEEKDAY_NAMES = {
 }
 MANUAL_RELEASE_DIRECTION_VALUES = {"entry", "exit"}
 MANUAL_RELEASE_STATUSES = {"pending", "claimed", "executed", "failed", "expired"}
+RELEASE_COMMAND_TYPES = {"manual_turnstile_release", "quick_turnstile_release"}
 
 
 class ManualReleaseCreateIn(BaseModel):
@@ -73,6 +74,13 @@ class ManualReleaseCreateIn(BaseModel):
     direction: Literal["entry", "exit"]
     reason: str = Field(min_length=3, max_length=240)
     device_id: str | None = Field(default=None, max_length=120)
+    source: str | None = Field(default=None, max_length=120)
+
+
+class QuickReleaseCreateIn(BaseModel):
+    direction: Literal["entry", "exit"]
+    device_id: str | None = Field(default=None, max_length=120)
+    source: str | None = Field(default=None, max_length=120)
 
 
 def _normalize_direction(value) -> str:
@@ -888,11 +896,23 @@ def _manual_release_message(student_name: str | None, direction: str) -> str:
     return f"ENTRADA {str(student_name or 'ALUNO').strip()[:7].upper()}"
 
 
+def _quick_release_message(direction: str) -> str:
+    normalized_direction = _normalize_direction(direction)
+    if normalized_direction == DIRECTION_EXIT:
+        return "SAIDA LIVRE"
+    return "ENTRADA LIVRE"
+
+
+def _normalize_release_source(value, *, default: str) -> str:
+    normalized = str(value or "").strip()
+    return normalized[:120] if normalized else default
+
+
 async def _expire_manual_release_commands(*, owner_id: str | None = None, now: datetime | None = None) -> int:
     db = get_db()
     current_now = now or datetime.now(UTC)
     query: dict = {
-        "command_type": "manual_turnstile_release",
+        "command_type": {"$in": sorted(RELEASE_COMMAND_TYPES)},
         "status": {"$in": ["pending", "claimed"]},
         "expires_at": {"$lte": current_now},
     }
@@ -912,7 +932,7 @@ async def _expire_manual_release_commands(*, owner_id: str | None = None, now: d
         result = await db.catraca_commands.update_one(
             {
                 "cmd_id": cmd_id,
-                "command_type": "manual_turnstile_release",
+                "command_type": {"$in": sorted(RELEASE_COMMAND_TYPES)},
                 "status": {"$in": ["pending", "claimed"]},
             },
             {
@@ -988,7 +1008,7 @@ async def _claim_next_manual_release(
         await db.catraca_commands.find(
             {
                 "owner_id": device["owner_id"],
-                "command_type": "manual_turnstile_release",
+                "command_type": {"$in": sorted(RELEASE_COMMAND_TYPES)},
                 "status": "pending",
                 "expires_at": {"$gt": now},
                 "$or": [
@@ -1011,7 +1031,7 @@ async def _claim_next_manual_release(
             {
                 "cmd_id": cmd_id,
                 "status": "pending",
-                "command_type": "manual_turnstile_release",
+                "command_type": {"$in": sorted(RELEASE_COMMAND_TYPES)},
             },
             {
                 "$set": {
@@ -1175,6 +1195,10 @@ async def create_manual_turnstile_release(
 
     expires_at = now + timedelta(seconds=45)
     message = _manual_release_message(student.get("nome"), release_direction)
+    source = _normalize_release_source(
+        payload.source,
+        default="frontend_operational_manual_release",
+    )
     doc = {
         "cmd_id": f"cmd_{secrets.token_hex(6)}",
         "owner_id": actor["owner_id"],
@@ -1186,6 +1210,7 @@ async def create_manual_turnstile_release(
         "status": "pending",
         "command_type": "manual_turnstile_release",
         "release_direction": release_direction,
+        "source": source,
         "student_id": student["student_id"],
         "student_name": student.get("nome"),
         "contract_id": (latest_contract or {}).get("contract_id"),
@@ -1199,6 +1224,8 @@ async def create_manual_turnstile_release(
             "contract_status": (latest_contract or {}).get("contract_status"),
             "financial_status": (latest_contract or {}).get("financial_status"),
             "access_status": (latest_contract or {}).get("access_status"),
+            "duration_unit": (latest_contract or {}).get("duration_unit"),
+            "duration_value": (latest_contract or {}).get("duration_value"),
             "duration_days": (latest_contract or {}).get("duration_days"),
             "student_access_reason": reason,
             "student_access_detail": details,
@@ -1215,6 +1242,8 @@ async def create_manual_turnstile_release(
             "contract_id": (latest_contract or {}).get("contract_id"),
             "direction": release_direction,
             "reason": payload.reason,
+            "device_id": str(payload.device_id or "").strip() or None,
+            "source": source,
             "actor_id": actor.get("employee_id") or actor.get("owner_id"),
             "actor_role": str(actor.get("role") or "").upper() or None,
             "created_at": now,
@@ -1229,6 +1258,72 @@ async def create_manual_turnstile_release(
         "contract_id": (latest_contract or {}).get("contract_id"),
         "expires_at": expires_at,
         "message": message,
+        "source": source,
+    }
+
+
+@router.post("/quick-releases")
+async def create_quick_turnstile_release(
+    payload: QuickReleaseCreateIn,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER", "RECEPTION")),
+):
+    now = datetime.now(UTC)
+    release_direction = _normalize_direction(payload.direction)
+    if release_direction not in MANUAL_RELEASE_DIRECTION_VALUES:
+        raise HTTPException(status_code=400, detail="direction invalida")
+
+    db = get_db()
+    expires_at = now + timedelta(seconds=45)
+    message = _quick_release_message(release_direction)
+    source = _normalize_release_source(
+        payload.source,
+        default="frontend_operational_quick_release",
+    )
+    doc = {
+        "cmd_id": f"cmd_{secrets.token_hex(6)}",
+        "owner_id": actor["owner_id"],
+        "gym_id": actor.get("gym_id"),
+        "device_id": str(payload.device_id or "").strip() or None,
+        "action": f"quick_release_{release_direction}",
+        "target_scope": "operational",
+        "message": message,
+        "status": "pending",
+        "command_type": "quick_turnstile_release",
+        "release_direction": release_direction,
+        "source": source,
+        "student_id": None,
+        "student_name": None,
+        "contract_id": None,
+        "reason": None,
+        "actor_type": actor.get("actor_type", "owner"),
+        "actor_role": str(actor.get("role") or "").upper() or None,
+        "actor_id": actor.get("employee_id") or actor.get("owner_id"),
+        "expires_at": expires_at,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.catraca_commands.insert_one(doc)
+    await db.audit_logs.insert_one(
+        {
+            "owner_id": actor["owner_id"],
+            "gym_id": actor.get("gym_id"),
+            "event": "turnstile.quick_release.created",
+            "direction": release_direction,
+            "device_id": str(payload.device_id or "").strip() or None,
+            "source": source,
+            "actor_type": actor.get("actor_type", "owner"),
+            "actor_id": actor.get("employee_id") or actor.get("owner_id"),
+            "actor_role": str(actor.get("role") or "").upper() or None,
+            "created_at": now,
+        }
+    )
+    return {
+        "cmd_id": doc["cmd_id"],
+        "status": doc["status"],
+        "direction": release_direction,
+        "expires_at": expires_at,
+        "message": message,
+        "source": source,
     }
 
 
@@ -1256,6 +1351,8 @@ async def pull_manual_turnstile_release(
         "student_id": command.get("student_id"),
         "student_name": command.get("student_name"),
         "expires_at": command.get("expires_at"),
+        "source": command.get("source"),
+        "command_type": command.get("command_type"),
     }
 
 
@@ -1276,11 +1373,11 @@ async def acknowledge_manual_turnstile_release(
         source_ip=source_ip,
     )
     current = await db.catraca_commands.find_one(
-        {"cmd_id": release_id, "command_type": "manual_turnstile_release"},
+        {"cmd_id": release_id, "command_type": {"$in": sorted(RELEASE_COMMAND_TYPES)}},
         {"_id": 0},
     )
     if not current:
-        raise HTTPException(status_code=404, detail="Liberacao manual nao encontrada")
+        raise HTTPException(status_code=404, detail="Liberacao nao encontrada")
     if str(current.get("claimed_by_device_id") or "") not in {"", device_id}:
         raise HTTPException(status_code=409, detail="Liberacao vinculada a outro dispositivo")
 
@@ -1289,7 +1386,7 @@ async def acknowledge_manual_turnstile_release(
         next_status = "executed" if bool(payload.get("success", True)) else "failed"
 
     await db.catraca_commands.update_one(
-        {"cmd_id": release_id, "command_type": "manual_turnstile_release"},
+        {"cmd_id": release_id, "command_type": {"$in": sorted(RELEASE_COMMAND_TYPES)}},
         {
             "$set": {
                 "status": next_status,

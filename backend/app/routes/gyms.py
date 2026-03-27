@@ -320,6 +320,8 @@ async def list_plans_public():
             "plan_id": "owner_monthly",
             "nome": "GymBro SaaS",
             "valor": 139.9,
+            "duration_unit": "days",
+            "duration_value": 30,
             "duracao_dias": 30,
             "descricao": "Plano mensal do dono da academia",
         }
@@ -359,6 +361,7 @@ async def update_plan(
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
     if not normalized:
         raise HTTPException(status_code=400, detail="Nenhum campo valido para atualizar")
+    normalized["updated_at"] = datetime.now(UTC)
 
     result = await db.plans.update_one(
         {"plan_id": plan_id, "owner_id": owner["owner_id"]}, {"$set": normalized}

@@ -1,3 +1,4 @@
+from calendar import monthrange
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
@@ -77,3 +78,18 @@ def sao_paulo_month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
     else:
         next_month = datetime(year, month + 1, 1, tzinfo=SAO_PAULO_TZ)
     return month_start.astimezone(UTC), (next_month.astimezone(UTC) - datetime.resolution)
+
+
+def add_sao_paulo_calendar_months(value, months: int) -> datetime | None:
+    parsed = coerce_datetime_utc(value)
+    if not parsed:
+        return None
+
+    local_value = parsed.astimezone(SAO_PAULO_TZ)
+    safe_months = int(months or 0)
+    month_index = (local_value.month - 1) + safe_months
+    year = local_value.year + (month_index // 12)
+    month = (month_index % 12) + 1
+    day = min(local_value.day, monthrange(year, month)[1])
+    shifted_local = local_value.replace(year=year, month=month, day=day)
+    return shifted_local.astimezone(UTC)

@@ -1,8 +1,8 @@
 import secrets
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, timedelta
 
 from app.core.config import get_settings
-from app.core.time import UTC
+from app.core.time import UTC, add_sao_paulo_calendar_months, coerce_datetime_utc
 
 TERMINAL_CONTRACT_STATUSES = {"canceled", "expired", "ended"}
 MANAGEABLE_CONTRACT_STATUSES = {
@@ -22,6 +22,8 @@ ACTIVE_LIKE_CONTRACT_STATUSES = {
 }
 AUTO_STATUS_SOURCE_FINANCIAL = "financeiro_inadimplente"
 MIN_CONTRACT_AMOUNT = 0.01
+DEFAULT_DURATION_DAYS = 30
+DEFAULT_DURATION_UNIT = "days"
 
 
 def student_billing_grace_days() -> int:
@@ -67,36 +69,83 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def coerce_datetime_utc(value) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            return value.replace(tzinfo=UTC)
-        return value.astimezone(UTC)
-    if isinstance(value, date):
-        return datetime.combine(value, time.min, tzinfo=UTC)
-    if isinstance(value, str):
-        raw = value.strip()
-        if not raw:
-            return None
-        try:
-            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        except ValueError:
-            try:
-                parsed_date = date.fromisoformat(raw)
-            except ValueError:
-                return None
-            parsed = datetime.combine(parsed_date, time.min)
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=UTC)
-        return parsed.astimezone(UTC)
-    return None
+def normalize_duration_unit(value) -> str:
+    raw = str(value or "").strip().lower()
+    if raw == "months":
+        return "months"
+    return DEFAULT_DURATION_UNIT
 
 
-def period_end(start: datetime, duration_days: int | None) -> datetime:
-    safe_days = max(1, int(duration_days or 1))
-    return start + timedelta(days=safe_days)
+def resolve_duration_fields(
+    *,
+    duration_unit=None,
+    duration_value=None,
+    duration_days=None,
+    default_days: int | None = DEFAULT_DURATION_DAYS,
+) -> tuple[str, int]:
+    if duration_value is None:
+        if duration_days is not None:
+            duration_value = duration_days
+            duration_unit = duration_unit or "days"
+        else:
+            duration_value = default_days or DEFAULT_DURATION_DAYS
+            duration_unit = duration_unit or DEFAULT_DURATION_UNIT
+    unit = normalize_duration_unit(duration_unit)
+    safe_value = max(1, int(duration_value or 1))
+    return unit, safe_value
+
+
+def duration_days_compatibility(
+    *,
+    start: datetime | None,
+    duration_unit: str,
+    duration_value: int,
+) -> int:
+    if normalize_duration_unit(duration_unit) == "days":
+        return max(1, int(duration_value or 1))
+    if not start:
+        return max(1, int(duration_value or 1) * 30)
+    computed_end = period_end(
+        start,
+        duration_unit=duration_unit,
+        duration_value=duration_value,
+    )
+    return max(1, int((computed_end - start).total_seconds() // 86400))
+
+
+def billing_cycle_from_duration_fields(*, duration_unit: str, duration_value: int) -> str:
+    normalized_unit = normalize_duration_unit(duration_unit)
+    safe_value = max(1, int(duration_value or 1))
+    if normalized_unit == "months":
+        if safe_value == 1:
+            return "monthly"
+        if safe_value == 3:
+            return "quarterly"
+        if safe_value == 6:
+            return "semiannual"
+        if safe_value == 12:
+            return "annual"
+        return "custom_days"
+    return billing_cycle_from_duration(safe_value)
+
+
+def period_end(
+    start: datetime,
+    duration_days: int | None = None,
+    *,
+    duration_unit: str | None = None,
+    duration_value: int | None = None,
+) -> datetime:
+    safe_start = coerce_datetime_utc(start) or utc_now()
+    resolved_unit, resolved_value = resolve_duration_fields(
+        duration_unit=duration_unit,
+        duration_value=duration_value,
+        duration_days=duration_days,
+    )
+    if resolved_unit == "months":
+        shifted = add_sao_paulo_calendar_months(safe_start, resolved_value)
+        return shifted or safe_start
+    return safe_start + timedelta(days=resolved_value)
 
 
 def resolve_contract_amounts(
@@ -332,10 +381,24 @@ def normalize_contract_document(contract: dict, *, now: datetime | None = None) 
     start = coerce_datetime_utc(
         normalized.get("current_period_start") or normalized.get("start_at") or normalized.get("created_at")
     ) or current_now
-    duration_days = int(normalized.get("duration_days") or 30)
+    duration_unit, duration_value = resolve_duration_fields(
+        duration_unit=normalized.get("duration_unit"),
+        duration_value=normalized.get("duration_value"),
+        duration_days=normalized.get("duration_days"),
+        default_days=normalized.get("duration_days") or DEFAULT_DURATION_DAYS,
+    )
+    duration_days = duration_days_compatibility(
+        start=start,
+        duration_unit=duration_unit,
+        duration_value=duration_value,
+    )
     end = coerce_datetime_utc(normalized.get("current_period_end") or normalized.get("end_at"))
     if not end:
-        end = period_end(start, duration_days)
+        end = period_end(
+            start,
+            duration_unit=duration_unit,
+            duration_value=duration_value,
+        )
 
     legacy = str(normalized.get("status") or "").lower()
     contract_status = str(normalized.get("contract_status") or contract_status_from_legacy(legacy)).lower()
@@ -343,7 +406,13 @@ def normalize_contract_document(contract: dict, *, now: datetime | None = None) 
         normalized.get("financial_status") or financial_status_from_legacy(legacy)
     ).lower()
 
-    normalized.setdefault("billing_cycle", billing_cycle_from_duration(duration_days))
+    normalized.setdefault(
+        "billing_cycle",
+        billing_cycle_from_duration_fields(
+            duration_unit=duration_unit,
+            duration_value=duration_value,
+        ),
+    )
     normalized.setdefault("billing_day", min(max(start.day, 1), 28))
     normalized.setdefault("manual_overrides", [])
     normalized.setdefault("scheduled_actions", [])
@@ -353,6 +422,8 @@ def normalize_contract_document(contract: dict, *, now: datetime | None = None) 
     normalized.setdefault("original_amount", normalized.get("amount"))
     normalized.setdefault("discount_amount", 0.0)
     normalized.setdefault("currency", "BRL")
+    normalized.setdefault("duration_unit", duration_unit)
+    normalized.setdefault("duration_value", duration_value)
     normalized.setdefault("duration_days", duration_days)
     normalized.setdefault("manual_end_override", bool(normalized.get("manual_end_override", False)))
     normalized.setdefault("grace_until", None)
@@ -363,6 +434,9 @@ def normalize_contract_document(contract: dict, *, now: datetime | None = None) 
 
     normalized["current_period_start"] = start
     normalized["current_period_end"] = end
+    normalized["duration_unit"] = duration_unit
+    normalized["duration_value"] = duration_value
+    normalized["duration_days"] = duration_days
     normalized["contract_status"] = contract_status
     normalized["financial_status"] = financial_status
     normalized = sync_contract_amount_fields(normalized)

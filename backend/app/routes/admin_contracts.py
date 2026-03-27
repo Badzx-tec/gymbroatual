@@ -14,7 +14,13 @@ from reportlab.pdfgen import canvas
 from app.core.deps import require_roles
 from app.core.time import SAO_PAULO_TZ, sao_paulo_day_bounds, sao_paulo_month_bounds, to_sao_paulo
 from app.db.mongo import get_db
-from app.models.student_billing import ContractCancelIn, ContractFreezeIn, ContractRenewIn
+from app.models.student_billing import (
+    ContractAdjustBillingIn,
+    ContractAdjustValidityIn,
+    ContractCancelIn,
+    ContractFreezeIn,
+    ContractRenewIn,
+)
 from app.services.report_exports import as_text, xlsx_response
 from app.services.student_contracts import (
     ACTIVE_LIKE_CONTRACT_STATUSES,
@@ -198,6 +204,11 @@ def _compact_contract_view(contract: dict) -> dict:
         "plan_id": contract.get("plan_id"),
         "plan_name": contract.get("plan_name"),
         "amount": contract.get("amount"),
+        "duration_unit": contract.get("duration_unit"),
+        "duration_value": contract.get("duration_value"),
+        "duration_days": contract.get("duration_days"),
+        "billing_day": contract.get("billing_day"),
+        "next_billing_at": contract.get("next_billing_at"),
         "contract_status": contract.get("contract_status"),
         "financial_status": contract.get("financial_status"),
         "access_status": contract.get("access_status"),
@@ -471,6 +482,8 @@ async def get_admin_contract_detail(
             "can_pause": role in {"OWNER", "MANAGER"},
             "can_renew": role in {"OWNER", "MANAGER", "RECEPTION"},
             "can_settle_overdue": role in {"OWNER", "MANAGER", "RECEPTION"},
+            "can_adjust_validity": role in {"OWNER", "MANAGER"},
+            "can_adjust_billing": role in {"OWNER", "MANAGER"},
         },
     }
 
@@ -496,6 +509,62 @@ async def renew_admin_contract(
     return {
         "contract": clean_doc(after),
         "renewal_charge": clean_doc((result or {}).get("renewal_charge")),
+        "audit_id": audit_id,
+    }
+
+
+@router.post("/contratos/{contract_id}/ajustar-validade")
+async def adjust_admin_contract_validity(
+    contract_id: str,
+    payload: ContractAdjustValidityIn,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
+    before = await student_billing._load_contract_for_owner(contract_id, actor, refresh=False)
+    result = await student_billing.adjust_contract_validity(
+        contract_id=contract_id,
+        payload=payload,
+        actor=actor,
+    )
+    after = _extract_contract_from_action_result(result)
+    audit_id = await _record_contract_audit(
+        actor=actor,
+        contract_id=contract_id,
+        action="adjust_validity",
+        payload=payload.model_dump(exclude_none=True),
+        before=before,
+        after=after,
+    )
+    return {"contract": clean_doc(after), "audit_id": audit_id}
+
+
+@router.post("/contratos/{contract_id}/ajustar-cobranca")
+async def adjust_admin_contract_billing(
+    contract_id: str,
+    payload: ContractAdjustBillingIn,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
+    before = await student_billing._load_contract_for_owner(contract_id, actor, refresh=False)
+    result = await student_billing.adjust_contract_billing(
+        contract_id=contract_id,
+        payload=payload,
+        actor=actor,
+    )
+    after = _extract_contract_from_action_result(result)
+    audit_payload = payload.model_dump(exclude_none=True)
+    audit_payload["updated_charges"] = int((result or {}).get("updated_charges") or 0)
+    audit_payload["charge_ids"] = list((result or {}).get("charge_ids") or [])[:100]
+    audit_id = await _record_contract_audit(
+        actor=actor,
+        contract_id=contract_id,
+        action="adjust_billing",
+        payload=audit_payload,
+        before=before,
+        after=after,
+    )
+    return {
+        "contract": clean_doc(after),
+        "updated_charges": int((result or {}).get("updated_charges") or 0),
+        "charge_ids": list((result or {}).get("charge_ids") or [])[:100],
         "audit_id": audit_id,
     }
 
