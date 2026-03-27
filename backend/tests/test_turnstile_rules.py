@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -89,13 +90,19 @@ class _FakeCollection:
             if _matches_query(item, query):
                 for key, value in update.get("$set", {}).items():
                     item[key] = value
-                return type("UpdateResult", (), {"matched_count": 1, "modified_count": 1})()
+                return type(
+                    "UpdateResult", (), {"matched_count": 1, "modified_count": 1}
+                )()
         if upsert:
             created = dict(query)
             created.update(update.get("$setOnInsert", {}))
             created.update(update.get("$set", {}))
             self.docs.append(created)
-            return type("UpdateResult", (), {"matched_count": 0, "modified_count": 0, "upserted_id": "up_1"})()
+            return type(
+                "UpdateResult",
+                (),
+                {"matched_count": 0, "modified_count": 0, "upserted_id": "up_1"},
+            )()
         return type("UpdateResult", (), {"matched_count": 0, "modified_count": 0})()
 
     def find(self, query, _projection=None):
@@ -123,7 +130,9 @@ class _FakeCollection:
                 continue
             if "$sort" in stage:
                 field, direction = next(iter(stage["$sort"].items()))
-                items = sorted(items, key=lambda doc: doc.get(field), reverse=int(direction) < 0)
+                items = sorted(
+                    items, key=lambda doc: doc.get(field), reverse=int(direction) < 0
+                )
                 continue
             if "$limit" in stage:
                 items = items[: int(stage["$limit"])]
@@ -135,7 +144,9 @@ class _FakeCursor:
         self.docs = list(docs)
 
     def sort(self, field, direction):
-        self.docs = sorted(self.docs, key=lambda doc: doc.get(field), reverse=int(direction) < 0)
+        self.docs = sorted(
+            self.docs, key=lambda doc: doc.get(field), reverse=int(direction) < 0
+        )
         return self
 
     def limit(self, limit):
@@ -177,6 +188,9 @@ def _matches_query(doc: dict, query: dict) -> bool:
                 elif op == "$ne":
                     if actual == expected:
                         return False
+                elif op == "$regex":
+                    if actual is None or re.search(expected, str(actual)) is None:
+                        return False
                 else:
                     return False
             continue
@@ -198,6 +212,7 @@ class _FakeDb:
         )
         self.owners = _FakeCollection([])
         self.students = _FakeCollection([])
+        self.biometrics = _FakeCollection([])
         self.employees = _FakeCollection(
             [
                 {
@@ -656,7 +671,9 @@ async def test_turnstile_access_summary_includes_grace_and_device_health(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_turnstile_decision_updates_operational_usage_for_allowed_student(monkeypatch):
+async def test_turnstile_decision_updates_operational_usage_for_allowed_student(
+    monkeypatch,
+):
     db = _FakeDb()
     db.students = _FakeCollection(
         [
@@ -688,7 +705,9 @@ async def test_turnstile_decision_updates_operational_usage_for_allowed_student(
 
     monkeypatch.setattr(turnstiles, "get_db", lambda: db)
     monkeypatch.setattr(turnstiles, "_authenticate_gateway_request", fake_authenticate)
-    monkeypatch.setattr(turnstiles, "_refresh_student_contract_snapshot", identity_refresh)
+    monkeypatch.setattr(
+        turnstiles, "_refresh_student_contract_snapshot", identity_refresh
+    )
     monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
 
     decision = await turnstiles.turnstile_decision(
@@ -697,14 +716,251 @@ async def test_turnstile_decision_updates_operational_usage_for_allowed_student(
         x_device_token=None,
     )
 
-    updated_student = await db.students.find_one({"owner_id": "own_1", "student_id": "std_1"})
+    updated_student = await db.students.find_one(
+        {"owner_id": "own_1", "student_id": "std_1"}
+    )
     assert decision["allow"] is True
     assert updated_student["operational_usage_status"] == "active_recent"
     assert updated_student.get("last_real_usage_at") is not None
 
 
 @pytest.mark.asyncio
-async def test_manual_release_flow_for_daily_student_is_claimed_and_acknowledged(monkeypatch):
+async def test_turnstile_decision_finds_student_by_biometrics_external_id_fallback(
+    monkeypatch,
+):
+    db = _FakeDb()
+    db.students = _FakeCollection(
+        [
+            {
+                "student_id": "std_1",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "nome": "Aluno Fallback",
+                "status": "ativo",
+                "contract_access_status": "allowed",
+            }
+        ]
+    )
+    db.biometrics = _FakeCollection(
+        [
+            {
+                "owner_id": "own_1",
+                "subject_type": "student",
+                "subject_id": "std_1",
+                "external_id": "BIO-FALLBACK-1",
+            }
+        ]
+    )
+
+    async def fake_authenticate(*_args, **_kwargs):
+        return (
+            {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"},
+            {
+                "device_id": "dev_1",
+                "method": "biometry",
+                "credential": "BIO-FALLBACK-1",
+                "direction": "entry",
+            },
+        )
+
+    async def identity_refresh(student, now):
+        return student
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_request", fake_authenticate)
+    monkeypatch.setattr(
+        turnstiles, "_refresh_student_contract_snapshot", identity_refresh
+    )
+    monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
+
+    decision = await turnstiles.turnstile_decision(
+        payload={},
+        request=_DummyRequest(),
+        x_device_token=None,
+    )
+
+    assert decision["allow"] is True
+    assert db.access_logs.inserted[-1]["subject_type"] == "student"
+    assert db.access_logs.inserted[-1]["subject_id"] == "std_1"
+    assert db.access_logs.inserted[-1]["reason_detail"]["fallback_used"] is True
+
+
+@pytest.mark.asyncio
+async def test_turnstile_decision_normalizes_numeric_biometry_before_lookup(
+    monkeypatch,
+):
+    db = _FakeDb()
+    db.students = _FakeCollection(
+        [
+            {
+                "student_id": "std_1",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "nome": "Aluno Numerico",
+                "status": "ativo",
+                "biometria_id": "123",
+                "contract_access_status": "allowed",
+            }
+        ]
+    )
+
+    async def fake_authenticate(*_args, **_kwargs):
+        return (
+            {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"},
+            {
+                "device_id": "dev_1",
+                "method": "biometry",
+                "credential": " 000123 ",
+                "direction": "entry",
+            },
+        )
+
+    async def identity_refresh(student, now):
+        return student
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_request", fake_authenticate)
+    monkeypatch.setattr(
+        turnstiles, "_refresh_student_contract_snapshot", identity_refresh
+    )
+    monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
+
+    decision = await turnstiles.turnstile_decision(
+        payload={},
+        request=_DummyRequest(),
+        x_device_token=None,
+    )
+
+    assert decision["allow"] is True
+    assert db.access_logs.inserted[-1]["subject_id"] == "std_1"
+    assert (
+        db.access_logs.inserted[-1]["reason_detail"]["lookup_path"]
+        == "students.biometria_id"
+    )
+
+
+@pytest.mark.asyncio
+async def test_turnstile_decision_fallback_still_respects_contract_block(monkeypatch):
+    db = _FakeDb()
+    db.students = _FakeCollection(
+        [
+            {
+                "student_id": "std_1",
+                "owner_id": "own_1",
+                "gym_id": "gym_1",
+                "nome": "Aluno Bloqueado",
+                "status": "ativo",
+                "contract_access_status": "blocked",
+                "contract_status": "active",
+                "contract_financial_status": "overdue",
+            }
+        ]
+    )
+    db.biometrics = _FakeCollection(
+        [
+            {
+                "owner_id": "own_1",
+                "subject_type": "student",
+                "subject_id": "std_1",
+                "external_id": "000123",
+            }
+        ]
+    )
+
+    async def fake_authenticate(*_args, **_kwargs):
+        return (
+            {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"},
+            {
+                "device_id": "dev_1",
+                "method": "biometry",
+                "credential": "123",
+                "direction": "entry",
+            },
+        )
+
+    async def identity_refresh(student, now):
+        return student
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_request", fake_authenticate)
+    monkeypatch.setattr(
+        turnstiles, "_refresh_student_contract_snapshot", identity_refresh
+    )
+    monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
+
+    decision = await turnstiles.turnstile_decision(
+        payload={},
+        request=_DummyRequest(),
+        x_device_token=None,
+    )
+
+    assert decision["allow"] is False
+    assert db.access_logs.inserted[-1]["reason"] == "contract_access_blocked"
+    assert db.access_logs.inserted[-1]["reason_detail"]["fallback_used"] is True
+
+
+@pytest.mark.asyncio
+async def test_turnstile_decision_allows_barcode_method(monkeypatch):
+    db = _FakeDb()
+
+    async def fake_authenticate(*_args, **_kwargs):
+        return (
+            {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"},
+            {
+                "device_id": "dev_1",
+                "method": "barcode",
+                "credential": "func0001",
+                "direction": "entry",
+            },
+        )
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_request", fake_authenticate)
+    monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
+
+    decision = await turnstiles.turnstile_decision(
+        payload={},
+        request=_DummyRequest(),
+        x_device_token=None,
+    )
+
+    assert decision["allow"] is True
+    assert db.access_logs.inserted[-1]["subject_type"] == "employee"
+
+
+@pytest.mark.asyncio
+async def test_turnstile_decision_allows_keypad_method(monkeypatch):
+    db = _FakeDb()
+
+    async def fake_authenticate(*_args, **_kwargs):
+        return (
+            {"device_id": "dev_1", "owner_id": "own_1", "gym_id": "gym_1"},
+            {
+                "device_id": "dev_1",
+                "method": "keypad",
+                "credential": "1234",
+                "direction": "entry",
+            },
+        )
+
+    monkeypatch.setattr(turnstiles, "get_db", lambda: db)
+    monkeypatch.setattr(turnstiles, "_authenticate_gateway_request", fake_authenticate)
+    monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
+
+    decision = await turnstiles.turnstile_decision(
+        payload={},
+        request=_DummyRequest(),
+        x_device_token=None,
+    )
+
+    assert decision["allow"] is True
+    assert db.access_logs.inserted[-1]["subject_type"] == "employee"
+
+
+@pytest.mark.asyncio
+async def test_manual_release_flow_for_daily_student_is_claimed_and_acknowledged(
+    monkeypatch,
+):
     db = _FakeDb()
     now = datetime.now(timezone.utc)
     db.students = _FakeCollection(
@@ -754,9 +1010,15 @@ async def test_manual_release_flow_for_daily_student_is_claimed_and_acknowledged
         return db.student_contracts.docs[0]
 
     monkeypatch.setattr(turnstiles, "get_db", lambda: db)
-    monkeypatch.setattr(turnstiles, "_refresh_student_contract_snapshot", identity_refresh)
-    monkeypatch.setattr(turnstiles, "_authenticate_gateway_device_channel", fake_gateway_auth)
-    monkeypatch.setattr(turnstiles, "_load_latest_student_contract", fake_latest_contract)
+    monkeypatch.setattr(
+        turnstiles, "_refresh_student_contract_snapshot", identity_refresh
+    )
+    monkeypatch.setattr(
+        turnstiles, "_authenticate_gateway_device_channel", fake_gateway_auth
+    )
+    monkeypatch.setattr(
+        turnstiles, "_load_latest_student_contract", fake_latest_contract
+    )
     monkeypatch.setattr(turnstiles, "log_event", lambda *_args, **_kwargs: None)
 
     created = await turnstiles.create_manual_turnstile_release(
@@ -765,7 +1027,13 @@ async def test_manual_release_flow_for_daily_student_is_claimed_and_acknowledged
             direction="entry",
             reason="aluno diario sem biometria",
         ),
-        actor={"owner_id": "own_1", "gym_id": "gym_1", "role": "RECEPTION", "actor_type": "employee", "employee_id": "emp_1"},
+        actor={
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "role": "RECEPTION",
+            "actor_type": "employee",
+            "employee_id": "emp_1",
+        },
     )
 
     pulled = await turnstiles.pull_manual_turnstile_release(
