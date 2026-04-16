@@ -762,3 +762,43 @@ def ensure_transition(contract: dict, *, allowed_from: set[str], action: str) ->
     if current not in allowed_from:
         allowed = ", ".join(sorted(allowed_from))
         raise ValueError(f"Nao e possivel {action} com status atual '{current}'. Permitidos: {allowed}")
+
+
+async def resolve_authoritative_contract_for_student(
+    db,
+    *,
+    owner_id: str,
+    student_id: str,
+    now: datetime | None = None,
+) -> dict | None:
+    """
+    Retorna o contrato mais relevante do aluno: prioriza active > grace_period >
+    frozen > overdue, e dentro do mesmo status o com maior current_period_end.
+    """
+    current_now = now or utc_now()
+    priority = {"active": 0, "grace_period": 1, "frozen": 2, "overdue": 3}
+    contracts = (
+        await db.student_contracts.find(
+            {
+                "owner_id": owner_id,
+                "student_id": student_id,
+                "contract_status": {"$in": list(priority.keys())},
+            },
+            {"_id": 0},
+        )
+        .sort("current_period_end", -1)
+        .to_list(20)
+    )
+    if not contracts:
+        return None
+    contracts.sort(
+        key=lambda c: (
+            priority.get(str(c.get("contract_status") or "").lower(), 99),
+            -(c.get("current_period_end") or current_now).timestamp()
+            if hasattr(c.get("current_period_end"), "timestamp")
+            else 0,
+        )
+    )
+    contract = contracts[0]
+    contract, _, _ = await refresh_contract_state(db, contract, now=current_now, persist=True)
+    return contract
