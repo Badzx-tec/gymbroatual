@@ -55,7 +55,7 @@ function Pagination({ page, pageSize, total, onPageChange, onPageSizeChange }) {
   const canPrev = page > 1;
   const canNext = page < totalPages;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800 px-3 py-3 text-xs text-zinc-400">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--surface-border)] px-4 py-3 text-xs text-[var(--text-muted)]">
       <p>
         Pagina {page} de {totalPages} | {total} contratos
       </p>
@@ -63,7 +63,7 @@ function Pagination({ page, pageSize, total, onPageChange, onPageSizeChange }) {
         <select
           value={pageSize}
           onChange={(event) => onPageSizeChange(Number(event.target.value))}
-          className="h-8 rounded-md border border-zinc-700 bg-zinc-900 px-2 text-xs"
+          className="h-8 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-soft)] px-2 text-xs text-[var(--text-secondary)]"
           aria-label="Itens por pagina"
         >
           {pageSizes.map((size) => (
@@ -76,7 +76,7 @@ function Pagination({ page, pageSize, total, onPageChange, onPageSizeChange }) {
           type="button"
           disabled={!canPrev}
           onClick={() => onPageChange(page - 1)}
-          className="h-8 rounded-md border border-zinc-700 bg-zinc-900 px-3 text-xs disabled:opacity-40"
+          className="h-8 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-soft)] px-3 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-soft-hover)] disabled:opacity-40"
         >
           Anterior
         </button>
@@ -84,7 +84,7 @@ function Pagination({ page, pageSize, total, onPageChange, onPageSizeChange }) {
           type="button"
           disabled={!canNext}
           onClick={() => onPageChange(page + 1)}
-          className="h-8 rounded-md border border-zinc-700 bg-zinc-900 px-3 text-xs disabled:opacity-40"
+          className="h-8 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-soft)] px-3 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-soft-hover)] disabled:opacity-40"
         >
           Proxima
         </button>
@@ -167,11 +167,11 @@ export default function ContractsTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-zinc-900 bg-zinc-950/72">
+    <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="min-w-[1080px] w-full text-sm">
+        <table className="min-w-[960px] w-full text-sm">
           <thead>
-            <tr className="border-b border-zinc-800 text-xs uppercase tracking-wide text-zinc-500">
+            <tr className="border-b border-[var(--surface-border)] bg-[var(--surface-soft)] text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">
               <th className="w-10 px-3 py-3">
                 <input
                   type="checkbox"
@@ -221,8 +221,8 @@ export default function ContractsTable({
                   const menuOpen = openMenuFor === row.contract_id;
 
                   return (
-                    <tr key={row.contract_id} className="border-b border-zinc-800/70 hover:bg-zinc-950/60">
-                      <td className="px-3 py-3">
+                    <tr key={row.contract_id} className="group/row border-b border-[var(--surface-border)] transition-colors hover:bg-[var(--surface-soft)]">
+                      <td className="px-3 py-2.5 align-middle">
                         <input
                           type="checkbox"
                           checked={selectedSet.has(row.contract_id)}
@@ -231,38 +231,36 @@ export default function ContractsTable({
                           className="accent-[var(--brand-primary)]"
                         />
                       </td>
-                      <td className="px-2 py-3">
+                      <td className="px-2 py-2.5 align-middle">
                         <button type="button" onClick={() => onOpenDetails(row.contract_id)} className="text-left">
-                          <p className="font-medium text-zinc-100">{row.student_name}</p>
-                          <p className="text-xs text-zinc-500">{row.student_id}</p>
+                          <p className="font-medium text-[var(--text-primary)] group-hover/row:text-[var(--brand-primary)] transition-colors">{row.student_name}</p>
+                          <p className="font-mono text-[11px] text-[var(--text-muted)]">{row.student_id}</p>
                         </button>
                       </td>
-                      <td className="px-2 py-3 text-zinc-300">{row.plan_name || row.plan_id || '-'}</td>
-                      <td className="px-2 py-3 text-zinc-300">{formatDate(row.current_period_start)}</td>
-                      <td className="px-2 py-3 text-zinc-300">{formatDate(row.current_period_end)}</td>
-                      <td className="px-2 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          <span className={`rounded-md border px-2 py-1 text-[11px] font-semibold uppercase ${contract.className}`}>{contract.label}</span>
-                          <span className={`rounded-md border px-2 py-1 text-[11px] font-semibold uppercase ${financial.className}`}>{financial.label}</span>
-                          <span className={`rounded-md border px-2 py-1 text-[11px] font-semibold uppercase ${access.className}`}>{access.label}</span>
+                      <td className="px-2 py-2.5 align-middle text-[var(--text-secondary)] text-xs">{row.plan_name || row.plan_id || '-'}</td>
+                      <td className="px-2 py-2.5 align-middle font-mono text-xs text-[var(--text-secondary)] whitespace-nowrap">{formatDate(row.current_period_start)}</td>
+                      <td className="px-2 py-2.5 align-middle font-mono text-xs text-[var(--text-secondary)] whitespace-nowrap">{formatDate(row.current_period_end)}</td>
+                      <td className="px-2 py-2.5 align-middle">
+                        <div className="flex flex-wrap gap-1 max-w-[280px]">
+                          <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap ${contract.className}`}>{contract.label}</span>
+                          <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap ${financial.className}`}>{financial.label}</span>
+                          <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap ${access.className}`}>{access.label}</span>
                         </div>
                       </td>
-                      <td className="px-2 py-3">
-                        <div className="space-y-1">
-                          <p className="font-semibold text-zinc-100">{valueBreakdown.finalLabel}</p>
-                          {valueBreakdown.hasDiscount ? (
-                            <p className="text-[11px] text-zinc-500">
-                              Base {valueBreakdown.originalLabel} | Desconto {valueBreakdown.discountLabel}
-                            </p>
-                          ) : null}
-                        </div>
+                      <td className="px-2 py-2.5 align-middle">
+                        <p className="font-mono font-semibold text-[var(--text-primary)] tabular-nums">{valueBreakdown.finalLabel}</p>
+                        {valueBreakdown.hasDiscount ? (
+                          <p className="font-mono text-[10px] text-[var(--text-muted)] tabular-nums whitespace-nowrap">
+                            -{valueBreakdown.discountLabel}
+                          </p>
+                        ) : null}
                       </td>
-                      <td className="px-2 py-3 text-zinc-400">{formatDate(row.updated_at)}</td>
-                      <td className="relative px-2 py-3">
+                      <td className="px-2 py-2.5 align-middle font-mono text-xs text-[var(--text-muted)] whitespace-nowrap">{formatDate(row.updated_at)}</td>
+                      <td className="relative px-2 py-2.5 align-middle">
                         <button
                           type="button"
                           onClick={() => setOpenMenuFor(menuOpen ? '' : row.contract_id)}
-                          className="rounded-md border border-zinc-700 bg-zinc-800 p-2 hover:bg-zinc-700"
+                          className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-soft)] p-2 transition-colors hover:bg-[var(--surface-soft-hover)] hover:border-[var(--surface-border-strong)]"
                           aria-label={`Acoes do contrato ${row.contract_id}`}
                         >
                           <MoreHorizontal className="h-4 w-4" />

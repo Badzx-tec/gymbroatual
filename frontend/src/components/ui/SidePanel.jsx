@@ -10,14 +10,20 @@ export default function SidePanel({ open, onClose, title, description, actions, 
 
   React.useEffect(() => {
     if (!open) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  React.useEffect(() => {
+    if (!open) return undefined;
     const onKeyDown = (event) => {
       if (event.key === 'Escape') onClose?.();
     };
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', onKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [open, onClose]);
