@@ -136,13 +136,6 @@ export function archivedBadge(isArchived) {
   };
 }
 
-export function formatDurationLabel(value) {
-  const days = Number(value || 0);
-  if (!Number.isFinite(days) || days <= 0) return '-';
-  if (days === 1) return '1 dia';
-  return `${days} dias`;
-}
-
 export function normalizeEventLabel(value) {
   const normalized = String(value || '').toLowerCase().trim();
   return normalized ? normalized.replaceAll('_', ' ') : '-';
