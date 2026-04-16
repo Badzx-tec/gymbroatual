@@ -1,4 +1,4 @@
-import { accessStatusLabel, contractStatusLabel, financialStatusLabel } from '../../utils/labels';
+import { accessStatusLabel, archivedFlagLabel, contractStatusLabel, financialStatusLabel } from '../../utils/labels';
 import {
   addDurationToDateTimeLocalInTimeZone,
   dateTimeLocalToIsoInTimeZone,
@@ -126,7 +126,116 @@ export function accessBadge(accessStatus) {
   };
 }
 
+export function archivedBadge(isArchived) {
+  return {
+    className: isArchived
+      ? 'bg-zinc-800/80 border-zinc-700 text-zinc-300'
+      : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200',
+    tone: isArchived ? 'neutral' : 'success',
+    label: archivedFlagLabel(Boolean(isArchived)),
+  };
+}
+
+export function formatDurationLabel(value) {
+  const days = Number(value || 0);
+  if (!Number.isFinite(days) || days <= 0) return '-';
+  if (days === 1) return '1 dia';
+  return `${days} dias`;
+}
+
 export function normalizeEventLabel(value) {
   const normalized = String(value || '').toLowerCase().trim();
   return normalized ? normalized.replaceAll('_', ' ') : '-';
+}
+
+/**
+ * Collapses all 4 contract dimensions (contract_status, financial_status,
+ * access_status, is_archived) into a single health level using a
+ * "worst-case-dominates" priority:  critical > warning > healthy > neutral
+ *
+ * Returns { level, label, sublabel, dotClass, bgClass, textClass }
+ */
+export function computeContractHealth(contract) {
+  const contractStatus = String(contract?.contract_status || '').toLowerCase();
+  const financialStatus = String(contract?.financial_status || '').toLowerCase();
+  const accessStatus = String(contract?.access_status || '').toLowerCase();
+  const isArchived = Boolean(contract?.is_archived);
+
+  // Neutral — archived contracts are out of the operational flow
+  if (isArchived) {
+    return {
+      level: 'neutral',
+      label: 'Arquivado',
+      sublabel: contractStatusLabel(contractStatus),
+      dotClass: 'bg-zinc-500',
+      bgClass: 'bg-zinc-800/60 border-zinc-700',
+      textClass: 'text-zinc-400',
+    };
+  }
+
+  // Terminal — canceled/expired/ended with no archive flag
+  if (['canceled', 'expired', 'ended'].includes(contractStatus)) {
+    return {
+      level: 'neutral',
+      label: contractStatusLabel(contractStatus),
+      sublabel: financialStatusLabel(financialStatus),
+      dotClass: 'bg-zinc-500',
+      bgClass: 'bg-zinc-800/60 border-zinc-700',
+      textClass: 'text-zinc-400',
+    };
+  }
+
+  // Critical — access blocked due to financial default or other reason
+  if (accessStatus === 'blocked') {
+    return {
+      level: 'critical',
+      label: 'Acesso bloqueado',
+      sublabel: financialStatusLabel(financialStatus),
+      dotClass: 'bg-red-400 animate-pulse',
+      bgClass: 'bg-red-500/10 border-red-500/30',
+      textClass: 'text-red-300',
+    };
+  }
+
+  // Warning — financial overdue but within grace, or contract frozen/scheduled ops
+  const isFinancialWarning = ['overdue', 'failed', 'partially_paid'].includes(financialStatus);
+  const isContractWarning = ['frozen', 'scheduled_cancel', 'scheduled_freeze'].includes(contractStatus);
+
+  if (accessStatus === 'grace_period' || isFinancialWarning || isContractWarning) {
+    const label = accessStatus === 'grace_period'
+      ? 'Periodo de graca'
+      : isContractWarning
+        ? contractStatusLabel(contractStatus)
+        : financialStatusLabel(financialStatus);
+    return {
+      level: 'warning',
+      label,
+      sublabel: accessStatus === 'grace_period' ? financialStatusLabel(financialStatus) : accessStatusLabel(accessStatus),
+      dotClass: 'bg-amber-400',
+      bgClass: 'bg-amber-500/10 border-amber-500/30',
+      textClass: 'text-amber-300',
+    };
+  }
+
+  // Pending activation — not yet active but on track
+  if (contractStatus === 'pending_activation') {
+    return {
+      level: 'warning',
+      label: 'Aguardando ativacao',
+      sublabel: financialStatusLabel(financialStatus),
+      dotClass: 'bg-blue-400',
+      bgClass: 'bg-blue-500/10 border-blue-500/30',
+      textClass: 'text-blue-300',
+    };
+  }
+
+  // Healthy — active, paid, allowed
+  return {
+    level: 'healthy',
+    label: 'Em dia',
+    sublabel: contractStatusLabel(contractStatus),
+    dotClass: 'bg-emerald-400',
+    bgClass: 'bg-emerald-500/10 border-emerald-500/30',
+    textClass: 'text-emerald-300',
+  };
 }

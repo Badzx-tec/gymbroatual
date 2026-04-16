@@ -857,6 +857,59 @@ async def test_sync_projection_reactivates_only_financial_auto_inactive(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_sync_projection_prefers_authoritative_non_archived_contract(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(student_billing, "get_db", lambda: db)
+    now = datetime.now(timezone.utc)
+
+    active_contract = {
+        "contract_id": "ctr_active",
+        "owner_id": "own_1",
+        "gym_id": "gym_1",
+        "student_id": "std_1",
+        "student_name": "Aluno Teste",
+        "plan_id": "pln_1",
+        "plan_name": "Mensal",
+        "amount": 149.9,
+        "billing_cycle": "monthly",
+        "duration_days": 30,
+        "current_period_start": now - timedelta(days=10),
+        "current_period_end": now + timedelta(days=20),
+        "contract_status": "active",
+        "financial_status": "paid",
+        "access_status": "allowed",
+        "status": "active",
+        "auto_renew": False,
+        "created_at": now - timedelta(days=30),
+        "updated_at": now - timedelta(days=2),
+        "is_archived": False,
+    }
+    canceled_newer = {
+        **active_contract,
+        "contract_id": "ctr_canceled_newer",
+        "contract_status": "canceled",
+        "financial_status": "failed",
+        "access_status": "blocked",
+        "status": "canceled",
+        "canceled_at": now - timedelta(days=1),
+        "ended_at": now - timedelta(days=1),
+        "created_at": now - timedelta(hours=1),
+        "updated_at": now - timedelta(hours=1),
+        "is_archived": False,
+    }
+
+    db.student_contracts.docs.extend([active_contract, canceled_newer])
+
+    await student_billing._sync_student_contract_projection(canceled_newer)
+    updated_student = await db.students.find_one({"owner_id": "own_1", "student_id": "std_1"})
+
+    assert updated_student["contract_status"] == "active"
+    assert updated_student["contract_access_status"] == "allowed"
+    assert updated_student["contract_financial_status"] == "paid"
+    assert updated_student["plan_expires_at"] == active_contract["current_period_end"]
+
+
+@pytest.mark.asyncio
 async def test_cleanup_contract_charges_cancels_pending_and_records_event(monkeypatch):
     db = FakeDb()
     monkeypatch.setattr(student_billing, "get_db", lambda: db)

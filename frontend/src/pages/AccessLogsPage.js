@@ -64,9 +64,9 @@ function decisionMeta(log) {
 
 function DetailItem({ label, value }) {
   return (
-    <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
-      <p className="mt-1 text-sm text-zinc-100">{value}</p>
+    <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">{label}</p>
+      <p className="mt-1 text-sm text-[var(--text-primary)]">{value}</p>
     </div>
   );
 }
@@ -194,7 +194,7 @@ export default function AccessLogsPage() {
           <div className="overflow-x-auto">
             <table data-testid="access-logs-table" className="min-w-[1100px] w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-900 text-left text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                <tr className="border-b border-[var(--surface-border)] text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
                   <th className="px-5 py-3">Horario</th>
                   <th className="px-5 py-3">Pessoa</th>
                   <th className="px-5 py-3">Perfil</th>
@@ -202,22 +202,31 @@ export default function AccessLogsPage() {
                   <th className="px-5 py-3">Metodo</th>
                   <th className="px-5 py-3">Status</th>
                   <th className="px-5 py-3">Motivo</th>
-                  <th className="px-5 py-3 text-right">Detalhe</th>
+                  <th className="px-4 py-3 text-right"></th>
                 </tr>
               </thead>
               <tbody>
                 {filteredLogs.map((log, index) => {
                   const meta = decisionMeta(log);
                   return (
-                    <tr key={log.access_id || `${log.created_at || log.timestamp}-${index}`} className="border-b border-zinc-900/70 hover:bg-zinc-950/40">
-                      <td className="px-5 py-4 text-zinc-300 whitespace-nowrap">{formatDateTime(log.created_at || log.timestamp)}</td>
-                      <td className="px-5 py-4 font-medium text-zinc-100">{log.subject_name || log.student_name || log.employee_name || log.owner_name || log.subject_id || 'Nao identificado'}</td>
-                      <td className="px-5 py-4 text-zinc-400">{subjectTypeLabel(log.subject_type)}</td>
-                      <td className="px-5 py-4 text-zinc-400">{directionLabel(log.direction)}</td>
-                      <td className="px-5 py-4 text-zinc-400">{log.method || '-'}</td>
-                      <td className="px-5 py-4"><StatusBadge label={meta.label} tone={meta.tone} /></td>
-                      <td className="px-5 py-4 text-zinc-400">{reasonLabel(log.reason)}</td>
-                      <td className="px-5 py-4 text-right"><Button type="button" variant="ghost" size="sm" onClick={() => setSelectedLog(log)}>Ver detalhe</Button></td>
+                    <tr key={log.access_id || `${log.created_at || log.timestamp}-${index}`} className="border-b border-[var(--surface-border)] transition-colors hover:bg-[var(--surface-soft)]">
+                      <td className="px-5 py-3 font-mono text-xs text-[var(--text-secondary)] whitespace-nowrap">{formatDateTime(log.created_at || log.timestamp)}</td>
+                      <td className="px-5 py-3 font-semibold text-[var(--text-primary)]">{log.subject_name || log.student_name || log.employee_name || log.owner_name || log.subject_id || 'Nao identificado'}</td>
+                      <td className="px-5 py-3 text-xs text-[var(--text-secondary)]">{subjectTypeLabel(log.subject_type)}</td>
+                      <td className="px-5 py-3 text-xs text-[var(--text-secondary)]">{directionLabel(log.direction)}</td>
+                      <td className="px-5 py-3 text-xs text-[var(--text-secondary)]">{log.method || '-'}</td>
+                      <td className="px-5 py-3"><StatusBadge label={meta.label} tone={meta.tone} /></td>
+                      <td className="px-5 py-3 text-xs text-[var(--text-muted)]">{reasonLabel(log.reason)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLog(log)}
+                          aria-label="Ver detalhe"
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-[var(--text-muted)] transition hover:border-[var(--surface-border-strong)] hover:bg-[var(--surface-soft)] hover:text-[var(--text-primary)]"
+                        >
+                          <Search className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}

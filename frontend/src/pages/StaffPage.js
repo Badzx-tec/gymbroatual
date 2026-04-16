@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Fingerprint,
   KeyRound,
+  Lock,
   MailPlus,
   Pencil,
   RefreshCw,
@@ -9,9 +10,11 @@ import {
   ShieldCheck,
   Trash2,
   UserCog,
+  UserMinus,
   UserPlus,
   Users,
 } from 'lucide-react';
+import TableActionMenu from '../components/ui/TableActionMenu';
 import { toast } from 'sonner';
 
 import { api } from '../api';
@@ -770,83 +773,64 @@ export default function StaffPage() {
             <table className="w-full min-w-[920px] text-sm">
               <thead>
                 <tr className="border-b border-[var(--surface-border)] text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                  <th className="px-5 py-4">Funcionario</th>
-                  <th className="px-5 py-4">Perfil</th>
-                  <th className="px-5 py-4">Credenciais</th>
-                  <th className="px-5 py-4">Status</th>
-                  <th className="px-5 py-4">Compatibilidade</th>
-                  <th className="px-5 py-4 text-right">Acoes</th>
+                  <th className="px-5 py-3">Funcionario</th>
+                  <th className="px-5 py-3">Perfil</th>
+                  <th className="px-5 py-3">Credenciais</th>
+                  <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3">Compatibilidade</th>
+                  <th className="px-4 py-3 text-right"></th>
                 </tr>
               </thead>
               <tbody>
                 {filteredEmployees.map((employee) => {
                   const isActive = employee?.is_active !== false;
                   return (
-                    <tr key={employee.employee_id} className="border-b border-[var(--surface-border)] hover:bg-[var(--surface-soft)]">
-                      <td className="px-5 py-4 align-top">
-                        <div>
-                          <p className="font-semibold text-[var(--text-primary)]">{employee.name}</p>
-                          <p className="mt-1 text-xs text-[var(--text-muted)]">
-                            {employee.email || 'Sem login configurado'}
-                          </p>
-                          <p className="mt-1 text-xs text-[var(--text-muted)]">Matricula: {employee.matricula || '-'}</p>
-                        </div>
+                    <tr key={employee.employee_id} className="group/row border-b border-[var(--surface-border)] transition-colors hover:bg-[var(--surface-soft)]">
+                      <td className="px-5 py-3">
+                        <p className="font-semibold text-[var(--text-primary)]">{employee.name}</p>
+                        <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+                          {employee.email || 'Sem login configurado'}
+                        </p>
+                        <p className="mt-0.5 font-mono text-xs text-[var(--text-muted)]">{employee.matricula || '-'}</p>
                       </td>
-                      <td className="px-5 py-4 align-top">
+                      <td className="px-5 py-3">
                         <StatusBadge label={roleLabel(employee.role)} tone={roleTone(employee.role)} />
                       </td>
-                      <td className="px-5 py-4 align-top">
-                        <div className="space-y-1 text-xs text-[var(--text-secondary)]">
-                          <p>{credentialsSummary(employee)}</p>
-                          <p>BIO: {employee.biometria_id || '-'}</p>
-                          <p>RFID: {employee.tag_rfid || '-'}</p>
-                        </div>
+                      <td className="px-5 py-3 text-xs text-[var(--text-secondary)]">
+                        {credentialsSummary(employee)}
                       </td>
-                      <td className="px-5 py-4 align-top">
+                      <td className="px-5 py-3">
                         <StatusBadge
                           label={isActive ? 'Ativo' : 'Inativo'}
                           tone={isActive ? 'success' : 'danger'}
                         />
                       </td>
-                      <td className="px-5 py-4 align-top">
-                        <p className="text-xs text-[var(--text-secondary)]">
-                          {employee.shadow_student_id
-                            ? `Aluno tecnico: ${employee.shadow_student_id}`
-                            : 'Sem aluno tecnico sincronizado'}
-                        </p>
+                      <td className="px-5 py-3 text-xs text-[var(--text-secondary)]">
+                        {employee.shadow_student_id ? 'Sync ativo' : '-'}
                       </td>
-                      <td className="px-5 py-4 align-top">
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <Button size="sm" variant="ghost" onClick={() => openEditPanel(employee)}>
-                            <Pencil className="h-4 w-4" />
-                            Editar
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => openCredentialsPanel(employee)}>
-                            <KeyRound className="h-4 w-4" />
-                            Credenciais
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => openBiometryPanel(employee)}>
-                            <Fingerprint className="h-4 w-4" />
-                            Biometria
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => syncShadowStudent(employee.employee_id)}>
-                            Sync tecnico
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => openPasswordEditor(employee)}>
-                            Atualizar senha
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={isActive ? 'danger' : 'secondary'}
-                            onClick={() => askToggleEmployee(employee)}
-                          >
-                            {isActive ? 'Desativar' : 'Reativar'}
-                          </Button>
-                          <Button size="sm" variant="danger" onClick={() => askDeleteEmployee(employee)}>
-                            <Trash2 className="h-4 w-4" />
-                            Remover
-                          </Button>
-                        </div>
+                      <td className="px-4 py-3 text-right">
+                        <TableActionMenu
+                          sections={[
+                            [
+                              { label: 'Editar', icon: Pencil, onClick: () => openEditPanel(employee) },
+                            ],
+                            [
+                              { label: 'Credenciais', icon: KeyRound, onClick: () => openCredentialsPanel(employee) },
+                              { label: 'Biometria', icon: Fingerprint, onClick: () => openBiometryPanel(employee) },
+                              { label: 'Atualizar senha', icon: Lock, onClick: () => openPasswordEditor(employee) },
+                              { label: 'Sync tecnico', icon: RefreshCw, onClick: () => syncShadowStudent(employee.employee_id) },
+                            ],
+                            [
+                              {
+                                label: isActive ? 'Desativar' : 'Reativar',
+                                icon: isActive ? UserMinus : UserPlus,
+                                danger: isActive,
+                                onClick: () => askToggleEmployee(employee),
+                              },
+                              { label: 'Remover', icon: Trash2, danger: true, onClick: () => askDeleteEmployee(employee) },
+                            ],
+                          ]}
+                        />
                       </td>
                     </tr>
                   );

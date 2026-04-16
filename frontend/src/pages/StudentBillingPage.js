@@ -33,9 +33,9 @@ import {
 
 function DetailItem({ label, value }) {
   return (
-    <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
-      <p className="mt-1 text-sm text-zinc-100">{value}</p>
+    <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">{label}</p>
+      <p className="mt-1 text-sm text-[var(--text-primary)]">{value}</p>
     </div>
   );
 }
@@ -46,20 +46,20 @@ function ContractCard({ contract, isCurrent }) {
   const accessMeta = getStatusMeta(contract.access_status);
 
   return (
-    <article className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-4">
+    <article className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-zinc-100">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">
               {contract.plan_name || contract.plan_id || 'Contrato sem plano'}
             </h3>
             {isCurrent ? <StatusBadge label="Atual" tone="info" size="sm" /> : null}
           </div>
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-xs text-[var(--text-muted)]">
             Vigencia: {formatBillingDate(contract.current_period_start)} ate {formatBillingDate(contract.current_period_end)}
           </p>
         </div>
-        <p className="text-sm font-semibold text-zinc-100">{formatBillingMoney(contract.amount)}</p>
+        <p className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">{formatBillingMoney(contract.amount)}</p>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -69,7 +69,7 @@ function ContractCard({ contract, isCurrent }) {
       </div>
 
       {(contract.grace_until || contract.next_retry_at || Number(contract.dunning_level || 0) > 0) ? (
-        <div className="mt-3 space-y-1 text-xs text-zinc-400">
+        <div className="mt-3 space-y-1 text-xs text-[var(--text-secondary)]">
           {contract.grace_until ? <p>Carencia ate {formatBillingDate(contract.grace_until)}</p> : null}
           {contract.next_retry_at ? <p>Proxima tentativa prevista em {formatBillingDate(contract.next_retry_at)}</p> : null}
           {Number(contract.dunning_level || 0) > 0 ? <p>Nivel de cobranca atual: {Number(contract.dunning_level || 0)}</p> : null}
@@ -239,9 +239,9 @@ export default function StudentBillingPage() {
                 <DetailItem label="Fim" value={formatBillingDate(currentContract.current_period_end)} />
               </div>
 
-              <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-4 text-sm text-zinc-300">
-                <p className="font-semibold text-zinc-100">Como a liberacao funciona</p>
-                <ul className="mt-3 space-y-2 text-sm text-zinc-400">
+              <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-4 text-sm text-[var(--text-secondary)]">
+                <p className="font-semibold text-[var(--text-primary)]">Como a liberacao funciona</p>
+                <ul className="mt-3 space-y-2 text-sm text-[var(--text-secondary)]">
                   <li>Em dia: acesso continua liberado normalmente.</li>
                   <li>Em carencia: acesso segue liberado ate o prazo de carencia expirar.</li>
                   <li>Bloqueado: apos o fim da carencia, a inadimplencia bloqueia a catraca ate a regularizacao.</li>
@@ -270,9 +270,9 @@ export default function StudentBillingPage() {
           {events.length ? (
             <ul className="space-y-2">
               {events.slice(0, 12).map((item) => (
-                <li key={item.event_id} className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-3">
-                  <p className="text-sm font-semibold text-zinc-100">{getBillingEventLabel(item.event_type)}</p>
-                  <p className="mt-1 text-xs text-zinc-500">{formatBillingDate(item.created_at)}</p>
+                <li key={item.event_id} className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-3">
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">{getBillingEventLabel(item.event_type)}</p>
+                  <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{formatBillingDate(item.created_at)}</p>
                 </li>
               ))}
             </ul>
@@ -331,7 +331,7 @@ export default function StudentBillingPage() {
           <div className="overflow-x-auto">
             <table className="min-w-[860px] w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-900 text-left text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                <tr className="border-b border-[var(--surface-border)] text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
                   <th className="px-5 py-3">Vencimento</th>
                   <th className="px-5 py-3">Valor</th>
                   <th className="px-5 py-3">Status</th>
@@ -345,14 +345,14 @@ export default function StudentBillingPage() {
                   const statusMeta = getStatusMeta(charge.status);
                   const contract = contracts.find((item) => item.contract_id === charge.contract_id);
                   return (
-                    <tr key={charge.charge_id} className="border-b border-zinc-900/70">
-                      <td className="px-5 py-4 text-zinc-300">{formatBillingDate(charge.due_at)}</td>
-                      <td className="px-5 py-4 text-zinc-100">{formatBillingMoney(charge.amount)}</td>
+                    <tr key={charge.charge_id} className="border-b border-[var(--surface-border)] transition-colors hover:bg-[var(--surface-soft)]">
+                      <td className="px-5 py-3 font-mono text-xs text-[var(--text-secondary)]">{formatBillingDate(charge.due_at)}</td>
+                      <td className="px-5 py-3 font-mono font-semibold tabular-nums text-[var(--text-primary)]">{formatBillingMoney(charge.amount)}</td>
                       <td className="px-5 py-4">
                         <StatusBadge label={statusMeta.label} tone={statusMeta.tone} />
                       </td>
-                      <td className="px-5 py-4 text-zinc-400">{contract?.plan_name || contract?.plan_id || charge.contract_id}</td>
-                      <td className="px-5 py-4 text-zinc-400">{formatBillingDate(charge.paid_at)}</td>
+                      <td className="px-5 py-3 text-xs text-[var(--text-secondary)]">{contract?.plan_name || contract?.plan_id || charge.contract_id}</td>
+                      <td className="px-5 py-3 font-mono text-xs text-[var(--text-secondary)]">{formatBillingDate(charge.paid_at)}</td>
                       <td className="px-5 py-4 text-right">
                         <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedChargeId(charge.charge_id)}>
                           Ver detalhe

@@ -30,26 +30,26 @@ function formatMoney(value) {
 
 function AcademyCard({ academy, stats, onEdit, onDelete }) {
   return (
-    <article className="rounded-2xl border border-zinc-900 bg-zinc-950/72 p-5">
+    <article className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)] transition-colors hover:border-[var(--surface-border-strong)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <div className="rounded-xl border border-zinc-900 bg-zinc-900/70 p-2 text-[var(--brand-primary)]">
+            <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-2 text-[var(--brand-primary)]">
               <Building2 className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-zinc-100">{academy.nome}</h3>
-              <p className="text-xs text-zinc-500">{academy.email || 'Sem email cadastrado'}</p>
+              <h3 className="font-heading text-lg font-semibold uppercase tracking-wide text-[var(--text-primary)]">{academy.nome}</h3>
+              <p className="text-xs text-[var(--text-muted)]">{academy.email || 'Sem email cadastrado'}</p>
             </div>
           </div>
           {academy.endereco ? (
-            <p className="mt-3 inline-flex items-center gap-2 text-sm text-zinc-400">
+            <p className="mt-3 inline-flex items-center gap-2 text-sm text-[var(--text-secondary)]">
               <MapPin className="h-4 w-4" />
               {academy.endereco}
             </p>
           ) : null}
         </div>
-        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${academy.ativo ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-900 text-zinc-400'}`}>
+        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${academy.ativo ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-[var(--surface-border)] bg-[var(--surface-soft)] text-[var(--text-muted)]'}`}>
           {academy.ativo ? 'Ativa' : 'Inativa'}
         </span>
       </div>
@@ -60,10 +60,10 @@ function AcademyCard({ academy, stats, onEdit, onDelete }) {
         <MiniMetric icon={DollarSign} label="Faturamento" value={formatMoney(stats.faturamento || 0)} accent="info" />
       </div>
 
-      <div className="mt-4 grid gap-2 text-sm text-zinc-400">
+      <div className="mt-4 grid gap-2 text-sm text-[var(--text-secondary)]">
         <p>Telefone: {academy.telefone || '-'}</p>
         <p>CNPJ: {academy.cnpj || '-'}</p>
-        <p className="inline-flex items-center gap-2"><Router className="h-4 w-4" /> Catraca: {academy.catraca_ip}:{academy.catraca_port}</p>
+        <p className="inline-flex items-center gap-2"><Router className="h-4 w-4" /> Catraca: <span className="font-mono text-xs">{academy.catraca_ip}:{academy.catraca_port}</span></p>
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -79,12 +79,12 @@ function AcademyCard({ academy, stats, onEdit, onDelete }) {
 }
 
 function MiniMetric({ icon: Icon, label, value, accent = 'default' }) {
-  const colorClass = accent === 'success' ? 'text-emerald-300' : accent === 'info' ? 'text-sky-300' : 'text-zinc-100';
+  const colorClass = accent === 'success' ? 'text-emerald-300' : accent === 'info' ? 'text-sky-300' : 'text-[var(--text-primary)]';
   return (
-    <div className="rounded-xl border border-zinc-900 bg-zinc-900/60 px-3 py-3 text-center">
-      <Icon className="mx-auto h-4 w-4 text-zinc-500" />
-      <p className={`mt-2 text-sm font-semibold ${colorClass}`}>{value}</p>
-      <p className="mt-1 text-[11px] uppercase tracking-[0.16em] text-zinc-500">{label}</p>
+    <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-3 py-3 text-center">
+      <Icon className="mx-auto h-4 w-4 text-[var(--text-muted)]" />
+      <p className={`mt-2 font-mono text-sm font-semibold tabular-nums ${colorClass}`}>{value}</p>
+      <p className="mt-1 text-[11px] uppercase tracking-[0.16em] text-[var(--text-muted)]">{label}</p>
     </div>
   );
 }
@@ -275,7 +275,7 @@ export default function AcademiesPage() {
           <TextField label="Endereco" value={form.endereco} onChange={(event) => setForm((prev) => ({ ...prev, endereco: event.target.value }))} className="md:col-span-2" />
           <TextField label="IP da catraca" value={form.catraca_ip} onChange={(event) => setForm((prev) => ({ ...prev, catraca_ip: event.target.value }))} />
           <TextField label="Porta da catraca" type="number" value={form.catraca_port} onChange={(event) => setForm((prev) => ({ ...prev, catraca_port: event.target.value }))} />
-          <label className="flex items-start gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300 md:col-span-2">
+          <label className="flex items-start gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-3 text-sm text-[var(--text-secondary)] md:col-span-2">
             <input type="checkbox" className="mt-1 accent-[var(--brand-primary)]" checked={Boolean(form.ativo)} onChange={(event) => setForm((prev) => ({ ...prev, ativo: event.target.checked }))} />
             <span>Manter unidade ativa para operacao e dashboards.</span>
           </label>
@@ -294,7 +294,7 @@ export default function AcademiesPage() {
           </>
         }
       >
-        <p className="text-sm text-zinc-400">Unidade selecionada: <span className="text-zinc-100">{deleteTarget?.nome || '-'}</span></p>
+        <p className="text-sm text-[var(--text-secondary)]">Unidade selecionada: <span className="text-[var(--text-primary)]">{deleteTarget?.nome || '-'}</span></p>
       </Dialog>
     </div>
   );

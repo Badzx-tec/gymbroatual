@@ -70,27 +70,27 @@ function AccessLogItem({ item }) {
   const reason = item.reason || item.motivo || '-';
 
   return (
-    <li className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-3">
+    <li className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-zinc-100">
+          <p className="text-sm font-semibold text-[var(--text-primary)]">
             {allowed ? 'Acesso liberado' : 'Acesso negado'}
           </p>
-          <p className="mt-1 text-xs text-zinc-500">{formatBillingDate(item.timestamp || item.created_at)}</p>
+          <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{formatBillingDate(item.timestamp || item.created_at)}</p>
         </div>
         <StatusBadge label={allowed ? 'Liberado' : 'Negado'} tone={allowed ? 'success' : 'danger'} size="sm" />
       </div>
-      <p className="mt-2 text-sm text-zinc-400">{reason}</p>
+      <p className="mt-2 text-sm text-[var(--text-secondary)]">{reason}</p>
     </li>
   );
 }
 
 function NotificationItem({ item }) {
   return (
-    <li className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-3">
-      <p className="text-sm font-semibold text-zinc-100">{item.titulo || 'Aviso'}</p>
-      <p className="mt-1 text-sm text-zinc-400">{item.mensagem || '-'}</p>
-      <p className="mt-2 text-xs text-zinc-500">{formatBillingDate(item.created_at)}</p>
+    <li className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-3">
+      <p className="text-sm font-semibold text-[var(--text-primary)]">{item.titulo || 'Aviso'}</p>
+      <p className="mt-1 text-sm text-[var(--text-secondary)]">{item.mensagem || '-'}</p>
+      <p className="mt-2 font-mono text-xs text-[var(--text-muted)]">{formatBillingDate(item.created_at)}</p>
     </li>
   );
 }
@@ -220,7 +220,7 @@ export default function StudentDashboardPage() {
                 <InfoTile label="Aluno" value={student.name || '-'} />
               </div>
               {(accessContext?.next_retry_at || accessContext?.blocked_reason) ? (
-                <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-4 text-sm text-zinc-300">
+                <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-4 text-sm text-[var(--text-secondary)]">
                   {accessContext?.next_retry_at ? (
                     <p>Proxima tentativa de cobranca prevista em {formatBillingDate(accessContext.next_retry_at)}.</p>
                   ) : null}
@@ -245,11 +245,11 @@ export default function StudentDashboardPage() {
               {upcomingCharges.slice(0, 6).map((charge) => {
                 const chargeMeta = getStatusMeta(charge.status);
                 return (
-                  <li key={charge.charge_id} className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-3">
+                  <li key={charge.charge_id} className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold text-zinc-100">{formatBillingMoney(charge.amount)}</p>
-                        <p className="mt-1 text-xs text-zinc-500">Vencimento: {formatBillingDate(charge.due_at)}</p>
+                        <p className="font-mono text-sm font-semibold tabular-nums text-[var(--text-primary)]">{formatBillingMoney(charge.amount)}</p>
+                        <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">Vencimento: {formatBillingDate(charge.due_at)}</p>
                       </div>
                       <StatusBadge label={chargeMeta.label} tone={chargeMeta.tone} size="sm" />
                     </div>
@@ -306,9 +306,9 @@ export default function StudentDashboardPage() {
 
 function InfoTile({ label, value }) {
   return (
-    <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
-      <p className="mt-1 text-sm text-zinc-100">{value}</p>
+    <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">{label}</p>
+      <p className="mt-1 text-sm text-[var(--text-primary)]">{value}</p>
     </div>
   );
 }

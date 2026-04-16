@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.deps import require_student_actor
 from app.core.time import UTC
 from app.db.mongo import get_db
-from app.services.student_contracts import clean_doc, refresh_contract_state
+from app.services.student_contracts import clean_doc, refresh_contract_state, resolve_authoritative_contract_for_student
 
 router = APIRouter()
 
@@ -91,9 +91,16 @@ def _access_status(student: dict, contract: dict | None, now: datetime) -> str:
         return "blocked"
     if bool(student.get("access_blocked", False)):
         return "blocked"
-    contract_access = str((contract or {}).get("access_status") or "").lower()
+    contract_access = str(
+        (contract or {}).get("access_status") or student.get("contract_access_status") or ""
+    ).lower()
     if contract_access in {"allowed", "blocked", "grace_period", "suspended"}:
         return contract_access
+    contract_status = str(
+        (contract or {}).get("contract_status") or student.get("contract_status") or ""
+    ).lower()
+    if contract_status in {"canceled", "expired", "ended"}:
+        return "blocked"
     if contract and str(contract.get("status") or "").lower() in {"past_due", "expired", "canceled"}:
         return str(contract.get("status")).lower()
     plan_end = student.get("plan_expires_at") or student.get("data_vencimento")
@@ -105,7 +112,13 @@ def _access_status(student: dict, contract: dict | None, now: datetime) -> str:
 
 
 def _access_context(student: dict, contract: dict | None, access_status: str) -> dict:
-    contract_doc = contract or {}
+    contract_doc = contract or {
+        "contract_status": student.get("contract_status"),
+        "financial_status": student.get("contract_financial_status"),
+        "grace_until": student.get("contract_grace_until"),
+        "next_retry_at": student.get("contract_next_retry_at"),
+        "dunning_level": student.get("contract_dunning_level"),
+    }
     grace_until = contract_doc.get("grace_until")
     next_retry_at = contract_doc.get("next_retry_at")
     dunning_level = int(contract_doc.get("dunning_level") or 0)
@@ -136,19 +149,12 @@ async def student_dashboard(actor: dict = Depends(require_student_actor)):
     db = get_db()
     now = datetime.now(UTC)
     student = await _load_student(actor)
-
-    contract = (
-        await db.student_contracts.find(
-            {"owner_id": actor["owner_id"], "student_id": actor["student_id"]},
-            {"_id": 0},
-        )
-        .sort("created_at", -1)
-        .limit(1)
-        .to_list(1)
+    active_contract = await resolve_authoritative_contract_for_student(
+        db,
+        owner_id=actor["owner_id"],
+        student_id=actor["student_id"],
+        now=now,
     )
-    active_contract = contract[0] if contract else None
-    if active_contract:
-        active_contract, _, _ = await refresh_contract_state(db, active_contract)
 
     upcoming_charges = (
         await db.student_charges.find(
@@ -263,7 +269,11 @@ async def student_contracts(
     db = get_db()
     docs = (
         await db.student_contracts.find(
-            {"owner_id": actor["owner_id"], "student_id": actor["student_id"]},
+            {
+                "owner_id": actor["owner_id"],
+                "student_id": actor["student_id"],
+                "is_archived": {"$ne": True},
+            },
             {"_id": 0},
         )
         .sort("created_at", -1)
@@ -309,7 +319,11 @@ async def student_billing(
     student = await _load_student(actor)
     contracts_raw = (
         await db.student_contracts.find(
-            {"owner_id": actor["owner_id"], "student_id": actor["student_id"]},
+            {
+                "owner_id": actor["owner_id"],
+                "student_id": actor["student_id"],
+                "is_archived": {"$ne": True},
+            },
             {"_id": 0},
         )
         .sort("created_at", -1)
@@ -366,7 +380,12 @@ async def student_billing(
         if sanitized:
             sanitized_contracts.append(sanitized)
 
-    current_contract = contracts[0] if contracts else None
+    current_contract = await resolve_authoritative_contract_for_student(
+        db,
+        owner_id=actor["owner_id"],
+        student_id=actor["student_id"],
+        now=now,
+    )
     current_access_status = _access_status(student, current_contract, now)
     current_access_context = _access_context(student, current_contract, current_access_status)
 

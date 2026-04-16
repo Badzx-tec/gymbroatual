@@ -180,6 +180,7 @@ export const api = {
     if (endDate) query.set('endDate', endDate);
     if (params.expiringInDays) query.set('expiringInDays', String(params.expiringInDays));
     if (params.pendingOnly) query.set('pendingOnly', 'true');
+    if (params.includeArchived) query.set('includeArchived', 'true');
     if (Array.isArray(params.status)) {
       params.status.filter(Boolean).forEach((status) => query.append('status', String(status)));
     }
@@ -200,6 +201,12 @@ export const api = {
     request(`/api/admin/contratos/${contractId}/ajustar-validade`, { method: 'POST', body: JSON.stringify(data) }),
   adminAdjustContractBilling: (contractId, data = {}) =>
     request(`/api/admin/contratos/${contractId}/ajustar-cobranca`, { method: 'POST', body: JSON.stringify(data) }),
+  adminArchiveContract: (contractId, data) =>
+    request(`/api/admin/contratos/${contractId}/arquivar`, { method: 'POST', body: JSON.stringify(data) }),
+  adminRestoreContract: (contractId, data = {}) =>
+    request(`/api/admin/contratos/${contractId}/restaurar`, { method: 'POST', body: JSON.stringify(data) }),
+  adminCleanupInvalidContractCharges: (contractId, data = {}) =>
+    request(`/api/admin/contratos/${contractId}/limpar-pendencias`, { method: 'POST', body: JSON.stringify(data) }),
   adminSettleOverdueContract: (contractId, data = {}) =>
     request(`/api/admin/contratos/${contractId}/quitar-atrasos`, { method: 'POST', body: JSON.stringify(data) }),
   adminRemoveCanceledContracts: (data = {}) =>
@@ -218,6 +225,7 @@ export const api = {
     if (endDate) query.set('endDate', endDate);
     if (params.expiringInDays) query.set('expiringInDays', String(params.expiringInDays));
     if (params.pendingOnly) query.set('pendingOnly', 'true');
+    if (params.includeArchived) query.set('includeArchived', 'true');
     if (Array.isArray(params.status)) {
       params.status.filter(Boolean).forEach((status) => query.append('status', String(status)));
     }

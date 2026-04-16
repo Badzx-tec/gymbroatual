@@ -65,7 +65,7 @@ export default function Dialog({
           >
             <div className="flex items-start justify-between gap-4 border-b border-[var(--surface-border)] px-5 py-4">
               <div>
-                {title ? <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--text-primary)]">{title}</h3> : null}
+                {title ? <h3 className="font-heading text-sm font-semibold uppercase tracking-[0.22em] text-[var(--text-primary)]">{title}</h3> : null}
                 {description ? <p className="mt-1 text-sm text-[var(--text-muted)]">{description}</p> : null}
               </div>
               <IconButton onClick={onClose} variant="ghost" aria-label="Fechar dialogo">

@@ -584,8 +584,8 @@ export default function CatracaPage() {
             ].map((row) => {
               const state = normalizedControl[row.key];
               return (
-                <div key={row.key} className="rounded-2xl border border-zinc-900 bg-zinc-950/65 p-4">
-                  <p className="text-sm font-semibold text-zinc-100">{row.label}</p>
+                <div key={row.key} className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-4">
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">{row.label}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <StatusBadge
                       label={`Entrada ${state.entry_locked ? 'travada' : 'liberada'}`}
@@ -810,16 +810,16 @@ export default function CatracaPage() {
                 return (
                   <div
                     key={device.device_id}
-                    className="flex flex-col gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4 lg:flex-row lg:items-center lg:justify-between"
+                    className="flex flex-col gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 lg:flex-row lg:items-center lg:justify-between"
                   >
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-semibold text-zinc-100">{device.name}</p>
+                        <p className="text-sm font-semibold text-[var(--text-primary)]">{device.name}</p>
                         <StatusBadge label={online ? 'Online' : 'Offline'} tone={online ? 'success' : 'warning'} />
                         {device.blocked_until ? <StatusBadge label="Bloqueado" tone="danger" /> : null}
                       </div>
-                      <p className="mt-1 font-mono text-xs text-zinc-500">{device.device_id}</p>
-                      <p className="mt-2 text-xs text-zinc-500">
+                      <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{device.device_id}</p>
+                      <p className="mt-2 text-xs text-[var(--text-muted)]">
                         Ultimo sinal: {device.last_seen_at ? formatDateTime(device.last_seen_at) : 'nunca'}
                       </p>
                       {device.blocked_until ? (
@@ -851,11 +851,11 @@ export default function CatracaPage() {
               {tokenHistory.map((item) => (
                 <div
                   key={item.id}
-                  className="flex flex-col gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
-                    <p className="text-sm font-semibold text-zinc-100">{item.title}</p>
-                    <p className="mt-1 text-xs text-zinc-500">
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">{item.title}</p>
+                    <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">
                       {item.created_at ? formatDateTime(item.created_at) : '-'}
                     </p>
                   </div>
@@ -944,7 +944,7 @@ export default function CatracaPage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1120px] text-sm">
               <thead>
-                <tr className="border-b border-zinc-900 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                <tr className="border-b border-[var(--surface-border)] text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
                   <th className="px-5 py-4">Data</th>
                   <th className="px-5 py-4">Pessoa</th>
                   <th className="px-5 py-4">Perfil</th>
@@ -957,35 +957,40 @@ export default function CatracaPage() {
               </thead>
               <tbody>
                 {visibleLogs.map((log) => (
-                  <tr key={log.access_id || `${log.created_at}-${log.credential_masked}`} className="border-b border-zinc-900/70 hover:bg-zinc-950/55">
-                    <td className="px-5 py-4 text-zinc-400">{formatDateTime(log.created_at || log.timestamp)}</td>
-                    <td className="px-5 py-4">
-                      <p className="font-semibold text-zinc-100">
+                  <tr key={log.access_id || `${log.created_at}-${log.credential_masked}`} className="group/row border-b border-[var(--surface-border)] transition-colors hover:bg-[var(--surface-soft)]">
+                    <td className="px-5 py-3 font-mono text-xs text-[var(--text-secondary)] whitespace-nowrap">{formatDateTime(log.created_at || log.timestamp)}</td>
+                    <td className="px-5 py-3">
+                      <p className="font-semibold text-[var(--text-primary)] transition-colors group-hover/row:text-[var(--brand-primary)]">
                         {log.subject_name || log.student_name || log.employee_name || log.owner_name || log.subject_id || '-'}
                       </p>
-                      <p className="mt-1 font-mono text-xs text-zinc-500">{log.device_id || '-'}</p>
+                      <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{log.device_id || '-'}</p>
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-5 py-3">
                       <StatusBadge label={subjectTypeLabel(log.subject_type)} tone="neutral" />
                     </td>
-                    <td className="px-5 py-4 text-zinc-300">{directionLabel(log.direction)}</td>
-                    <td className="px-5 py-4 text-zinc-300">{log.method || '-'}</td>
+                    <td className="px-5 py-3 text-xs text-[var(--text-secondary)]">{directionLabel(log.direction)}</td>
+                    <td className="px-5 py-3 text-xs text-[var(--text-secondary)]">{log.method || '-'}</td>
                     <td className="px-5 py-4">
                       <StatusBadge
                         label={String(log.decision || '-').toLowerCase() === 'allow' ? 'Liberado' : 'Negado'}
                         tone={decisionTone(log.decision)}
                       />
                     </td>
-                    <td className="px-5 py-4 text-zinc-400">
+                    <td className="px-5 py-3 text-xs text-[var(--text-muted)]">
                       <div>{reasonLabel(log.reason)}</div>
                       {extractReasonDetail(log) ? (
-                        <div className="mt-1 text-xs text-zinc-500">{extractReasonDetail(log)}</div>
+                        <div className="mt-1 text-xs text-[var(--text-muted)]/70">{extractReasonDetail(log)}</div>
                       ) : null}
                     </td>
-                    <td className="px-5 py-4 text-right">
-                      <Button size="sm" variant="ghost" onClick={() => setSelectedLog(log)}>
-                        Ver
-                      </Button>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLog(log)}
+                        aria-label="Ver detalhe"
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-[var(--text-muted)] transition hover:border-[var(--surface-border-strong)] hover:bg-[var(--surface-soft)] hover:text-[var(--text-primary)]"
+                      >
+                        <ScanLine className="h-3.5 w-3.5" />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -1035,14 +1040,14 @@ export default function CatracaPage() {
               {commands.map((command) => (
                 <div
                   key={command.cmd_id}
-                  className="rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4"
+                  className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-4"
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold text-zinc-100">{actionLabel(command.action)}</p>
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">{actionLabel(command.action)}</p>
                     <StatusBadge label={scopeLabel(command.target_scope)} tone="neutral" />
                     <StatusBadge label={command.status || 'pendente'} tone="info" />
                   </div>
-                  <p className="mt-2 text-xs text-zinc-500">{formatDateTime(command.created_at)}</p>
+                  <p className="mt-2 font-mono text-xs text-[var(--text-muted)]">{formatDateTime(command.created_at)}</p>
                 </div>
               ))}
             </div>
@@ -1087,47 +1092,47 @@ export default function CatracaPage() {
               <StatusBadge label={directionLabel(selectedLog.direction)} tone="info" />
             </div>
 
-            <div className="grid gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-4 md:grid-cols-2">
+            <div className="grid gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-4 md:grid-cols-2">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Pessoa</p>
-                <p className="mt-1 text-sm text-zinc-100">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Pessoa</p>
+                <p className="mt-1 text-sm text-[var(--text-primary)]">
                   {selectedLog.subject_name || selectedLog.student_name || selectedLog.employee_name || selectedLog.owner_name || '-'}
                 </p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Data</p>
-                <p className="mt-1 text-sm text-zinc-100">{formatDateTime(selectedLog.created_at || selectedLog.timestamp)}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Data</p>
+                <p className="mt-1 font-mono text-sm text-[var(--text-primary)]">{formatDateTime(selectedLog.created_at || selectedLog.timestamp)}</p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Dispositivo</p>
-                <p className="mt-1 font-mono text-sm text-zinc-100">{selectedLog.device_id || '-'}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Dispositivo</p>
+                <p className="mt-1 font-mono text-sm text-[var(--text-primary)]">{selectedLog.device_id || '-'}</p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Metodo</p>
-                <p className="mt-1 text-sm text-zinc-100">{selectedLog.method || '-'}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Metodo</p>
+                <p className="mt-1 text-sm text-[var(--text-primary)]">{selectedLog.method || '-'}</p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">ID do sujeito</p>
-                <p className="mt-1 font-mono text-sm text-zinc-100">{selectedLog.subject_id || '-'}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">ID do sujeito</p>
+                <p className="mt-1 font-mono text-sm text-[var(--text-primary)]">{selectedLog.subject_id || '-'}</p>
               </div>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Credencial mascarada</p>
-                <p className="mt-1 font-mono text-sm text-zinc-100">{selectedLog.credential_masked || '-'}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Credencial mascarada</p>
+                <p className="mt-1 font-mono text-sm text-[var(--text-primary)]">{selectedLog.credential_masked || '-'}</p>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Motivo principal</p>
-              <p className="mt-2 text-sm font-semibold text-zinc-100">{reasonLabel(selectedLog.reason)}</p>
+            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Motivo principal</p>
+              <p className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{reasonLabel(selectedLog.reason)}</p>
               {extractReasonDetail(selectedLog) ? (
-                <p className="mt-2 text-sm text-zinc-400">{extractReasonDetail(selectedLog)}</p>
+                <p className="mt-2 text-sm text-[var(--text-secondary)]">{extractReasonDetail(selectedLog)}</p>
               ) : null}
             </div>
 
             {selectedLog.reason_detail ? (
-              <div className="rounded-2xl border border-zinc-900 bg-zinc-950/60 p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Contexto tecnico</p>
-                <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-xs text-zinc-400">
+              <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Contexto tecnico</p>
+                <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-xs text-[var(--text-secondary)]">
                   {JSON.stringify(selectedLog.reason_detail, null, 2)}
                 </pre>
               </div>

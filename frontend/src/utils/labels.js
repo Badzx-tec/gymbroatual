@@ -58,3 +58,7 @@ export function accessStatusLabel(status) {
   if (normalized === 'suspended') return 'Suspenso';
   return normalized ? normalized.replaceAll('_', ' ') : '-';
 }
+
+export function archivedFlagLabel(isArchived) {
+  return isArchived ? 'Arquivado' : 'Ativo';
+}

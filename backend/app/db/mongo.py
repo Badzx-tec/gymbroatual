@@ -83,7 +83,11 @@ async def init_indexes() -> None:
     await db.student_contracts.create_index(
         [("owner_id", 1), ("student_id", 1), ("contract_status", 1)]
     )
+    await db.student_contracts.create_index(
+        [("owner_id", 1), ("student_id", 1), ("is_archived", 1), ("contract_status", 1), ("updated_at", -1)]
+    )
     await db.student_contracts.create_index([("owner_id", 1), ("contract_status", 1)])
+    await db.student_contracts.create_index([("owner_id", 1), ("is_archived", 1), ("updated_at", -1)])
     await db.student_contracts.create_index([("owner_id", 1), ("financial_status", 1)])
     await db.student_contracts.create_index([("owner_id", 1), ("access_status", 1)])
     await db.student_contracts.create_index([("owner_id", 1), ("plan_id", 1)])

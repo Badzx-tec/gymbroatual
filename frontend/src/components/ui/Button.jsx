@@ -27,7 +27,7 @@ export default function Button({
     <Component
       type={Component === 'button' ? type : undefined}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-md font-semibold uppercase tracking-[0.16em] transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]',
+        'inline-flex items-center justify-center gap-2 rounded-xl font-semibold uppercase tracking-[0.16em] transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]',
         variantClasses[variant],
         sizeClasses[size],
         className

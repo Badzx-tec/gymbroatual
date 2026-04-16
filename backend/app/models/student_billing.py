@@ -183,6 +183,14 @@ class ContractAdjustBillingIn(BaseModel):
         return self
 
 
+class ContractArchiveIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=240)
+
+
+class ContractRestoreIn(BaseModel):
+    reason: str | None = Field(default=None, max_length=240)
+
+
 class ContractOut(BaseModel):
     contract_id: str
     owner_id: str
@@ -219,6 +227,11 @@ class ContractOut(BaseModel):
     freeze_reason: str | None = None
     canceled_at: datetime | None = None
     ended_at: datetime | None = None
+    is_archived: bool = False
+    archived_at: datetime | None = None
+    archived_reason: str | None = None
+    archived_by_actor_id: str | None = None
+    archived_by_role: str | None = None
     last_payment_at: datetime | None = None
     last_charge_id: str | None = None
     migrated_from_contract_id: str | None = None

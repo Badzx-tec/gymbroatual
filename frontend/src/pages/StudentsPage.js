@@ -10,6 +10,7 @@ import {
   User,
   Users,
 } from 'lucide-react';
+import TableActionMenu from '../components/ui/TableActionMenu';
 import { toast } from 'sonner';
 
 import { api } from '../api';
@@ -691,58 +692,50 @@ export default function StudentsPage() {
             <table data-testid="students-table" className="w-full min-w-[1120px] text-sm">
               <thead>
                 <tr className="border-b border-[var(--surface-border)] text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                  <th className="px-5 py-4">Aluno</th>
-                  <th className="px-5 py-4">CPF</th>
-                  <th className="px-5 py-4">Plano</th>
-                  <th className="px-5 py-4">Status</th>
-                  <th className="px-5 py-4">Uso real</th>
-                  <th className="px-5 py-4">Vencimento</th>
-                  <th className="px-5 py-4 text-right">Acoes</th>
+                  <th className="px-5 py-3">Aluno</th>
+                  <th className="px-5 py-3">CPF</th>
+                  <th className="px-5 py-3">Plano</th>
+                  <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3">Uso real</th>
+                  <th className="px-5 py-3">Vencimento</th>
+                  <th className="px-4 py-3 text-right"></th>
                 </tr>
               </thead>
               <tbody>
                 {visibleStudents.map((student) => (
-                  <tr key={student.student_id} className="border-b border-[var(--surface-border)] hover:bg-[var(--surface-soft)]">
-                    <td className="px-5 py-4">
+                  <tr key={student.student_id} className="group/row border-b border-[var(--surface-border)] transition-colors hover:bg-[var(--surface-soft)]">
+                    <td className="px-5 py-3">
                       <button type="button" onClick={() => viewStudent(student)} className="text-left">
-                        <p className="font-semibold text-[var(--text-primary)]">{student.nome}</p>
-                        <p className="mt-1 text-xs text-[var(--text-muted)]">{student.email || 'Sem e-mail'}</p>
+                        <p className="font-semibold text-[var(--text-primary)] group-hover/row:text-[var(--brand-primary)] transition-colors">{student.nome}</p>
+                        <p className="mt-0.5 text-xs text-[var(--text-muted)]">{student.email || 'Sem e-mail'}</p>
                       </button>
                     </td>
-                    <td className="px-5 py-4 text-[var(--text-secondary)]">{student.cpf || '-'}</td>
-                    <td className="px-5 py-4 text-[var(--text-secondary)]">{getPlanName(student.plano_id)}</td>
-                    <td className="px-5 py-4">
+                    <td className="px-5 py-3 font-mono text-xs text-[var(--text-muted)]">{student.cpf || '-'}</td>
+                    <td className="px-5 py-3 text-xs text-[var(--text-secondary)]">{getPlanName(student.plano_id)}</td>
+                    <td className="px-5 py-3">
                       <StatusBadge label={String(student.status || '').toLowerCase() === 'ativo' ? 'Ativo' : 'Inativo'} tone={statusTone(student.status)} />
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-5 py-3">
                       <div className="space-y-1">
                         <StatusBadge label={usageLabel(student.operational_usage_status)} tone={usageTone(student.operational_usage_status)} />
-                        <p className="text-xs text-[var(--text-muted)]">
+                        <p className="font-mono text-xs text-[var(--text-muted)]">
                           {student.last_real_usage_at ? formatDateTime(student.last_real_usage_at) : 'Sem registro operacional'}
                         </p>
                       </div>
                     </td>
-                    <td className="px-5 py-4 text-[var(--text-secondary)]">
+                    <td className="px-5 py-3 font-mono text-xs text-[var(--text-secondary)]">
                       {student.data_vencimento ? formatDateOnly(student.data_vencimento) : '-'}
                     </td>
-                    <td className="px-5 py-4">
-                      <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => viewStudent(student)}>
-                          Ver
-                        </Button>
-                        {canManageStudents ? (
-                          <>
-                            <Button size="sm" variant="ghost" onClick={() => openEdit(student)}>
-                              <Pencil className="h-4 w-4" />
-                              Editar
-                            </Button>
-                            <Button size="sm" variant="danger" onClick={() => askDelete(student.student_id, student.nome)}>
-                              <Trash2 className="h-4 w-4" />
-                              Remover
-                            </Button>
-                          </>
-                        ) : null}
-                      </div>
+                    <td className="px-4 py-3 text-right">
+                      <TableActionMenu
+                        sections={[
+                          [
+                            { label: 'Ver detalhes', icon: User, onClick: () => viewStudent(student) },
+                            ...(canManageStudents ? [{ label: 'Editar aluno', icon: Pencil, onClick: () => openEdit(student) }] : []),
+                          ],
+                          ...(canManageStudents ? [[{ label: 'Remover aluno', icon: Trash2, danger: true, onClick: () => askDelete(student.student_id, student.nome) }]] : []),
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}

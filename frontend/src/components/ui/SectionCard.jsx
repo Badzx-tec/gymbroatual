@@ -20,7 +20,7 @@ export default function SectionCard({
       {(title || description || actions) ? (
         <div className="flex flex-col gap-3 border-b border-[var(--surface-border)] px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            {title ? <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--text-primary)]">{title}</h2> : null}
+            {title ? <h2 className="font-heading text-sm font-semibold uppercase tracking-[0.22em] text-[var(--text-primary)]">{title}</h2> : null}
             {description ? <p className="mt-1 text-sm text-[var(--text-muted)]">{description}</p> : null}
           </div>
           {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}

@@ -31,32 +31,32 @@ function formatMoney(value) {
 
 function PlanCard({ plan, onEdit, onDelete, canManagePlans }) {
   return (
-    <article className="rounded-2xl border border-zinc-900 bg-zinc-950/72 p-5">
+    <article className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)] transition-colors hover:border-[var(--surface-border-strong)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <div className="rounded-xl border border-zinc-900 bg-zinc-900/70 p-2 text-[var(--brand-primary)]">
+            <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-2 text-[var(--brand-primary)]">
               <Tag className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-zinc-100">{plan.nome}</h3>
-              <p className="text-xs text-zinc-500">{plan.descricao || 'Plano sem descricao operacional.'}</p>
+              <h3 className="font-heading text-lg font-semibold uppercase tracking-wide text-[var(--text-primary)]">{plan.nome}</h3>
+              <p className="text-xs text-[var(--text-muted)]">{plan.descricao || 'Plano sem descricao operacional.'}</p>
             </div>
           </div>
         </div>
-        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${plan.ativo ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-zinc-700 bg-zinc-900 text-zinc-400'}`}>
+        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${plan.ativo ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-[var(--surface-border)] bg-[var(--surface-soft)] text-[var(--text-muted)]'}`}>
           {plan.ativo ? 'Ativo' : 'Inativo'}
         </span>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-zinc-900 bg-zinc-900/60 px-4 py-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Valor</p>
-          <p className="mt-2 text-lg font-semibold text-zinc-100">{formatMoney(plan.valor)}</p>
+        <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Valor</p>
+          <p className="mt-2 font-mono text-lg font-bold tabular-nums text-[var(--text-primary)]">{formatMoney(plan.valor)}</p>
         </div>
-        <div className="rounded-xl border border-zinc-900 bg-zinc-900/60 px-4 py-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Duracao</p>
-          <p className="mt-2 text-lg font-semibold text-zinc-100">
+        <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Duracao</p>
+          <p className="mt-2 font-mono text-lg font-bold tabular-nums text-[var(--text-primary)]">
             {formatDurationLabel(plan.duration_value, plan.duration_unit, plan.duracao_dias)}
           </p>
         </div>

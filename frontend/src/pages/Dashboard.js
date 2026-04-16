@@ -362,18 +362,27 @@ export default function Dashboard() {
 
       {canSeeOps && billingOverview && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4 shadow-[var(--shadow-soft)]">
-            <p className="text-[var(--text-muted)] text-xs uppercase tracking-wider">Contratos em atraso</p>
-            <p className="text-2xl font-bold mt-1">{Number(billingOverview.past_due_contracts || 0)}</p>
-          </div>
-          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4 shadow-[var(--shadow-soft)]">
-            <p className="text-[var(--text-muted)] text-xs uppercase tracking-wider">Cobrancas vencidas</p>
-            <p className="text-2xl font-bold mt-1">{Number(billingOverview.overdue_charges || 0)}</p>
-          </div>
-          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4 shadow-[var(--shadow-soft)]">
-            <p className="text-[var(--text-muted)] text-xs uppercase tracking-wider">Expiram em 7 dias</p>
-            <p className="text-2xl font-bold mt-1">{Number(billingOverview.expiring_next_7d || 0)}</p>
-          </div>
+          <StatCard
+            label="Contratos em atraso"
+            value={Number(billingOverview.past_due_contracts || 0)}
+            icon={UserX}
+            accent={billingOverview.past_due_contracts > 0 ? 'danger' : 'default'}
+            hint="Contratos com cobrancas vencidas"
+          />
+          <StatCard
+            label="Cobrancas vencidas"
+            value={Number(billingOverview.overdue_charges || 0)}
+            icon={DollarSign}
+            accent={billingOverview.overdue_charges > 0 ? 'warning' : 'default'}
+            hint="Titulos nao pagos no prazo"
+          />
+          <StatCard
+            label="Expiram em 7 dias"
+            value={Number(billingOverview.expiring_next_7d || 0)}
+            icon={Activity}
+            accent={billingOverview.expiring_next_7d > 0 ? 'info' : 'default'}
+            hint="Requerem renovacao breve"
+          />
         </div>
       )}
 
@@ -395,10 +404,10 @@ export default function Dashboard() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {opsCards.map((card) => (
-              <div key={card.label} className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-canvas)] p-3">
-                <p className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">{card.label}</p>
-                <p className={`text-2xl font-bold mt-1 ${card.className}`}>{card.value}</p>
-                <p className="mt-1 text-[11px] text-[var(--text-muted)]">{card.hint}</p>
+              <div key={card.label} className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4 shadow-[var(--shadow-soft)]">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--text-muted)]">{card.label}</p>
+                <p className={`mt-2 font-mono text-2xl font-bold tabular-nums leading-none ${card.className}`}>{card.value}</p>
+                <p className="mt-2 text-xs text-[var(--text-muted)]">{card.hint}</p>
               </div>
             ))}
           </div>
@@ -424,10 +433,10 @@ export default function Dashboard() {
               {opsAlerts.alerts.map((alert) => (
                 <div
                   key={alert.code}
-                  className={`border rounded-sm px-3 py-2 text-sm ${
+                  className={`rounded-xl border px-3 py-2.5 text-sm ${
                     alert.severity === 'high'
                       ? 'border-red-500/30 bg-red-500/10 text-red-200'
-                      : 'border-yellow-500/30 bg-yellow-500/10 text-yellow-200'
+                      : 'border-amber-500/30 bg-amber-500/10 text-amber-200'
                   }`}
                 >
                   <p className="font-semibold">{alert.code}</p>

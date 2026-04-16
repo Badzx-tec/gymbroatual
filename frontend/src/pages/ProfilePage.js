@@ -314,18 +314,18 @@ export default function ProfilePage() {
           {canManageBranding ? (
             <SectionCard title="Branding da academia" description="Escolha o tema e a marca que serao aplicados no admin e no portal do aluno.">
               <div className="space-y-5">
-                <div className="flex items-start gap-4 rounded-2xl border border-zinc-900 bg-zinc-950/70 p-4">
-                  <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-zinc-900 bg-zinc-950">
+                <div className="flex items-start gap-4 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-4">
+                  <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-canvas)]">
                     {profile.logo_data_url ? (
                       <img src={profile.logo_data_url} alt="Logo da academia" className="h-full w-full object-cover" />
                     ) : (
-                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Sem logo</span>
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Sem logo</span>
                     )}
                   </div>
                   <div className="space-y-3">
-                    <p className="text-sm text-zinc-400">PNG, JPG, WEBP ou SVG com ate 800 KB.</p>
+                    <p className="text-sm text-[var(--text-secondary)]">PNG, JPG, WEBP ou SVG com ate 800 KB.</p>
                     <div className="flex flex-wrap gap-2">
-                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-100 hover:bg-zinc-800">
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-primary)] transition-colors hover:bg-[var(--surface-card-bg)]">
                         <ImagePlus className="h-4 w-4" />
                         Enviar logo
                         <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={onLogoFile} className="hidden" />
@@ -347,7 +347,7 @@ export default function ProfilePage() {
                         setProfile((prev) => ({ ...prev, theme_key: theme.key }));
                         applyBrandingToDocument(nextBranding);
                       }}
-                      className={`rounded-2xl border px-4 py-4 text-left transition-colors ${profile.theme_key === theme.key ? 'border-[var(--brand-primary)] bg-zinc-900 text-zinc-100' : 'border-zinc-900 bg-zinc-950/70 text-zinc-400 hover:border-zinc-800 hover:text-zinc-200'}`}
+                      className={`rounded-2xl border px-4 py-4 text-left transition-colors ${profile.theme_key === theme.key ? 'border-[var(--brand-primary)] bg-[var(--surface-soft)] text-[var(--text-primary)]' : 'border-[var(--surface-border)] bg-[var(--surface-canvas)] text-[var(--text-secondary)] hover:border-[var(--surface-border-strong)] hover:text-[var(--text-primary)]'}`}
                     >
                       <div className="flex items-center gap-3">
                         <span className="h-4 w-4 rounded-full" style={{ backgroundColor: theme.primary }} />
@@ -400,9 +400,9 @@ export default function ProfilePage() {
 
 function InfoTile({ label, value }) {
   return (
-    <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
-      <p className="mt-1 text-sm text-zinc-100">{value}</p>
+    <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">{label}</p>
+      <p className="mt-1 text-sm text-[var(--text-primary)]">{value}</p>
     </div>
   );
 }

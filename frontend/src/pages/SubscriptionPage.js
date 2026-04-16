@@ -52,9 +52,9 @@ const checkoutMessages = {
 
 function DetailItem({ label, value }) {
   return (
-    <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
-      <div className="mt-1 text-sm text-zinc-100">{value}</div>
+    <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">{label}</p>
+      <div className="mt-1 text-sm text-[var(--text-primary)]">{value}</div>
     </div>
   );
 }
@@ -227,7 +227,7 @@ export default function SubscriptionPage() {
         <SectionCard title="Proximos passos" description="Resumo operacional do backend para orientar a proxima acao.">
           <ul className="space-y-3">
             {actionItems.map((item) => (
-              <li key={item} className="rounded-xl border border-zinc-900 bg-zinc-900/55 px-4 py-3 text-sm text-zinc-300">
+              <li key={item} className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-3 text-sm text-[var(--text-secondary)]">
                 {item}
               </li>
             ))}
@@ -240,11 +240,11 @@ export default function SubscriptionPage() {
           {data.invoices?.length ? (
             <div className="space-y-3">
               {data.invoices.map((invoice) => (
-                <article key={invoice.invoice_id} className="rounded-xl border border-zinc-900 bg-zinc-900/55 px-4 py-4">
+                <article key={invoice.invoice_id} className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <p className="text-sm font-semibold text-zinc-100">{invoice.period_label}</p>
-                      <p className="mt-1 text-xs text-zinc-500">{formatBillingDate(invoice.due_date)} | {formatBillingMoney(invoice.amount)}</p>
+                      <p className="text-sm font-semibold text-[var(--text-primary)]">{invoice.period_label}</p>
+                      <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{formatBillingDate(invoice.due_date)} | {formatBillingMoney(invoice.amount)}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <BillingStatusBadge status={invoice.status} size="sm" />
@@ -265,11 +265,11 @@ export default function SubscriptionPage() {
           {data.events?.length ? (
             <div className="space-y-3">
               {data.events.map((event) => (
-                <article key={event.event_id} className="rounded-xl border border-zinc-900 bg-zinc-900/55 px-4 py-4">
+                <article key={event.event_id} className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <p className="text-sm font-semibold text-zinc-100">{eventTypeLabel(event.event_type)}</p>
-                      <p className="mt-1 text-xs text-zinc-500">{String(event.source || 'system').toUpperCase()} | {formatBillingDate(event.created_at)}</p>
+                      <p className="text-sm font-semibold text-[var(--text-primary)]">{eventTypeLabel(event.event_type)}</p>
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">{String(event.source || 'system').toUpperCase()} | {formatBillingDate(event.created_at)}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <BillingStatusBadge status={event.status} size="sm" />
