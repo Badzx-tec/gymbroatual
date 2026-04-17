@@ -44,7 +44,7 @@ function PlanCard({ plan, onEdit, onDelete, canManagePlans }) {
             </div>
           </div>
         </div>
-        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${plan.ativo ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-[var(--surface-border)] bg-[var(--surface-soft)] text-[var(--text-muted)]'}`}>
+        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${plan.ativo ? 'border-[var(--status-success-border)] bg-[var(--status-success-bg)] text-[var(--status-success-text)]' : 'border-[var(--surface-border)] bg-[var(--surface-soft)] text-[var(--text-muted)]'}`}>
           {plan.ativo ? 'Ativo' : 'Inativo'}
         </span>
       </div>
@@ -273,14 +273,14 @@ export default function PlansPage() {
             <option value="days">Dias</option>
             <option value="months">Meses</option>
           </SelectField>
-          <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300 md:col-span-2">
-            Resumo: <span className="font-semibold text-zinc-100">{formatDurationLabel(form.duration_value, form.duration_unit)}</span>
+          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)] md:col-span-2">
+            Resumo: <span className="font-semibold text-[var(--text-primary)]">{formatDurationLabel(form.duration_value, form.duration_unit)}</span>
           </div>
           <label className="block space-y-1.5 md:col-span-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Descricao</span>
-            <textarea value={form.descricao} onChange={(event) => setForm((prev) => ({ ...prev, descricao: event.target.value }))} rows={4} className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]" />
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Descricao</span>
+            <textarea value={form.descricao} onChange={(event) => setForm((prev) => ({ ...prev, descricao: event.target.value }))} rows={4} className="w-full rounded-md border border-[var(--surface-border)] bg-[var(--surface-base)] px-3 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]" />
           </label>
-          <label className="flex items-start gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm text-zinc-300 md:col-span-2">
+          <label className="flex items-start gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)] md:col-span-2">
             <input type="checkbox" className="mt-1 accent-[var(--brand-primary)]" checked={Boolean(form.ativo)} onChange={(event) => setForm((prev) => ({ ...prev, ativo: event.target.checked }))} />
             <span>Manter plano disponivel para novos contratos.</span>
           </label>
@@ -299,7 +299,7 @@ export default function PlansPage() {
           </>
         }
       >
-        <p className="text-sm text-zinc-400">Plano selecionado: <span className="text-zinc-100">{deleteTarget?.nome || '-'}</span></p>
+        <p className="text-sm text-[var(--text-muted)]">Plano selecionado: <span className="text-[var(--text-primary)]">{deleteTarget?.nome || '-'}</span></p>
       </Dialog>
     </div>
   );

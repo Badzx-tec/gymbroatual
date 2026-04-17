@@ -6,19 +6,19 @@ import { cn } from '../../lib/cn';
 const toneMap = {
   success: {
     icon: CheckCircle2,
-    className: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100',
+    className: 'border-[var(--status-success-border)] bg-[var(--status-success-bg)] text-[var(--status-success-text)]',
   },
   warning: {
     icon: AlertTriangle,
-    className: 'border-amber-500/20 bg-amber-500/10 text-amber-100',
+    className: 'border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-text)]',
   },
   danger: {
     icon: ShieldAlert,
-    className: 'border-red-500/20 bg-red-500/10 text-red-100',
+    className: 'border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] text-[var(--status-danger-text)]',
   },
   info: {
     icon: Info,
-    className: 'border-sky-500/20 bg-sky-500/10 text-sky-100',
+    className: 'border-[var(--status-info-border)] bg-[var(--status-info-bg)] text-[var(--status-info-text)]',
   },
 };
 

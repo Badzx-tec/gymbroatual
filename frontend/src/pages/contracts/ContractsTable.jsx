@@ -38,14 +38,14 @@ function SortHeader({ label, active, direction, onClick }) {
 
 function RowMenu({ onAction }) {
   return (
-    <div className="absolute right-0 top-8 z-30 w-40 rounded-md border border-zinc-700 bg-zinc-950 shadow-xl">
-      <button type="button" onClick={() => onAction('detail')} className="w-full border-b border-zinc-800 px-3 py-2 text-left text-xs hover:bg-zinc-800">Ver detalhes</button>
-      <button type="button" onClick={() => onAction('settle')} className="w-full border-b border-zinc-800 px-3 py-2 text-left text-xs hover:bg-zinc-800">Colocar em dia</button>
-      <button type="button" onClick={() => onAction('renew')} className="w-full border-b border-zinc-800 px-3 py-2 text-left text-xs hover:bg-zinc-800">Renovar</button>
-      <button type="button" onClick={() => onAction('pause')} className="w-full border-b border-zinc-800 px-3 py-2 text-left text-xs hover:bg-zinc-800">Pausar</button>
-      <button type="button" onClick={() => onAction('cancel')} className="w-full border-b border-zinc-800 px-3 py-2 text-left text-xs hover:bg-zinc-800">Cancelar</button>
-      <button type="button" onClick={() => onAction('pdf')} className="w-full border-b border-zinc-800 px-3 py-2 text-left text-xs hover:bg-zinc-800">Baixar PDF</button>
-      <button type="button" onClick={() => onAction('copy')} className="w-full px-3 py-2 text-left text-xs hover:bg-zinc-800">Copiar link</button>
+    <div className="absolute right-0 top-8 z-30 w-40 rounded-md border border-[var(--surface-border)] bg-[var(--surface-raised)] shadow-xl">
+      <button type="button" onClick={() => onAction('detail')} className="w-full border-b border-[var(--surface-border)] px-3 py-2 text-left text-xs hover:bg-[var(--surface-soft)]">Ver detalhes</button>
+      <button type="button" onClick={() => onAction('settle')} className="w-full border-b border-[var(--surface-border)] px-3 py-2 text-left text-xs hover:bg-[var(--surface-soft)]">Colocar em dia</button>
+      <button type="button" onClick={() => onAction('renew')} className="w-full border-b border-[var(--surface-border)] px-3 py-2 text-left text-xs hover:bg-[var(--surface-soft)]">Renovar</button>
+      <button type="button" onClick={() => onAction('pause')} className="w-full border-b border-[var(--surface-border)] px-3 py-2 text-left text-xs hover:bg-[var(--surface-soft)]">Pausar</button>
+      <button type="button" onClick={() => onAction('cancel')} className="w-full border-b border-[var(--surface-border)] px-3 py-2 text-left text-xs hover:bg-[var(--surface-soft)]">Cancelar</button>
+      <button type="button" onClick={() => onAction('pdf')} className="w-full border-b border-[var(--surface-border)] px-3 py-2 text-left text-xs hover:bg-[var(--surface-soft)]">Baixar PDF</button>
+      <button type="button" onClick={() => onAction('copy')} className="w-full px-3 py-2 text-left text-xs hover:bg-[var(--surface-soft)]">Copiar link</button>
     </div>
   );
 }
@@ -122,12 +122,12 @@ export default function ContractsTable({
 
   if (error) {
     return (
-      <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-6 text-sm text-red-200">
+      <div className="rounded-2xl border border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] p-6 text-sm text-[var(--status-danger-text)]">
         <p>Falha ao carregar contratos: {error}</p>
         <button
           type="button"
           onClick={onRetry}
-          className="mt-3 inline-flex h-9 items-center gap-2 rounded-md border border-red-400/40 bg-red-500/20 px-3 text-xs font-semibold uppercase"
+          className="mt-3 inline-flex h-9 items-center gap-2 rounded-md border border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] px-3 text-xs font-semibold uppercase"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           Tentar novamente
@@ -138,8 +138,8 @@ export default function ContractsTable({
 
   if (!loading && !rows.length) {
     return (
-      <div className="rounded-2xl border border-zinc-900 bg-zinc-950/72 p-10 text-center">
-        <p className="text-sm text-zinc-300">
+      <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-10 text-center">
+        <p className="text-sm text-[var(--text-secondary)]">
           {isFiltered ? 'Nenhum contrato encontrado para os filtros aplicados.' : 'Nenhum contrato cadastrado ainda.'}
         </p>
         <div className="mt-4 flex items-center justify-center gap-2">
@@ -147,7 +147,7 @@ export default function ContractsTable({
             <button
               type="button"
               onClick={onClearFilters}
-              className="h-9 rounded-md border border-zinc-700 bg-zinc-800 px-3 text-xs font-semibold uppercase"
+              className="h-9 rounded-md border border-[var(--surface-border-strong)] bg-[var(--surface-soft)] px-3 text-xs font-semibold uppercase"
             >
               Limpar filtros
             </button>
@@ -201,16 +201,16 @@ export default function ContractsTable({
           <tbody>
             {loading
               ? Array.from({ length: 8 }).map((_, index) => (
-                  <tr key={`skeleton_${index}`} className="border-b border-zinc-800/70">
-                    <td className="px-3 py-3"><div className="h-4 w-4 animate-pulse rounded bg-zinc-800" /></td>
-                    <td className="px-2 py-3"><div className="h-4 w-40 animate-pulse rounded bg-zinc-800" /></td>
-                    <td className="px-2 py-3"><div className="h-4 w-28 animate-pulse rounded bg-zinc-800" /></td>
-                    <td className="px-2 py-3"><div className="h-4 w-24 animate-pulse rounded bg-zinc-800" /></td>
-                    <td className="px-2 py-3"><div className="h-4 w-24 animate-pulse rounded bg-zinc-800" /></td>
-                    <td className="px-2 py-3"><div className="h-6 w-28 animate-pulse rounded bg-zinc-800" /></td>
-                    <td className="px-2 py-3"><div className="h-4 w-20 animate-pulse rounded bg-zinc-800" /></td>
-                    <td className="px-2 py-3"><div className="h-4 w-28 animate-pulse rounded bg-zinc-800" /></td>
-                    <td className="px-2 py-3"><div className="h-8 w-8 animate-pulse rounded bg-zinc-800" /></td>
+                  <tr key={`skeleton_${index}`} className="border-b border-[var(--surface-border)]">
+                    <td className="px-3 py-3"><div className="h-4 w-4 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
+                    <td className="px-2 py-3"><div className="h-4 w-40 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
+                    <td className="px-2 py-3"><div className="h-4 w-28 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
+                    <td className="px-2 py-3"><div className="h-4 w-24 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
+                    <td className="px-2 py-3"><div className="h-4 w-24 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
+                    <td className="px-2 py-3"><div className="h-6 w-28 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
+                    <td className="px-2 py-3"><div className="h-4 w-20 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
+                    <td className="px-2 py-3"><div className="h-4 w-28 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
+                    <td className="px-2 py-3"><div className="h-8 w-8 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
                   </tr>
                 ))
               : rows.map((row) => {

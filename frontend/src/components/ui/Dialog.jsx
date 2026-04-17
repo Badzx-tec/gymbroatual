@@ -23,16 +23,24 @@ export default function Dialog({
 }) {
   const reduceMotion = useReducedMotion();
 
+  const titleId = React.useId();
+
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   React.useEffect(() => {
     if (!open) return undefined;
     const onKeyDown = (event) => {
       if (event.key === 'Escape') onClose?.();
     };
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', onKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [open, onClose]);
@@ -54,6 +62,7 @@ export default function Dialog({
           <motion.div
             role="dialog"
             aria-modal="true"
+            aria-labelledby={title ? titleId : undefined}
             className={cn(
               'surface-panel w-full overflow-hidden rounded-[var(--radius-lg)]',
               sizeMap[size] || sizeMap.md
@@ -65,7 +74,7 @@ export default function Dialog({
           >
             <div className="flex items-start justify-between gap-4 border-b border-[var(--surface-border)] px-5 py-4">
               <div>
-                {title ? <h3 className="font-heading text-sm font-semibold uppercase tracking-[0.22em] text-[var(--text-primary)]">{title}</h3> : null}
+                {title ? <h3 id={titleId} className="font-heading text-sm font-semibold uppercase tracking-[0.22em] text-[var(--text-primary)]">{title}</h3> : null}
                 {description ? <p className="mt-1 text-sm text-[var(--text-muted)]">{description}</p> : null}
               </div>
               <IconButton onClick={onClose} variant="ghost" aria-label="Fechar dialogo">

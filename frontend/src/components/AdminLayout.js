@@ -180,7 +180,7 @@ export default function AdminLayout() {
 
   const sidebarContent = (
     <div className="flex h-full flex-col">
-      <div className="border-b border-zinc-900 px-5 py-5">
+      <div className="border-b border-[var(--surface-border)] px-5 py-5">
         <BrandMark compact={false} caption="Gestao, acesso e recorrencia" />
       </div>
 
@@ -188,7 +188,7 @@ export default function AdminLayout() {
         <div className="space-y-5">
           {groupedItems.map((entry) => (
             <div key={entry.group}>
-              <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-zinc-600">
+              <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-[var(--text-muted)]">
                 {entry.group}
               </p>
               <div className="mt-2 space-y-1">
@@ -202,12 +202,12 @@ export default function AdminLayout() {
                     className={({ isActive }) =>
                       `group flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-medium transition ${
                         isActive
-                          ? 'bg-[linear-gradient(135deg,rgba(var(--brand-primary-rgb),0.18),rgba(96,165,250,0.08))] text-zinc-50 shadow-[0_18px_50px_-38px_rgba(0,0,0,0.8)]'
-                          : 'text-zinc-400 hover:bg-zinc-900/80 hover:text-zinc-100'
+                          ? 'bg-[linear-gradient(135deg,rgba(var(--brand-primary-rgb),0.18),rgba(96,165,250,0.08))] text-[var(--text-primary)] shadow-[0_18px_50px_-38px_rgba(0,0,0,0.8)]'
+                          : 'text-[var(--text-muted)] hover:bg-[var(--surface-soft)] hover:text-[var(--text-primary)]'
                       }`
                     }
                   >
-                    <div className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/80 text-zinc-400 transition group-hover:text-zinc-100">
+                    <div className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] text-[var(--text-muted)] transition group-hover:text-[var(--text-primary)]">
                       <item.icon className="h-4 w-4" />
                       {item.label === 'Notificacoes' && unreadCount > 0 ? (
                         <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[var(--status-danger)] px-1 text-[10px] font-bold text-white">
@@ -217,7 +217,7 @@ export default function AdminLayout() {
                     </div>
                     <div className="min-w-0">
                       <p className="truncate">{item.label}</p>
-                      <p className="truncate text-xs text-zinc-600 group-hover:text-zinc-500">
+                      <p className="truncate text-xs text-[var(--text-muted)] group-hover:text-[var(--text-secondary)]">
                         {item.group}
                       </p>
                     </div>
@@ -229,15 +229,15 @@ export default function AdminLayout() {
         </div>
       </nav>
 
-      <div className="border-t border-zinc-900 px-4 py-4">
-        <div className="rounded-[var(--radius-md)] border border-zinc-900 bg-zinc-950/80 p-3">
+      <div className="border-t border-[var(--surface-border)] px-4 py-4">
+        <div className="rounded-[var(--radius-md)] border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900 text-sm font-bold text-[var(--brand-primary)]">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-soft)] text-sm font-bold text-[var(--brand-primary)]">
               {(user.name || 'A')[0].toUpperCase()}
             </div>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-zinc-100">{user.name || 'Administrador'}</p>
-              <p className="truncate text-xs text-zinc-500">{roleLabel(role)}</p>
+              <p className="truncate text-sm font-semibold text-[var(--text-primary)]">{user.name || 'Administrador'}</p>
+              <p className="truncate text-xs text-[var(--text-muted)]">{roleLabel(role)}</p>
             </div>
             <IconButton
               variant="ghost"
@@ -253,7 +253,7 @@ export default function AdminLayout() {
               href={helpUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)] hover:border-[var(--surface-border-strong)] hover:bg-[var(--surface-soft-hover)]"
             >
               <HelpCircle className="h-4 w-4" />
               Ajuda
@@ -261,7 +261,7 @@ export default function AdminLayout() {
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-red-200 hover:bg-red-500/15"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--status-danger-text)] hover:brightness-125"
             >
               <LogOut className="h-4 w-4" />
               Sair
@@ -315,11 +315,11 @@ export default function AdminLayout() {
                   <Menu className="h-4 w-4" />
                 </IconButton>
                 <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
                     Painel administrativo
                   </p>
-                  <h1 className="truncate text-lg font-semibold text-zinc-50">{pageCopy.title}</h1>
-                  <p className="hidden truncate text-sm text-zinc-500 md:block">{pageCopy.subtitle}</p>
+                  <h1 className="truncate text-lg font-semibold text-[var(--text-primary)]">{pageCopy.title}</h1>
+                  <p className="hidden truncate text-sm text-[var(--text-muted)] md:block">{pageCopy.subtitle}</p>
                 </div>
               </div>
 
@@ -327,7 +327,7 @@ export default function AdminLayout() {
                 <button
                   type="button"
                   onClick={() => navigate('/admin/notificacoes')}
-                  className="relative inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-200 hover:border-zinc-700 hover:bg-zinc-900"
+                  className="relative inline-flex items-center gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-secondary)] hover:border-[var(--surface-border-strong)] hover:bg-[var(--surface-soft)]"
                 >
                   <Bell className="h-4 w-4" />
                   <span className="hidden sm:inline">Alertas</span>
@@ -341,14 +341,14 @@ export default function AdminLayout() {
                 <button
                   type="button"
                   onClick={() => navigate('/admin/perfil')}
-                  className="inline-flex items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/80 px-3 py-2 text-left hover:border-zinc-700 hover:bg-zinc-900"
+                  className="inline-flex items-center gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-3 py-2 text-left hover:border-[var(--surface-border-strong)] hover:bg-[var(--surface-soft)]"
                 >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-sm font-bold text-[var(--brand-primary)]">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] text-sm font-bold text-[var(--brand-primary)]">
                     {(user.name || 'A')[0].toUpperCase()}
                   </div>
                   <div className="hidden min-w-0 sm:block">
-                    <p className="truncate text-sm font-semibold text-zinc-100">{user.name || 'Administrador'}</p>
-                    <p className="truncate text-xs text-zinc-500">{user.email || 'Sem e-mail'}</p>
+                    <p className="truncate text-sm font-semibold text-[var(--text-primary)]">{user.name || 'Administrador'}</p>
+                    <p className="truncate text-xs text-[var(--text-muted)]">{user.email || 'Sem e-mail'}</p>
                   </div>
                 </button>
               </div>

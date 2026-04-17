@@ -25,7 +25,7 @@ const expiringOptions = [
 
 function Checkbox({ checked, onChange, label }) {
   return (
-    <label className="inline-flex items-center gap-3 text-sm text-zinc-200">
+    <label className="inline-flex items-center gap-3 text-sm text-[var(--text-secondary)]">
       <input
         type="checkbox"
         checked={checked}
@@ -81,8 +81,8 @@ export default function ContractsFilters({
       }
     >
       <div className="space-y-4">
-        <section className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Status</p>
+        <section className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Status</p>
           <div className="mt-3 grid gap-2">
             {statusOptions.map((option) => (
               <Checkbox
@@ -95,8 +95,8 @@ export default function ContractsFilters({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Planos</p>
+        <section className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Planos</p>
           <div className="mt-3 max-h-48 space-y-2 overflow-auto pr-1">
             {plans.map((plan) => (
               <Checkbox
@@ -106,39 +106,39 @@ export default function ContractsFilters({
                 label={plan.nome}
               />
             ))}
-            {!plans.length ? <p className="text-sm text-zinc-500">Nenhum plano cadastrado.</p> : null}
+            {!plans.length ? <p className="text-sm text-[var(--text-muted)]">Nenhum plano cadastrado.</p> : null}
           </div>
         </section>
 
-        <section className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Periodo</p>
+        <section className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Periodo</p>
           <div className="mt-3 grid gap-4">
             <label className="block space-y-1.5">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Inicio</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Inicio</span>
               <input
                 type="date"
                 value={draft.startDate || ''}
                 onChange={(event) => onDraftChange({ ...draft, startDate: event.target.value })}
-                className="h-11 w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
+                className="h-11 w-full rounded-md border border-[var(--surface-border)] bg-[var(--surface-base)] px-3 text-sm text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
               />
             </label>
             <label className="block space-y-1.5">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Fim</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Fim</span>
               <input
                 type="date"
                 value={draft.endDate || ''}
                 onChange={(event) => onDraftChange({ ...draft, endDate: event.target.value })}
-                className="h-11 w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
+                className="h-11 w-full rounded-md border border-[var(--surface-border)] bg-[var(--surface-base)] px-3 text-sm text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
               />
             </label>
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-[var(--text-muted)]">
               As datas desta tela sao interpretadas em {SAO_PAULO_TIME_ZONE}.
             </p>
           </div>
         </section>
 
-        <section className="rounded-2xl border border-zinc-900 bg-zinc-950/70 p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Expiracao</p>
+        <section className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Expiracao</p>
           <div className="mt-3 space-y-4">
             <SelectField
               label="Expira em"

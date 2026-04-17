@@ -401,7 +401,7 @@ export default function LoginPage() {
                 Sessao validada no backend
               </div>
               <div className="inline-flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-sky-300" />
+                <CheckCircle2 className="h-4 w-4 text-[var(--status-info-text)]" />
                 RBAC por perfil
               </div>
             </div>

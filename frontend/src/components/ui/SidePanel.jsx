@@ -7,6 +7,7 @@ import IconButton from './IconButton';
 
 export default function SidePanel({ open, onClose, title, description, actions, children }) {
   const reduceMotion = useReducedMotion();
+  const titleId = React.useId();
 
   React.useEffect(() => {
     if (!open) return undefined;
@@ -45,6 +46,7 @@ export default function SidePanel({ open, onClose, title, description, actions, 
           <motion.aside
             role="dialog"
             aria-modal="true"
+            aria-labelledby={title ? titleId : undefined}
             className="surface-panel ml-auto flex h-full w-full max-w-[560px] flex-col"
             initial={reduceMotion ? false : { x: 32, opacity: 0 }}
             animate={reduceMotion ? {} : { x: 0, opacity: 1 }}
@@ -53,7 +55,7 @@ export default function SidePanel({ open, onClose, title, description, actions, 
           >
             <div className="flex items-start justify-between gap-4 border-b border-[var(--surface-border)] px-5 py-4">
               <div>
-                {title ? <h3 className="font-heading text-sm font-semibold uppercase tracking-[0.22em] text-[var(--text-primary)]">{title}</h3> : null}
+                {title ? <h3 id={titleId} className="font-heading text-sm font-semibold uppercase tracking-[0.22em] text-[var(--text-primary)]">{title}</h3> : null}
                 {description ? <p className="mt-1 text-sm text-[var(--text-muted)]">{description}</p> : null}
               </div>
               <IconButton onClick={onClose} variant="ghost" aria-label="Fechar painel lateral">

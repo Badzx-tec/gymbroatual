@@ -4,29 +4,29 @@ import { cn } from '../../lib/cn';
 
 const accentConfig = {
   success: {
-    text: 'text-emerald-300',
-    icon: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
-    bar: 'bg-emerald-400',
+    text: 'text-[var(--status-success-text)]',
+    icon: 'border-[var(--status-success-border)] bg-[var(--status-success-bg)] text-[var(--status-success-text)]',
+    bar: 'bg-[var(--status-success)]',
   },
   danger: {
-    text: 'text-red-300',
-    icon: 'border-red-500/30 bg-red-500/10 text-red-300',
-    bar: 'bg-red-400',
+    text: 'text-[var(--status-danger-text)]',
+    icon: 'border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] text-[var(--status-danger-text)]',
+    bar: 'bg-[var(--status-danger)]',
   },
   warning: {
-    text: 'text-amber-300',
-    icon: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
-    bar: 'bg-amber-400',
+    text: 'text-[var(--status-warning-text)]',
+    icon: 'border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-text)]',
+    bar: 'bg-[var(--status-warning)]',
   },
   info: {
-    text: 'text-sky-300',
-    icon: 'border-sky-500/30 bg-sky-500/10 text-sky-300',
-    bar: 'bg-sky-400',
+    text: 'text-[var(--status-info-text)]',
+    icon: 'border-[var(--status-info-border)] bg-[var(--status-info-bg)] text-[var(--status-info-text)]',
+    bar: 'bg-[var(--status-info)]',
   },
   default: {
     text: 'text-[var(--text-primary)]',
     icon: 'border-[var(--surface-border)] bg-[var(--surface-soft)] text-[var(--text-muted)]',
-    bar: 'bg-zinc-600',
+    bar: 'bg-[var(--surface-border-strong)]',
   },
 };
 

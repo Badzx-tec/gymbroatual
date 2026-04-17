@@ -487,8 +487,8 @@ export default function NotificationsPage() {
                       <div className={cn(
                         'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border',
                         notificationTone(notification.tipo) === 'warning'
-                          ? 'border-amber-500/30 bg-amber-500/10 text-amber-500'
-                          : 'border-sky-500/30 bg-sky-500/10 text-sky-500'
+                          ? 'border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning)]'
+                          : 'border-[var(--status-info-border)] bg-[var(--status-info-bg)] text-[var(--status-info)]'
                       )}>
                         {notificationTone(notification.tipo) === 'warning' ? (
                           <AlertTriangle className="h-5 w-5" />

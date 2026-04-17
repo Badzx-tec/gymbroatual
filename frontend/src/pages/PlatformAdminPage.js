@@ -206,7 +206,7 @@ export default function PlatformAdminPage() {
   const kpis = overview?.kpis || {};
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-zinc-100">
+    <div className="min-h-screen bg-[var(--surface-base)] text-[var(--text-primary)]">
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 md:px-6 xl:px-8">
         <PageHeader
           eyebrow="Plataforma"
@@ -254,9 +254,9 @@ export default function PlatformAdminPage() {
             </div>
             <div className="mt-4 space-y-2">
               {(finance?.monthly_revenue || []).map((item) => (
-                <div key={item.month} className="flex items-center justify-between rounded-xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-sm">
-                  <span className="text-zinc-400">{item.month}</span>
-                  <span className="font-semibold text-zinc-100">{formatMoney(item.amount || 0)}</span>
+                <div key={item.month} className="flex items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm">
+                  <span className="text-[var(--text-muted)]">{item.month}</span>
+                  <span className="font-semibold text-[var(--text-primary)]">{formatMoney(item.amount || 0)}</span>
                 </div>
               ))}
               {(!finance?.monthly_revenue || finance.monthly_revenue.length === 0) ? (
@@ -273,16 +273,16 @@ export default function PlatformAdminPage() {
                     key={item.owner_id}
                     type="button"
                     onClick={() => setSelectedOwnerId(item.owner_id)}
-                    className="w-full rounded-xl border border-zinc-900 bg-zinc-950/70 px-4 py-3 text-left hover:border-zinc-800"
+                    className="w-full rounded-xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-left hover:border-[var(--surface-border-strong)]"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold text-zinc-100">{item.name || '-'}</p>
-                        <p className="mt-1 text-xs text-zinc-500">{item.email || '-'}</p>
+                        <p className="text-sm font-semibold text-[var(--text-primary)]">{item.name || '-'}</p>
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">{item.email || '-'}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-semibold text-zinc-100">{formatMoney(item.amount || 0)}</p>
-                        <p className="mt-1 text-xs text-zinc-500">{item.paid_invoices || 0} faturas pagas</p>
+                        <p className="text-sm font-semibold text-[var(--text-primary)]">{formatMoney(item.amount || 0)}</p>
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">{item.paid_invoices || 0} faturas pagas</p>
                       </div>
                     </div>
                   </button>
@@ -315,7 +315,7 @@ export default function PlatformAdminPage() {
             <div className="overflow-x-auto">
               <table className="min-w-[1120px] w-full text-sm">
                 <thead>
-                  <tr className="border-b border-zinc-900 text-left text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                  <tr className="border-b border-[var(--surface-border)] text-left text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">
                     <th className="px-5 py-3">Owner</th>
                     <th className="px-5 py-3">Academia</th>
                     <th className="px-5 py-3">Assinatura</th>
@@ -333,21 +333,21 @@ export default function PlatformAdminPage() {
                     return (
                       <tr
                         key={owner.owner_id}
-                        className="cursor-pointer border-b border-zinc-900/70 hover:bg-zinc-950/40"
+                        className="cursor-pointer border-b border-[var(--surface-border)] hover:bg-[var(--surface-soft)]"
                         onClick={() => setSelectedOwnerId(owner.owner_id)}
                       >
                         <td className="px-5 py-4">
-                          <p className="font-semibold text-zinc-100">{owner.name || '-'}</p>
-                          <p className="mt-1 text-xs text-zinc-500">{owner.email || owner.owner_id}</p>
+                          <p className="font-semibold text-[var(--text-primary)]">{owner.name || '-'}</p>
+                          <p className="mt-1 text-xs text-[var(--text-muted)]">{owner.email || owner.owner_id}</p>
                         </td>
-                        <td className="px-5 py-4 text-zinc-300">{owner.gym_name || owner.gym_id || '-'}</td>
+                        <td className="px-5 py-4 text-[var(--text-secondary)]">{owner.gym_name || owner.gym_id || '-'}</td>
                         <td className="px-5 py-4">
                           <StatusBadge label={meta.label} tone={meta.tone} />
                         </td>
-                        <td className="px-5 py-4 text-zinc-300">{owner.students_active || 0} / {owner.students_total || 0}</td>
-                        <td className="px-5 py-4 text-zinc-300">{owner.employees_active || 0}</td>
-                        <td className="px-5 py-4 text-zinc-400">{formatDate(owner.subscription_grace_until)}</td>
-                        <td className="px-5 py-4 text-zinc-400">{formatDate(owner.last_access_at)}</td>
+                        <td className="px-5 py-4 text-[var(--text-secondary)]">{owner.students_active || 0} / {owner.students_total || 0}</td>
+                        <td className="px-5 py-4 text-[var(--text-secondary)]">{owner.employees_active || 0}</td>
+                        <td className="px-5 py-4 text-[var(--text-muted)]">{formatDate(owner.subscription_grace_until)}</td>
+                        <td className="px-5 py-4 text-[var(--text-muted)]">{formatDate(owner.last_access_at)}</td>
                         <td className="px-5 py-4">
                           <div className="flex justify-end gap-2" onClick={(event) => event.stopPropagation()}>
                             <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={() => openGrantGraceDialog(owner)}>
@@ -401,7 +401,7 @@ export default function PlatformAdminPage() {
             <div className="overflow-x-auto">
               <table className="min-w-[960px] w-full text-sm">
                 <thead>
-                  <tr className="border-b border-zinc-900 text-left text-[11px] uppercase tracking-[0.18em] text-zinc-500">
+                  <tr className="border-b border-[var(--surface-border)] text-left text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">
                     <th className="px-5 py-3">Data</th>
                     <th className="px-5 py-3">Owner ID</th>
                     <th className="px-5 py-3">Fonte</th>
@@ -410,11 +410,11 @@ export default function PlatformAdminPage() {
                 </thead>
                 <tbody>
                   {logs.map((item, index) => (
-                    <tr key={`${item.source}-${item.owner_id}-${index}`} className="border-b border-zinc-900/70">
-                      <td className="px-5 py-4 text-zinc-400">{formatDate(item.timestamp)}</td>
-                      <td className="px-5 py-4 font-mono text-xs text-zinc-300">{item.owner_id || '-'}</td>
-                      <td className="px-5 py-4 text-zinc-300">{String(item.source || '').toUpperCase() || '-'}</td>
-                      <td className="px-5 py-4 text-zinc-400">{item.summary}</td>
+                    <tr key={`${item.source}-${item.owner_id}-${index}`} className="border-b border-[var(--surface-border)]">
+                      <td className="px-5 py-4 text-[var(--text-muted)]">{formatDate(item.timestamp)}</td>
+                      <td className="px-5 py-4 font-mono text-xs text-[var(--text-secondary)]">{item.owner_id || '-'}</td>
+                      <td className="px-5 py-4 text-[var(--text-secondary)]">{String(item.source || '').toUpperCase() || '-'}</td>
+                      <td className="px-5 py-4 text-[var(--text-muted)]">{item.summary}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -496,23 +496,23 @@ export default function PlatformAdminPage() {
       >
         {graceDialog?.mode === 'grant' ? (
           <div className="space-y-4">
-            <p className="text-sm text-zinc-400">Owner selecionado: <span className="text-zinc-100">{graceDialog?.owner?.email || graceDialog?.owner?.owner_id}</span></p>
+            <p className="text-sm text-[var(--text-muted)]">Owner selecionado: <span className="text-[var(--text-primary)]">{graceDialog?.owner?.email || graceDialog?.owner?.owner_id}</span></p>
             <label className="block space-y-1.5">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Dias de carencia</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Dias de carencia</span>
               <input
                 type="number"
                 min="1"
                 max="90"
                 value={graceDialog?.days || '3'}
                 onChange={(event) => setGraceDialog((current) => ({ ...current, days: event.target.value }))}
-                className="h-11 w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
+                className="h-11 w-full rounded-md border border-[var(--surface-border)] bg-[var(--surface-base)] px-3 text-sm text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
               />
             </label>
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-sm text-zinc-400">Owner selecionado: <span className="text-zinc-100">{graceDialog?.owner?.email || graceDialog?.owner?.owner_id}</span></p>
-            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            <p className="text-sm text-[var(--text-muted)]">Owner selecionado: <span className="text-[var(--text-primary)]">{graceDialog?.owner?.email || graceDialog?.owner?.owner_id}</span></p>
+            <div className="rounded-2xl border border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] px-4 py-3 text-sm text-[var(--status-danger-text)]">
               Se a assinatura ainda estiver pendente, o painel pode voltar a ficar restrito imediatamente apos esta acao.
             </div>
           </div>
@@ -524,9 +524,9 @@ export default function PlatformAdminPage() {
 
 function InfoTile({ label, value }) {
   return (
-    <div className="rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{label}</p>
-      <p className="mt-1 text-sm text-zinc-100">{value}</p>
+    <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">{label}</p>
+      <p className="mt-1 text-sm text-[var(--text-primary)]">{value}</p>
     </div>
   );
 }

@@ -7,40 +7,40 @@ const CARD_DEFS = [
     label: 'Contratos ativos',
     sublabel: 'Vigentes agora',
     icon: CheckCircle2,
-    iconClass: 'text-emerald-400',
-    ringClass: 'border-emerald-500/20 bg-emerald-500/5',
-    activeRingClass: 'border-emerald-500/40 bg-emerald-500/10',
-    numClass: 'text-zinc-100',
+    iconClass: 'text-[var(--status-success)]',
+    ringClass: 'border-[var(--status-success-border)] bg-[var(--status-success-bg)]',
+    activeRingClass: 'border-[var(--status-success-border)] bg-[var(--status-success-bg)]',
+    numClass: 'text-[var(--text-primary)]',
   },
   {
     key: 'expiring',
     label: 'Vencem em 7 dias',
     sublabel: 'Renovacao pendente',
     icon: CalendarClock,
-    iconClass: 'text-amber-400',
-    ringClass: 'border-amber-500/20 bg-amber-500/5',
-    activeRingClass: 'border-amber-500/40 bg-amber-500/10',
-    numClass: 'text-amber-300',
+    iconClass: 'text-[var(--status-warning)]',
+    ringClass: 'border-[var(--status-warning-border)] bg-[var(--status-warning-bg)]',
+    activeRingClass: 'border-[var(--status-warning-border)] bg-[var(--status-warning-bg)]',
+    numClass: 'text-[var(--status-warning-text)]',
   },
   {
     key: 'pending',
     label: 'Inadimplentes',
     sublabel: 'Pendentes ou atrasados',
     icon: AlertTriangle,
-    iconClass: 'text-orange-400',
-    ringClass: 'border-orange-500/20 bg-orange-500/5',
-    activeRingClass: 'border-orange-500/40 bg-orange-500/10',
-    numClass: 'text-orange-300',
+    iconClass: 'text-[var(--status-warning)]',
+    ringClass: 'border-[var(--status-warning-border)] bg-[var(--status-warning-bg)]',
+    activeRingClass: 'border-[var(--status-warning-border)] bg-[var(--status-warning-bg)]',
+    numClass: 'text-[var(--status-warning-text)]',
   },
   {
     key: 'canceled',
     label: 'Cancelados',
     sublabel: 'Neste mes',
     icon: TrendingDown,
-    iconClass: 'text-red-400',
-    ringClass: 'border-red-500/20 bg-red-500/5',
-    activeRingClass: 'border-red-500/40 bg-red-500/10',
-    numClass: 'text-red-300',
+    iconClass: 'text-[var(--status-danger)]',
+    ringClass: 'border-[var(--status-danger-border)] bg-[var(--status-danger-bg)]',
+    activeRingClass: 'border-[var(--status-danger-border)] bg-[var(--status-danger-bg)]',
+    numClass: 'text-[var(--status-danger-text)]',
   },
 ];
 
@@ -68,7 +68,7 @@ export default function ContractsOverview({ overview, quickFilterKey, onQuickFil
             className={`group relative overflow-hidden rounded-2xl border p-5 text-left transition-all duration-150 ${
               isActive
                 ? `${card.activeRingClass} ring-1 ring-inset ring-white/5`
-                : `border-zinc-800/80 bg-zinc-950/60 hover:border-zinc-700 hover:bg-zinc-900/60`
+                : `border-[var(--surface-border)] bg-[var(--surface-card-bg)] hover:border-[var(--surface-border-strong)] hover:bg-[var(--surface-soft)]`
             }`}
           >
             {/* Active indicator */}
@@ -79,7 +79,7 @@ export default function ContractsOverview({ overview, quickFilterKey, onQuickFil
             {/* Icon */}
             <span
               className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border transition-colors ${
-                isActive ? card.ringClass : 'border-zinc-800 bg-zinc-900 group-hover:border-zinc-700'
+                isActive ? card.ringClass : 'border-[var(--surface-border)] bg-[var(--surface-soft)] group-hover:border-[var(--surface-border-strong)]'
               }`}
             >
               <Icon className={`h-4 w-4 ${card.iconClass}`} />
@@ -87,14 +87,14 @@ export default function ContractsOverview({ overview, quickFilterKey, onQuickFil
 
             {/* Number */}
             <p className={`mt-3 font-mono text-3xl font-bold tabular-nums leading-none ${
-              isActive ? card.numClass : 'text-zinc-100'
+              isActive ? card.numClass : 'text-[var(--text-primary)]'
             }`}>
               {value.toLocaleString('pt-BR')}
             </p>
 
             {/* Labels */}
-            <p className="mt-2 text-xs font-semibold text-zinc-300">{card.label}</p>
-            <p className="mt-0.5 text-[10px] text-zinc-600">{card.sublabel}</p>
+            <p className="mt-2 text-xs font-semibold text-[var(--text-secondary)]">{card.label}</p>
+            <p className="mt-0.5 text-[10px] text-[var(--text-muted)]">{card.sublabel}</p>
           </button>
         );
       })}

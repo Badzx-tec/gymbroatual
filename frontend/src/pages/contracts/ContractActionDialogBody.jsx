@@ -159,7 +159,7 @@ export default function ContractActionDialogBody({ actionDialog, setActionDialog
             onChange={(e) => patch({ confirmPhrase: e.target.value })}
             placeholder={HARD_DELETE_CONFIRM_PHRASE}
           />
-          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <div className="rounded-2xl border border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] px-4 py-3 text-sm text-[var(--status-danger-text)]">
             Use apenas depois de arquivar os contratos invalidos e confirmar que o historico nao sera mais necessario.
           </div>
         </div>

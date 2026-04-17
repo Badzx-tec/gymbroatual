@@ -107,7 +107,7 @@ export default function CredentialPanel({ title, description, fields, onClose })
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge label="Sensivel" tone="warning" />
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-[var(--text-muted)]">
             Senhas e tokens podem nao aparecer novamente. Guarde em local seguro.
           </p>
         </div>
@@ -116,15 +116,15 @@ export default function CredentialPanel({ title, description, fields, onClose })
           {fields.map((field) => (
             <div
               key={field.label}
-              className="grid gap-3 rounded-2xl border border-zinc-900 bg-zinc-950/70 px-4 py-4 md:grid-cols-[180px_1fr_auto]"
+              className="grid gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 md:grid-cols-[180px_1fr_auto]"
             >
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{field.label}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">{field.label}</p>
               </div>
               <input
                 readOnly
                 value={field.value || ''}
-                className="h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 font-mono text-sm text-zinc-100"
+                className="h-11 w-full rounded-xl border border-[var(--surface-border)] bg-[var(--surface-base)] px-3 font-mono text-sm text-[var(--text-primary)]"
               />
               <div className="flex items-center justify-end gap-2">
                 <IconButton

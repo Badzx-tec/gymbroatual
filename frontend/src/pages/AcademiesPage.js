@@ -49,7 +49,7 @@ function AcademyCard({ academy, stats, onEdit, onDelete }) {
             </p>
           ) : null}
         </div>
-        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${academy.ativo ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-[var(--surface-border)] bg-[var(--surface-soft)] text-[var(--text-muted)]'}`}>
+        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${academy.ativo ? 'border-[var(--status-success-border)] bg-[var(--status-success-bg)] text-[var(--status-success-text)]' : 'border-[var(--surface-border)] bg-[var(--surface-soft)] text-[var(--text-muted)]'}`}>
           {academy.ativo ? 'Ativa' : 'Inativa'}
         </span>
       </div>
@@ -79,7 +79,7 @@ function AcademyCard({ academy, stats, onEdit, onDelete }) {
 }
 
 function MiniMetric({ icon: Icon, label, value, accent = 'default' }) {
-  const colorClass = accent === 'success' ? 'text-emerald-300' : accent === 'info' ? 'text-sky-300' : 'text-[var(--text-primary)]';
+  const colorClass = accent === 'success' ? 'text-[var(--status-success-text)]' : accent === 'info' ? 'text-[var(--status-info-text)]' : 'text-[var(--text-primary)]';
   return (
     <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-3 py-3 text-center">
       <Icon className="mx-auto h-4 w-4 text-[var(--text-muted)]" />

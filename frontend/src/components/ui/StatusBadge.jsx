@@ -3,11 +3,11 @@ import React from 'react';
 import { cn } from '../../lib/cn';
 
 const toneClasses = {
-  success: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200',
-  warning: 'border-amber-500/30 bg-amber-500/10 text-amber-200',
-  danger: 'border-red-500/30 bg-red-500/10 text-red-200',
-  info: 'border-sky-500/30 bg-sky-500/10 text-sky-200',
-  neutral: 'border-zinc-700 bg-zinc-900 text-zinc-300',
+  success: 'border-[var(--status-success-border)] bg-[var(--status-success-bg)] text-[var(--status-success-text)]',
+  warning: 'border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-text)]',
+  danger: 'border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] text-[var(--status-danger-text)]',
+  info: 'border-[var(--status-info-border)] bg-[var(--status-info-bg)] text-[var(--status-info-text)]',
+  neutral: 'border-[var(--status-neutral-border)] bg-[var(--status-neutral-bg)] text-[var(--status-neutral-text)]',
 };
 
 const sizeClasses = {

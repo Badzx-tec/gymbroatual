@@ -1211,7 +1211,7 @@ export default function StudentContractsPage() {
           <p className="text-sm text-[var(--text-secondary)]">
             Essa limpeza remove historico financeiro e auditoria dos contratos cancelados.
           </p>
-          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <div className="rounded-2xl border border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] px-4 py-3 text-sm text-[var(--status-danger-text)]">
             Use apenas quando tiver certeza de que esses contratos nao precisam mais ficar visiveis.
           </div>
         </div>

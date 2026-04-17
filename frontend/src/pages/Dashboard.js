@@ -194,25 +194,25 @@ export default function Dashboard() {
         label: 'Negacoes na janela',
         value: Number(turnstileSummary?.window?.deny || 0),
         hint: `${denyRateWindow}% do volume`,
-        className: 'text-red-300',
+        className: 'text-[var(--status-danger-text)]',
       },
       {
         label: 'Alunos em graca',
         value: Number(turnstileSummary?.grace_students || 0),
         hint: 'Acesso liberado temporariamente',
-        className: 'text-blue-300',
+        className: 'text-[var(--status-info-text)]',
       },
       {
         label: 'Alunos bloqueados',
         value: Number(turnstileSummary?.blocked_students || 0),
         hint: 'Sem liberacao de acesso',
-        className: 'text-amber-300',
+        className: 'text-[var(--status-warning-text)]',
       },
       {
         label: 'Dispositivos bloqueados',
         value: Number(turnstileSummary?.devices?.blocked || 0),
         hint: `${Number(turnstileSummary?.devices?.online_5m || 0)}/${Number(turnstileSummary?.devices?.total || 0)} online (5m)`,
-        className: 'text-yellow-300',
+        className: 'text-[var(--status-warning-text)]',
       },
     ];
   }, [denyRateWindow, turnstileSummary]);
@@ -331,7 +331,7 @@ export default function Dashboard() {
               }}
               size="sm"
             >
-              <FileText className="w-4 h-4 text-red-400" />
+              <FileText className="w-4 h-4 text-[var(--status-danger)]" />
               Alunos PDF
             </Button>
             <Button onClick={() => navigate('/admin/contratos')} size="sm" variant="ghost">
@@ -435,8 +435,8 @@ export default function Dashboard() {
                   key={alert.code}
                   className={`rounded-xl border px-3 py-2.5 text-sm ${
                     alert.severity === 'high'
-                      ? 'border-red-500/30 bg-red-500/10 text-red-200'
-                      : 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+                      ? 'border-[var(--status-danger-border)] bg-[var(--status-danger-bg)] text-[var(--status-danger-text)]'
+                      : 'border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] text-[var(--status-warning-text)]'
                   }`}
                 >
                   <p className="font-semibold">{alert.code}</p>
@@ -590,7 +590,7 @@ export default function Dashboard() {
                   <tr
                     key={`${log.log_id || log.access_id || 'log'}-${index}`}
                     className={`border-b border-[var(--surface-border)] transition-colors ${
-                      critical ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-[var(--surface-soft)]'
+                      critical ? 'bg-[var(--status-danger-bg)] hover:brightness-125' : 'hover:bg-[var(--surface-soft)]'
                     }`}
                   >
                     <td className="px-5 py-3 font-medium">{log.student_name || log.employee_name || 'Desconhecido'}</td>
@@ -601,11 +601,11 @@ export default function Dashboard() {
                       <span
                         className={`inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider px-2.5 py-1 rounded-sm border ${
                           allowed
-                            ? 'bg-green-500/10 text-green-500 border-green-500/20'
-                            : 'bg-red-500/10 text-red-500 border-red-500/20'
+                            ? 'bg-[var(--status-success-bg)] text-[var(--status-success-text)] border-[var(--status-success-border)]'
+                            : 'bg-[var(--status-danger-bg)] text-[var(--status-danger-text)] border-[var(--status-danger-border)]'
                         }`}
                       >
-                        <span className={`w-1.5 h-1.5 rounded-full ${allowed ? 'bg-green-500' : 'bg-red-500'}`} />
+                        <span className={`w-1.5 h-1.5 rounded-full ${allowed ? 'bg-[var(--status-success)]' : 'bg-[var(--status-danger)]'}`} />
                         {allowed ? 'Liberado' : 'Negado'}
                       </span>
                     </td>

@@ -35,9 +35,9 @@ function HealthTooltip({ anchorRef, contract, health }) {
         pointerEvents: 'none',
         transition: 'opacity 0.1s',
       }}
-      className="rounded-xl border border-zinc-700/80 bg-zinc-900 p-3 shadow-2xl shadow-black/50"
+      className="rounded-xl border border-[var(--surface-border-strong)] bg-[var(--surface-raised)] p-3 shadow-2xl shadow-black/50"
     >
-      <p className="mb-2 text-[9px] font-bold uppercase tracking-[0.15em] text-zinc-600">
+      <p className="mb-2 text-[9px] font-bold uppercase tracking-[0.15em] text-[var(--text-muted)]">
         Status detalhado
       </p>
       <div className="space-y-1.5">
@@ -68,8 +68,8 @@ function HealthTooltip({ anchorRef, contract, health }) {
 function TooltipRow({ label, value, warn = false }) {
   return (
     <div className="flex items-center justify-between gap-2">
-      <span className="text-[10px] text-zinc-600">{label}</span>
-      <span className={`font-mono text-[10px] ${warn ? 'text-amber-300' : 'text-zinc-300'}`}>
+      <span className="text-[10px] text-[var(--text-muted)]">{label}</span>
+      <span className={`font-mono text-[10px] ${warn ? 'text-[var(--status-warning-text)]' : 'text-[var(--text-secondary)]'}`}>
         {String(value || '—').replaceAll('_', ' ')}
       </span>
     </div>
@@ -103,7 +103,7 @@ export default function ContractHealthBadge({ contract, showDetail = false }) {
       </span>
 
       {showDetail && (
-        <span className="mt-1 text-[10px] text-zinc-600">{health.sublabel}</span>
+        <span className="mt-1 text-[10px] text-[var(--text-muted)]">{health.sublabel}</span>
       )}
 
       {hovered && (

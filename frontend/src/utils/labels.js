@@ -35,6 +35,7 @@ export function contractStatusLabel(status) {
   if (normalized === 'canceled') return 'Cancelado';
   if (normalized === 'expired') return 'Expirado';
   if (normalized === 'ended') return 'Encerrado';
+  if (normalized === 'draft') return 'Rascunho';
   return normalized ? normalized.replaceAll('_', ' ') : '-';
 }
 

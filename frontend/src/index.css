@@ -27,9 +27,24 @@
   --surface-card-bg: rgba(17, 22, 26, 0.82);
   --surface-overlay: rgba(0, 0, 0, 0.6);
   --status-success: #34d399;
+  --status-success-bg: rgba(52, 211, 153, 0.10);
+  --status-success-border: rgba(52, 211, 153, 0.30);
+  --status-success-text: #6ee7b7;
   --status-warning: #fbbf24;
+  --status-warning-bg: rgba(251, 191, 36, 0.10);
+  --status-warning-border: rgba(251, 191, 36, 0.30);
+  --status-warning-text: #fcd34d;
   --status-danger: #fb7185;
+  --status-danger-bg: rgba(251, 113, 133, 0.10);
+  --status-danger-border: rgba(251, 113, 133, 0.30);
+  --status-danger-text: #fda4af;
   --status-info: #60a5fa;
+  --status-info-bg: rgba(96, 165, 250, 0.10);
+  --status-info-border: rgba(96, 165, 250, 0.30);
+  --status-info-text: #93c5fd;
+  --status-neutral-bg: var(--surface-soft);
+  --status-neutral-border: var(--surface-border);
+  --status-neutral-text: var(--text-muted);
   --radius-sm: 10px;
   --radius-md: 16px;
   --radius-lg: 22px;
@@ -65,6 +80,25 @@
   --surface-overlay: rgba(15, 23, 42, 0.18);
   --shadow-soft: 0 24px 60px -40px rgba(15, 23, 42, 0.16);
   --shadow-panel: 0 28px 72px -44px rgba(15, 23, 42, 0.18);
+  --status-success: #059669;
+  --status-success-bg: rgba(5, 150, 105, 0.08);
+  --status-success-border: rgba(5, 150, 105, 0.25);
+  --status-success-text: #047857;
+  --status-warning: #d97706;
+  --status-warning-bg: rgba(217, 119, 6, 0.08);
+  --status-warning-border: rgba(217, 119, 6, 0.25);
+  --status-warning-text: #92400e;
+  --status-danger: #e11d48;
+  --status-danger-bg: rgba(225, 29, 72, 0.08);
+  --status-danger-border: rgba(225, 29, 72, 0.25);
+  --status-danger-text: #be123c;
+  --status-info: #2563eb;
+  --status-info-bg: rgba(37, 99, 235, 0.08);
+  --status-info-border: rgba(37, 99, 235, 0.25);
+  --status-info-text: #1d4ed8;
+  --status-neutral-bg: var(--surface-soft);
+  --status-neutral-border: var(--surface-border);
+  --status-neutral-text: var(--text-muted);
 }
 
 * {
@@ -147,63 +181,6 @@ textarea {
   background: var(--surface-card-bg);
   border: 1px solid var(--surface-border);
   box-shadow: var(--shadow-soft);
-}
-
-:root[data-color-mode='light'] .bg-zinc-950,
-:root[data-color-mode='light'] .bg-\[\#09090b\] {
-  background-color: var(--surface-canvas) !important;
-}
-
-:root[data-color-mode='light'] .bg-zinc-950\/70,
-:root[data-color-mode='light'] .bg-zinc-950\/72,
-:root[data-color-mode='light'] .bg-zinc-950\/80,
-:root[data-color-mode='light'] .bg-zinc-950\/88,
-:root[data-color-mode='light'] .bg-zinc-950\/90 {
-  background-color: rgba(255, 255, 255, 0.86) !important;
-}
-
-:root[data-color-mode='light'] .bg-zinc-900,
-:root[data-color-mode='light'] .bg-zinc-900\/55,
-:root[data-color-mode='light'] .bg-zinc-900\/60,
-:root[data-color-mode='light'] .bg-zinc-900\/70,
-:root[data-color-mode='light'] .bg-zinc-900\/80,
-:root[data-color-mode='light'] .bg-zinc-900\/90 {
-  background-color: var(--surface-soft) !important;
-}
-
-:root[data-color-mode='light'] .bg-zinc-800,
-:root[data-color-mode='light'] .bg-zinc-800\/80 {
-  background-color: var(--surface-soft-hover) !important;
-}
-
-:root[data-color-mode='light'] .border-zinc-900,
-:root[data-color-mode='light'] .border-zinc-800,
-:root[data-color-mode='light'] .border-zinc-700 {
-  border-color: var(--surface-border) !important;
-}
-
-:root[data-color-mode='light'] .text-zinc-50,
-:root[data-color-mode='light'] .text-zinc-100,
-:root[data-color-mode='light'] .text-zinc-200,
-:root[data-color-mode='light'] .text-zinc-300 {
-  color: var(--text-primary) !important;
-}
-
-:root[data-color-mode='light'] .text-zinc-400,
-:root[data-color-mode='light'] .text-zinc-500,
-:root[data-color-mode='light'] .text-zinc-600 {
-  color: var(--text-muted) !important;
-}
-
-:root[data-color-mode='light'] .hover\:bg-zinc-900:hover,
-:root[data-color-mode='light'] .hover\:bg-zinc-900\/80:hover,
-:root[data-color-mode='light'] .hover\:bg-zinc-800:hover {
-  background-color: var(--surface-soft-hover) !important;
-}
-
-:root[data-color-mode='light'] .hover\:text-zinc-100:hover,
-:root[data-color-mode='light'] .hover\:text-zinc-200:hover {
-  color: var(--text-primary) !important;
 }
 
 :root[data-color-mode='light'] .shadow-\[0_16px_52px_-40px_rgba\(0\,0\,0\,0\.92\)\],

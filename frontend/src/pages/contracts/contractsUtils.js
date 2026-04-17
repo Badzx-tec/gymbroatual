@@ -75,10 +75,10 @@ export function formatContractValueBreakdown(contract = {}) {
 
 export function badgeClass(status) {
   const normalized = String(status || '').toLowerCase();
-  if (['active', 'paid', 'allowed'].includes(normalized)) return 'bg-green-500/15 border-green-500/30 text-green-300';
-  if (['pending', 'open', 'grace_period', 'pending_activation', 'scheduled_cancel', 'scheduled_freeze'].includes(normalized)) return 'bg-blue-500/15 border-blue-500/30 text-blue-300';
-  if (['frozen', 'overdue', 'failed', 'suspended', 'partially_paid'].includes(normalized)) return 'bg-yellow-500/15 border-yellow-500/30 text-yellow-300';
-  return 'bg-red-500/15 border-red-500/30 text-red-300';
+  if (['active', 'paid', 'allowed'].includes(normalized)) return 'bg-[var(--status-success-bg)] border-[var(--status-success-border)] text-[var(--status-success-text)]';
+  if (['pending', 'open', 'grace_period', 'pending_activation', 'scheduled_cancel', 'scheduled_freeze', 'draft', 'refunded'].includes(normalized)) return 'bg-[var(--status-info-bg)] border-[var(--status-info-border)] text-[var(--status-info-text)]';
+  if (['frozen', 'overdue', 'failed', 'suspended', 'partially_paid'].includes(normalized)) return 'bg-[var(--status-warning-bg)] border-[var(--status-warning-border)] text-[var(--status-warning-text)]';
+  return 'bg-[var(--status-danger-bg)] border-[var(--status-danger-border)] text-[var(--status-danger-text)]';
 }
 
 export function contractBadge(contractStatus) {
@@ -87,7 +87,7 @@ export function contractBadge(contractStatus) {
     className: badgeClass(contractStatus),
     tone: ['active'].includes(normalized)
       ? 'success'
-      : ['pending_activation', 'scheduled_cancel', 'scheduled_freeze'].includes(normalized)
+      : ['pending_activation', 'scheduled_cancel', 'scheduled_freeze', 'draft'].includes(normalized)
         ? 'info'
         : ['frozen'].includes(normalized)
           ? 'warning'
@@ -102,7 +102,7 @@ export function financialBadge(financialStatus) {
     className: badgeClass(financialStatus),
     tone: ['paid'].includes(normalized)
       ? 'success'
-      : ['pending', 'open'].includes(normalized)
+      : ['pending', 'open', 'refunded'].includes(normalized)
         ? 'info'
         : ['overdue', 'failed', 'partially_paid'].includes(normalized)
           ? 'warning'
@@ -129,8 +129,8 @@ export function accessBadge(accessStatus) {
 export function archivedBadge(isArchived) {
   return {
     className: isArchived
-      ? 'bg-zinc-800/80 border-zinc-700 text-zinc-300'
-      : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200',
+      ? 'bg-[var(--status-neutral-bg)] border-[var(--status-neutral-border)] text-[var(--status-neutral-text)]'
+      : 'bg-[var(--status-success-bg)] border-[var(--status-success-border)] text-[var(--status-success-text)]',
     tone: isArchived ? 'neutral' : 'success',
     label: archivedFlagLabel(Boolean(isArchived)),
   };
@@ -160,37 +160,34 @@ export function computeContractHealth(contract) {
       level: 'neutral',
       label: 'Arquivado',
       sublabel: contractStatusLabel(contractStatus),
-      dotClass: 'bg-zinc-500',
-      bgClass: 'bg-zinc-800/60 border-zinc-700',
-      textClass: 'text-zinc-400',
+      dotClass: 'bg-[var(--status-neutral-text)]',
+      bgClass: 'bg-[var(--status-neutral-bg)] border-[var(--status-neutral-border)]',
+      textClass: 'text-[var(--status-neutral-text)]',
     };
   }
 
-  // Terminal — canceled/expired/ended with no archive flag
   if (['canceled', 'expired', 'ended'].includes(contractStatus)) {
     return {
       level: 'neutral',
       label: contractStatusLabel(contractStatus),
       sublabel: financialStatusLabel(financialStatus),
-      dotClass: 'bg-zinc-500',
-      bgClass: 'bg-zinc-800/60 border-zinc-700',
-      textClass: 'text-zinc-400',
+      dotClass: 'bg-[var(--status-neutral-text)]',
+      bgClass: 'bg-[var(--status-neutral-bg)] border-[var(--status-neutral-border)]',
+      textClass: 'text-[var(--status-neutral-text)]',
     };
   }
 
-  // Critical — access blocked due to financial default or other reason
   if (accessStatus === 'blocked') {
     return {
       level: 'critical',
       label: 'Acesso bloqueado',
       sublabel: financialStatusLabel(financialStatus),
-      dotClass: 'bg-red-400 animate-pulse',
-      bgClass: 'bg-red-500/10 border-red-500/30',
-      textClass: 'text-red-300',
+      dotClass: 'bg-[var(--status-danger)] animate-pulse',
+      bgClass: 'bg-[var(--status-danger-bg)] border-[var(--status-danger-border)]',
+      textClass: 'text-[var(--status-danger-text)]',
     };
   }
 
-  // Warning — financial overdue but within grace, or contract frozen/scheduled ops
   const isFinancialWarning = ['overdue', 'failed', 'partially_paid'].includes(financialStatus);
   const isContractWarning = ['frozen', 'scheduled_cancel', 'scheduled_freeze'].includes(contractStatus);
 
@@ -204,31 +201,29 @@ export function computeContractHealth(contract) {
       level: 'warning',
       label,
       sublabel: accessStatus === 'grace_period' ? financialStatusLabel(financialStatus) : accessStatusLabel(accessStatus),
-      dotClass: 'bg-amber-400',
-      bgClass: 'bg-amber-500/10 border-amber-500/30',
-      textClass: 'text-amber-300',
+      dotClass: 'bg-[var(--status-warning)]',
+      bgClass: 'bg-[var(--status-warning-bg)] border-[var(--status-warning-border)]',
+      textClass: 'text-[var(--status-warning-text)]',
     };
   }
 
-  // Pending activation — not yet active but on track
-  if (contractStatus === 'pending_activation') {
+  if (contractStatus === 'pending_activation' || contractStatus === 'draft') {
     return {
       level: 'warning',
-      label: 'Aguardando ativacao',
+      label: contractStatus === 'draft' ? 'Rascunho' : 'Aguardando ativacao',
       sublabel: financialStatusLabel(financialStatus),
-      dotClass: 'bg-blue-400',
-      bgClass: 'bg-blue-500/10 border-blue-500/30',
-      textClass: 'text-blue-300',
+      dotClass: 'bg-[var(--status-info)]',
+      bgClass: 'bg-[var(--status-info-bg)] border-[var(--status-info-border)]',
+      textClass: 'text-[var(--status-info-text)]',
     };
   }
 
-  // Healthy — active, paid, allowed
   return {
     level: 'healthy',
     label: 'Em dia',
     sublabel: contractStatusLabel(contractStatus),
-    dotClass: 'bg-emerald-400',
-    bgClass: 'bg-emerald-500/10 border-emerald-500/30',
-    textClass: 'text-emerald-300',
+    dotClass: 'bg-[var(--status-success)]',
+    bgClass: 'bg-[var(--status-success-bg)] border-[var(--status-success-border)]',
+    textClass: 'text-[var(--status-success-text)]',
   };
 }

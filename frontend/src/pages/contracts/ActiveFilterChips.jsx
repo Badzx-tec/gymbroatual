@@ -12,14 +12,14 @@ export default function ActiveFilterChips({ queryState, plans, onRemove, onClear
       {chips.map((chip) => (
         <span
           key={chip.key}
-          className="inline-flex items-center gap-1 rounded-full border border-zinc-700/60 bg-zinc-800/60 pl-2.5 pr-1 py-1 text-[11px] font-medium text-zinc-300"
+          className="inline-flex items-center gap-1 rounded-full border border-[var(--surface-border-strong)] bg-[var(--surface-soft)] pl-2.5 pr-1 py-1 text-[11px] font-medium text-[var(--text-secondary)]"
         >
           {chip.label}
           <button
             type="button"
             onClick={() => onRemove(chip)}
             aria-label={`Remover filtro: ${chip.label}`}
-            className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-700 hover:text-zinc-200"
+            className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[var(--text-muted)] transition hover:bg-[var(--surface-soft-hover)] hover:text-[var(--text-secondary)]"
           >
             <X className="h-2.5 w-2.5" />
           </button>
@@ -29,7 +29,7 @@ export default function ActiveFilterChips({ queryState, plans, onRemove, onClear
         <button
           type="button"
           onClick={onClearAll}
-          className="text-[11px] font-medium text-zinc-600 underline-offset-2 transition hover:text-zinc-400 hover:underline"
+          className="text-[11px] font-medium text-[var(--text-muted)] underline-offset-2 transition hover:text-[var(--text-secondary)] hover:underline"
         >
           Limpar tudo
         </button>

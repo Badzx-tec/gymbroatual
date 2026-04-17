@@ -54,11 +54,11 @@ function PortalMenu({ triggerRef, sections, onClose }) {
         width: 196,
         transition: 'opacity 0.08s',
       }}
-      className="rounded-xl border border-zinc-800 bg-zinc-900 py-1.5 shadow-2xl shadow-black/60"
+      className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-raised)] py-1.5 shadow-2xl shadow-black/60"
     >
       {sections.map((items, si) => (
         <React.Fragment key={si}>
-          {si > 0 && <div className="mx-2 my-1 border-t border-zinc-800/80" />}
+          {si > 0 && <div className="mx-2 my-1 border-t border-[var(--surface-border)]" />}
           {items.map((item) => (
             <button
               key={item.label}
@@ -71,8 +71,8 @@ function PortalMenu({ triggerRef, sections, onClose }) {
               }}
               className={`mx-1 flex w-[calc(100%-8px)] items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-30 ${
                 item.danger
-                  ? 'text-red-400 hover:bg-red-500/10 hover:text-red-300'
-                  : 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
+                  ? 'text-[var(--status-danger)] hover:bg-[var(--status-danger-bg)] hover:text-[var(--status-danger-text)]'
+                  : 'text-[var(--text-secondary)] hover:bg-[var(--surface-soft)] hover:text-[var(--text-primary)]'
               }`}
             >
               {item.icon && <item.icon className="h-3.5 w-3.5 shrink-0" />}
@@ -107,7 +107,7 @@ export default function TableActionMenu({ sections, label = 'Acoes da linha' }) 
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className="flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-zinc-600 transition hover:border-zinc-700 hover:bg-zinc-800 hover:text-zinc-300"
+        className="flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-[var(--text-muted)] transition hover:border-[var(--surface-border-strong)] hover:bg-[var(--surface-soft)] hover:text-[var(--text-secondary)]"
       >
         <MoreHorizontal className="h-4 w-4" />
       </button>

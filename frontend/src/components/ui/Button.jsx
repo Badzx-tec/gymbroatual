@@ -6,7 +6,7 @@ const variantClasses = {
   primary: 'bg-[var(--brand-primary)] text-black hover:bg-[var(--brand-primary-hover)]',
   secondary: 'border border-[var(--surface-border)] bg-[var(--surface-soft)] text-[var(--text-primary)] hover:bg-[var(--surface-soft-hover)]',
   ghost: 'border border-[var(--surface-border)] bg-transparent text-[var(--text-secondary)] hover:bg-[var(--surface-soft)]',
-  danger: 'bg-red-500/10 text-red-200 hover:bg-red-500/20 border border-red-500/30',
+  danger: 'bg-[var(--status-danger-bg)] text-[var(--status-danger-text)] hover:brightness-125 border border-[var(--status-danger-border)]',
 };
 
 const sizeClasses = {

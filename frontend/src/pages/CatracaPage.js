@@ -630,12 +630,12 @@ export default function CatracaPage() {
               placeholder="Buscar aluno para liberacao manual"
               aria-label="Buscar aluno para liberacao manual"
             />
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-[var(--text-muted)]">
               Digite nome, matricula ou parte do cadastro. Este fluxo continua separado da liberacao rapida e do controle global da catraca.
             </p>
             <div className="max-h-72 space-y-2 overflow-auto pr-1">
               {manualReleaseLoading ? (
-                <div className="rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4 text-sm text-zinc-400">
+                <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 text-sm text-[var(--text-muted)]">
                   Buscando alunos...
                 </div>
               ) : manualReleaseSearch.trim() ? (
@@ -650,16 +650,16 @@ export default function CatracaPage() {
                         className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
                           selected
                             ? 'border-[color:rgb(var(--brand-primary-rgb)/0.55)] bg-[color:rgb(var(--brand-primary-rgb)/0.10)]'
-                            : 'border-zinc-900 bg-zinc-950/60 hover:border-zinc-700'
+                            : 'border-[var(--surface-border)] bg-[var(--surface-card-bg)] hover:border-[var(--surface-border-strong)]'
                         }`}
                       >
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-semibold text-zinc-100">{student.nome || student.name || student.student_id}</p>
-                          <span className="rounded-md border border-zinc-700 px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-zinc-400">
+                          <p className="font-semibold text-[var(--text-primary)]">{student.nome || student.name || student.student_id}</p>
+                          <span className="rounded-md border border-[var(--surface-border-strong)] px-2 py-0.5 text-[11px] uppercase tracking-[0.18em] text-[var(--text-muted)]">
                             {student.student_id}
                           </span>
                         </div>
-                        <p className="mt-1 text-xs text-zinc-500">
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">
                           {student.status ? `Status: ${student.status}` : 'Cadastro encontrado'} |{' '}
                           {student.biometria_id || student.biometry_id ? 'Biometria cadastrada' : 'Sem biometria cadastrada'}
                         </p>
@@ -667,29 +667,29 @@ export default function CatracaPage() {
                     );
                   })
                 ) : (
-                  <div className="rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4 text-sm text-zinc-400">
+                  <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 text-sm text-[var(--text-muted)]">
                     Nenhum aluno encontrado para o termo informado.
                   </div>
                 )
               ) : (
-                <div className="rounded-2xl border border-zinc-900 bg-zinc-950/60 px-4 py-4 text-sm text-zinc-400">
+                <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 text-sm text-[var(--text-muted)]">
                   Comece a digitar para localizar o aluno da liberacao manual.
                 </div>
               )}
             </div>
           </div>
 
-          <div className="space-y-4 rounded-2xl border border-zinc-900 bg-zinc-950/60 p-4">
+          <div className="space-y-4 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-4">
             {manualReleaseSelectedStudent ? (
               <div className="space-y-2">
-                <p className="text-sm font-semibold text-zinc-100">
+                <p className="text-sm font-semibold text-[var(--text-primary)]">
                   {manualReleaseSelectedStudent.nome || manualReleaseSelectedStudent.name || manualReleaseSelectedStudent.student_id}
                 </p>
-                <p className="text-xs text-zinc-500">Aluno: {manualReleaseSelectedStudent.student_id}</p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-[var(--text-muted)]">Aluno: {manualReleaseSelectedStudent.student_id}</p>
+                <p className="text-xs text-[var(--text-muted)]">
                   {manualReleaseSelectedStudent.status ? `Status: ${manualReleaseSelectedStudent.status}` : 'Status nao informado'}
                 </p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-[var(--text-muted)]">
                   {manualReleaseSelectedStudent.biometria_id || manualReleaseSelectedStudent.biometry_id
                     ? 'Biometria cadastrada'
                     : 'Sem biometria cadastrada'}
@@ -704,13 +704,13 @@ export default function CatracaPage() {
             )}
 
             <label className="block space-y-1.5">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Motivo operacional</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Motivo operacional</span>
               <textarea
                 value={manualReleaseReason}
                 onChange={(event) => setManualReleaseReason(event.target.value)}
                 placeholder="Ex.: aluno sem biometria no atendimento presencial"
                 rows={4}
-                className="min-h-[110px] w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
+                className="min-h-[110px] w-full rounded-md border border-[var(--surface-border)] bg-[var(--surface-base)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-primary)]"
               />
             </label>
 
@@ -743,7 +743,7 @@ export default function CatracaPage() {
               </Button>
             </div>
 
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-[var(--text-muted)]">
               Cada liberacao assistida continua exigindo justificativa e fica auditada na semantica operacional de {SAO_PAULO_TIME_ZONE}.
             </p>
           </div>
@@ -756,10 +756,10 @@ export default function CatracaPage() {
       >
         <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
           <div className="space-y-2">
-            <p className="text-sm text-zinc-300">
+            <p className="text-sm text-[var(--text-secondary)]">
               Use este atalho quando a operacao precisar apenas comandar a catraca agora, sem vincular aluno.
             </p>
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-[var(--text-muted)]">
               O comando segue com origem explicita, direcao e horario operacional em {SAO_PAULO_TIME_ZONE}.
             </p>
           </div>
@@ -823,7 +823,7 @@ export default function CatracaPage() {
                         Ultimo sinal: {device.last_seen_at ? formatDateTime(device.last_seen_at) : 'nunca'}
                       </p>
                       {device.blocked_until ? (
-                        <p className="text-xs text-red-300">Bloqueado ate {formatDateTime(device.blocked_until)}</p>
+                        <p className="text-xs text-[var(--status-danger-text)]">Bloqueado ate {formatDateTime(device.blocked_until)}</p>
                       ) : null}
                     </div>
                     <Button variant="ghost" size="sm" onClick={() => rotateToken(device.device_id)} disabled={!canManageDevices}>
@@ -1015,13 +1015,13 @@ export default function CatracaPage() {
               {alerts.map((alert) => (
                 <div
                   key={alert.code}
-                  className="rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-4 text-sm text-amber-100"
+                  className="rounded-2xl border border-[var(--status-warning-border)] bg-[var(--status-warning-bg)] px-4 py-4 text-sm text-[var(--status-warning-text)]"
                 >
                   <div className="flex items-center gap-2">
                     <StatusBadge label={alert.severity || 'info'} tone="warning" />
                     <p className="font-semibold">{alert.code}</p>
                   </div>
-                  <p className="mt-2 text-sm text-amber-50/90">{alert.message}</p>
+                  <p className="mt-2 text-sm text-[var(--status-warning-text)]">{alert.message}</p>
                 </div>
               ))}
             </div>
