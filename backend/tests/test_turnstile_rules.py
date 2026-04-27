@@ -27,6 +27,7 @@ def test_turnstile_access_allowed_when_rules_pass():
     now = datetime(2026, 2, 20, 10, 0, tzinfo=timezone.utc)  # friday (4)
     student = {
         "status": "ativo",
+        "contract_access_status": "allowed",
         "allowed_weekdays": [0, 1, 2, 3, 4, 5, 6],
         "allowed_time_start": "08:00",
         "allowed_time_end": "22:00",
@@ -34,6 +35,15 @@ def test_turnstile_access_allowed_when_rules_pass():
     allow, reason, _details = _evaluate_student_access(student, now)
     assert allow is True
     assert reason == "ok"
+
+
+def test_turnstile_access_denied_without_contract_or_payment():
+    now = datetime(2026, 2, 20, 10, 0, tzinfo=timezone.utc)
+    student = {"status": "ativo"}
+    allow, reason, details = _evaluate_student_access(student, now)
+    assert allow is False
+    assert reason == "payment_required"
+    assert details["rule"] == "confirmed_payment_or_contract_required"
 
 
 def test_turnstile_access_allows_grace_period_even_if_plan_expired():

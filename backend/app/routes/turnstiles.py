@@ -31,6 +31,7 @@ from app.services.biometric_credentials import (
 from app.services.internal_codes import normalize_internal_code
 from app.services.observability import log_event
 from app.services.student_contracts import (
+    AUTO_STATUS_SOURCE_PAYMENT_PENDING,
     derive_student_operational_status,
     refresh_contract_state,
 )
@@ -616,6 +617,12 @@ def _evaluate_student_access(
         )
 
     if not contract_access_allowed:
+        if not contract_access_status:
+            return (
+                False,
+                "payment_required",
+                {"rule": "confirmed_payment_or_contract_required"},
+            )
         plan_until = _coerce_datetime_utc(
             student.get("plano_validade")
             or student.get("plan_expires_at")
@@ -752,6 +759,29 @@ async def _refresh_student_contract_snapshot(student: dict, now: datetime) -> di
         .to_list(1)
     )
     if not latest:
+        auto_source = str(student.get("auto_status_source") or "").strip().lower() or None
+        if str(student.get("status") or "ativo").strip().lower() == "ativo" or (
+            auto_source == AUTO_STATUS_SOURCE_PAYMENT_PENDING
+        ):
+            updates = {
+                "status": "inativo",
+                "auto_status_source": AUTO_STATUS_SOURCE_PAYMENT_PENDING,
+                "contract_status": None,
+                "contract_financial_status": None,
+                "contract_access_status": None,
+                "contract_grace_until": None,
+                "contract_next_retry_at": None,
+                "contract_dunning_level": 0,
+                "updated_at": now,
+            }
+            await db.students.update_one(
+                {
+                    "owner_id": student.get("owner_id"),
+                    "student_id": student.get("student_id"),
+                },
+                {"$set": updates},
+            )
+            return {**student, **updates}
         return student
 
     contract, _, _ = await refresh_contract_state(db, latest[0])

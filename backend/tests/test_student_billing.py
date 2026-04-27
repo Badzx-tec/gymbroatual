@@ -199,7 +199,11 @@ async def test_create_contract_with_plan_creates_initial_charge_and_updates_stud
     assert contract["duration_value"] == 30
     assert contract["duration_days"] == 30
     assert contract["current_period_end"] == start_at + timedelta(days=30)
+    assert contract["financial_status"] == "pending"
+    assert contract["access_status"] == "blocked"
     assert charge["status"] == "open"
+    assert updated_student["status"] == "inativo"
+    assert updated_student["auto_status_source"] == "aguardando_pagamento"
     assert updated_student["plano_id"] == "pln_1"
     assert updated_student["plan_expires_at"] == contract["current_period_end"]
 
@@ -648,6 +652,8 @@ async def test_update_contract_discount_syncs_only_mutable_charges(monkeypatch):
 async def test_mark_charge_paid_extends_contract_period(monkeypatch):
     db = FakeDb()
     monkeypatch.setattr(student_billing, "get_db", lambda: db)
+    db.students.docs[0]["status"] = "inativo"
+    db.students.docs[0]["auto_status_source"] = "aguardando_pagamento"
 
     now = datetime.now(timezone.utc)
     old_end = now + timedelta(days=10)
@@ -713,6 +719,8 @@ async def test_mark_charge_paid_extends_contract_period(monkeypatch):
     assert paid["payment_method"] == "card"
     assert updated_contract["status"] == "active"
     assert updated_contract["current_period_end"] > old_end
+    assert updated_student["status"] == "ativo"
+    assert updated_student.get("auto_status_source") is None
     assert updated_student["plan_expires_at"] == updated_contract["current_period_end"]
 
 

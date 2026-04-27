@@ -45,7 +45,7 @@ const emptyStudent = {
   matricula: '',
   tag_rfid: '',
   biometria_id: '',
-  status: 'ativo',
+  status: 'inativo',
   data_vencimento: '',
   peso_kg: '',
   idade: '',

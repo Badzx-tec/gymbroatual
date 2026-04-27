@@ -42,7 +42,7 @@ class FakeCollection:
 
 class FakeDb:
     def __init__(self):
-        now = datetime(2026, 2, 20, 12, 0, tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
         self.students = FakeCollection(
             [
                 {
@@ -250,6 +250,35 @@ async def test_student_portal_dashboard_reports_manual_access_block_reason(monke
 
     assert response["access_status"] == "blocked"
     assert response["access_context"]["blocked_reason"] == "manual_block"
+
+
+@pytest.mark.asyncio
+async def test_student_portal_dashboard_blocks_student_without_contract_or_payment(monkeypatch):
+    db = FakeDb()
+    db.students.docs.append(
+        {
+            "student_id": "std_no_contract",
+            "owner_id": "own_1",
+            "gym_id": "gym_1",
+            "nome": "Aluno Sem Contrato",
+            "email": "semcontrato@gymbro.com",
+            "status": "ativo",
+            "auth_login_enabled": True,
+            "is_employee_shadow": False,
+        }
+    )
+    monkeypatch.setattr(student_portal, "get_db", lambda: db)
+
+    actor = {
+        "owner_id": "own_1",
+        "student_id": "std_no_contract",
+        "actor_type": "student",
+        "role": "STUDENT",
+    }
+    response = await student_portal.student_dashboard(actor=actor)
+
+    assert response["access_status"] == "blocked"
+    assert response["contract"] is None
 
 
 @pytest.mark.asyncio

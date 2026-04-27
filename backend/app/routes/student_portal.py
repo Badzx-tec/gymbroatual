@@ -96,6 +96,8 @@ def _access_status(student: dict, contract: dict | None, now: datetime) -> str:
     ).lower()
     if contract_access in {"allowed", "blocked", "grace_period", "suspended"}:
         return contract_access
+    if contract is None:
+        return "blocked"
     contract_status = str(
         (contract or {}).get("contract_status") or student.get("contract_status") or ""
     ).lower()

@@ -25,7 +25,7 @@ class StudentIn(BaseModel):
     tag_rfid: str | None = None
     biometria_id: str | None = None
     auth_login_enabled: bool = True
-    status: Literal["ativo", "inativo"] = "ativo"
+    status: Literal["ativo", "inativo"] = "inativo"
 
     @field_validator(
         "telefone",

@@ -40,6 +40,7 @@ from app.services.student_contracts import (
     legacy_status,
     period_end,
     refresh_contract_state,
+    resolve_authoritative_contract_for_student,
     resolve_contract_amounts,
     resolve_duration_fields,
     duration_days_compatibility,
@@ -226,6 +227,15 @@ async def _sync_student_contract_projection(contract: dict) -> None:
     )
     if not student:
         return
+
+    authoritative_contract = await resolve_authoritative_contract_for_student(
+        db,
+        owner_id=contract["owner_id"],
+        student_id=contract["student_id"],
+        now=now,
+    )
+    if authoritative_contract:
+        contract = authoritative_contract
 
     desired_status, desired_auto_source = derive_student_operational_status(
         current_status=student.get("status"),

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import httpx
@@ -111,7 +111,9 @@ class FakeAsyncClient:
                             "id": "pay_1",
                             "status": "approved",
                             "external_reference": "own_1",
-                            "date_approved": "2026-03-07T10:30:00Z",
+                            "date_approved": (
+                                datetime.now(timezone.utc) - timedelta(days=2)
+                            ).isoformat().replace("+00:00", "Z"),
                         }
                     ]
                 },

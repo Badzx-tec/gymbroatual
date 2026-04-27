@@ -21,6 +21,10 @@ from app.services.internal_codes import (
     normalize_internal_code,
 )
 from app.services.query_safety import safe_contains_regex
+from app.services.student_contracts import (
+    AUTO_STATUS_SOURCE_PAYMENT_PENDING,
+    student_has_confirmed_active_payment,
+)
 from app.services.student_usage import compute_operational_usage_status, touch_student_usage
 
 router = APIRouter()
@@ -216,6 +220,8 @@ async def create_student(
         "gym_id": gym_id,
         **payload_data,
         "matricula": manual_matricula,
+        "status": "inativo",
+        "auto_status_source": AUTO_STATUS_SOURCE_PAYMENT_PENDING,
         "auth_login_enabled": bool(getattr(payload, "auth_login_enabled", True)),
         "must_change_password": bool(getattr(payload, "force_password_reset", False) or temp_password),
         "password_hash": hash_password(provided_password),
@@ -328,6 +334,27 @@ async def update_student(
 
     if "auth_login_enabled" in payload:
         update_fields["auth_login_enabled"] = bool(payload.get("auth_login_enabled"))
+
+    requested_status = (
+        str(update_fields.get("status") or "").strip().lower()
+        if "status" in update_fields
+        else None
+    )
+    if requested_status == "ativo":
+        has_confirmed_payment = await student_has_confirmed_active_payment(
+            db,
+            owner_id=owner["owner_id"],
+            student_id=student_id,
+            now=now,
+        )
+        if not has_confirmed_payment:
+            raise HTTPException(
+                status_code=409,
+                detail="Aluno sem pagamento confirmado nao pode ser ativado",
+            )
+        update_fields["auto_status_source"] = None
+    elif requested_status == "inativo":
+        update_fields["auto_status_source"] = None
 
     update_fields["updated_at"] = now
 

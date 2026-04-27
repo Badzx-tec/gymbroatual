@@ -37,6 +37,8 @@ async def test_create_student_response_strips_mongo_id(monkeypatch):
 
     assert result["owner_id"] == "own_1"
     assert result["gym_id"] == "gym_1"
+    assert result["status"] == "inativo"
+    assert result["auto_status_source"] == "aguardando_pagamento"
     assert "_id" not in result
 
 

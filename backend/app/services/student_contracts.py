@@ -21,6 +21,7 @@ ACTIVE_LIKE_CONTRACT_STATUSES = {
     "scheduled_freeze",
 }
 AUTO_STATUS_SOURCE_FINANCIAL = "financeiro_inadimplente"
+AUTO_STATUS_SOURCE_PAYMENT_PENDING = "aguardando_pagamento"
 MIN_CONTRACT_AMOUNT = 0.01
 DEFAULT_DURATION_DAYS = 30
 DEFAULT_DURATION_UNIT = "days"
@@ -256,6 +257,8 @@ def infer_access_status(
         if grace_until and grace_until >= now:
             return "grace_period"
         return "blocked"
+    if normalized_financial != "paid":
+        return "blocked"
     return "allowed"
 
 
@@ -274,6 +277,19 @@ def derive_student_operational_status(
     normalized_access = str(contract_access_status or "").strip().lower()
     normalized_financial = str(contract_financial_status or "").strip().lower()
 
+    payment_pending_blocked = normalized_access in {"blocked", "suspended"} and normalized_financial in {
+        "pending",
+        "partially_paid",
+        "refunded",
+    }
+    if payment_pending_blocked:
+        if normalized_status == "ativo" or normalized_auto_source in {
+            AUTO_STATUS_SOURCE_FINANCIAL,
+            AUTO_STATUS_SOURCE_PAYMENT_PENDING,
+        }:
+            return "inativo", AUTO_STATUS_SOURCE_PAYMENT_PENDING
+        return normalized_status, normalized_auto_source
+
     delinquent_blocked = normalized_access in {"blocked", "suspended"} and normalized_financial in {
         "overdue",
         "failed",
@@ -288,7 +304,12 @@ def derive_student_operational_status(
         "overdue",
         "failed",
     }
-    if back_in_good_standing and normalized_auto_source == AUTO_STATUS_SOURCE_FINANCIAL:
+    if (
+        back_in_good_standing
+        and normalized_financial == "paid"
+        and normalized_auto_source
+        in {AUTO_STATUS_SOURCE_FINANCIAL, AUTO_STATUS_SOURCE_PAYMENT_PENDING}
+    ):
         return "ativo", None
 
     return normalized_status, normalized_auto_source
@@ -513,6 +534,7 @@ async def compute_financial_status(
     *,
     owner_id: str,
     contract_id: str,
+    current_financial_status: str | None = None,
     now: datetime | None = None,
 ) -> str:
     current_now = now or utc_now()
@@ -547,13 +569,6 @@ async def compute_financial_status(
     if partial:
         return "partially_paid"
 
-    pending = await db.student_charges.find_one(
-        {"owner_id": owner_id, "contract_id": contract_id, "status": "open"},
-        {"_id": 0, "charge_id": 1},
-    )
-    if pending:
-        return "pending"
-
     paid = await db.student_charges.find_one(
         {"owner_id": owner_id, "contract_id": contract_id, "status": "paid"},
         {"_id": 0, "charge_id": 1},
@@ -561,12 +576,21 @@ async def compute_financial_status(
     if paid:
         return "paid"
 
+    pending = await db.student_charges.find_one(
+        {"owner_id": owner_id, "contract_id": contract_id, "status": "open"},
+        {"_id": 0, "charge_id": 1},
+    )
+    if pending:
+        return "pending"
+
     refunded = await db.student_charges.find_one(
         {"owner_id": owner_id, "contract_id": contract_id, "status": "refunded"},
         {"_id": 0, "charge_id": 1},
     )
     if refunded:
         return "refunded"
+    if str(current_financial_status or "").lower() == "paid":
+        return "paid"
     return "pending"
 
 
@@ -660,6 +684,7 @@ async def refresh_contract_state(
         db,
         owner_id=normalized["owner_id"],
         contract_id=normalized["contract_id"],
+        current_financial_status=normalized.get("financial_status"),
         now=current_now,
     )
     if computed_financial_status != normalized.get("financial_status"):
@@ -772,33 +797,72 @@ async def resolve_authoritative_contract_for_student(
     now: datetime | None = None,
 ) -> dict | None:
     """
-    Retorna o contrato mais relevante do aluno: prioriza active > grace_period >
-    frozen > overdue, e dentro do mesmo status o com maior current_period_end.
+    Retorna o contrato mais relevante do aluno. Contratos liberados e pagos
+    ganham prioridade, mas contratos encerrados ainda voltam como referencia
+    quando nao existe outro contrato operacional.
     """
     current_now = now or utc_now()
-    priority = {"active": 0, "grace_period": 1, "frozen": 2, "overdue": 3}
     contracts = (
         await db.student_contracts.find(
             {
                 "owner_id": owner_id,
                 "student_id": student_id,
-                "contract_status": {"$in": list(priority.keys())},
+                "is_archived": {"$ne": True},
             },
             {"_id": 0},
         )
-        .sort("current_period_end", -1)
+        .sort("created_at", -1)
         .to_list(20)
     )
     if not contracts:
         return None
-    contracts.sort(
-        key=lambda c: (
-            priority.get(str(c.get("contract_status") or "").lower(), 99),
-            -(c.get("current_period_end") or current_now).timestamp()
-            if hasattr(c.get("current_period_end"), "timestamp")
-            else 0,
-        )
+
+    refreshed_contracts: list[dict] = []
+    for item in contracts:
+        refreshed, _, _ = await refresh_contract_state(db, item, now=current_now, persist=True)
+        refreshed_contracts.append(refreshed)
+
+    def priority(contract: dict) -> tuple[int, float, float]:
+        contract_status = str(contract.get("contract_status") or "").lower()
+        financial_status = str(contract.get("financial_status") or "").lower()
+        access_status = str(contract.get("access_status") or "").lower()
+        if access_status in {"allowed", "grace_period"} and financial_status == "paid":
+            rank = 0
+        elif access_status == "grace_period":
+            rank = 1
+        elif contract_status in ACTIVE_LIKE_CONTRACT_STATUSES:
+            rank = 2
+        elif financial_status in {"overdue", "failed"}:
+            rank = 3
+        elif contract_status in TERMINAL_CONTRACT_STATUSES:
+            rank = 4
+        else:
+            rank = 5
+
+        period_end = coerce_datetime_utc(contract.get("current_period_end")) or current_now
+        created_at = coerce_datetime_utc(contract.get("created_at")) or current_now
+        return (rank, -period_end.timestamp(), -created_at.timestamp())
+
+    refreshed_contracts.sort(key=priority)
+    return refreshed_contracts[0]
+
+
+async def student_has_confirmed_active_payment(
+    db,
+    *,
+    owner_id: str,
+    student_id: str,
+    now: datetime | None = None,
+) -> bool:
+    contract = await resolve_authoritative_contract_for_student(
+        db,
+        owner_id=owner_id,
+        student_id=student_id,
+        now=now,
     )
-    contract = contracts[0]
-    contract, _, _ = await refresh_contract_state(db, contract, now=current_now, persist=True)
-    return contract
+    if not contract:
+        return False
+    return (
+        str(contract.get("financial_status") or "").lower() == "paid"
+        and str(contract.get("access_status") or "").lower() in {"allowed", "grace_period"}
+    )
