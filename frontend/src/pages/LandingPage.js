@@ -180,7 +180,7 @@ export default function LandingPage() {
             <h2 className="font-heading text-3xl md:text-5xl font-bold tracking-tight uppercase mb-4">Nossos Planos</h2>
             <p className="text-zinc-400 text-lg">Escolha o plano ideal para a sua academia</p>
           </motion.div>
-          <div data-testid="plans-grid" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div data-testid="plans-grid" className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {plans.length > 0 ? plans.map((plan, i) => (
               <motion.div key={plan.plan_id} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
                 className={`bg-zinc-900 border rounded-md p-6 md:p-8 transition-all duration-300 ${i === 1 ? 'border-[#ccff00] scale-[1.02] shadow-[0_0_30px_rgba(204,255,0,0.1)]' : 'border-zinc-800 hover:border-zinc-700'}`}>
@@ -208,9 +208,7 @@ export default function LandingPage() {
             )) : (
               [
                 { nome: 'Mensal', valor: 139.90, dias: 30, planId: 'owner_monthly' },
-                { nome: 'Trimestral', valor: 369.90, dias: 90, planId: 'owner_quarterly' },
-                { nome: 'Semestral', valor: 669.90, dias: 180, planId: 'owner_semiannual' },
-                { nome: 'Anual', valor: 1249.90, dias: 365, planId: 'owner_annual' },
+                { nome: 'Trimestral Pre-pago', valor: 369.90, dias: 90, planId: 'owner_quarterly' },
               ].map((plan, i) => (
                 <motion.div key={plan.planId} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }}
                   className={`bg-zinc-900 border rounded-md p-6 md:p-8 ${i === 1 ? 'border-[#ccff00]' : 'border-zinc-800'}`}>

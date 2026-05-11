@@ -101,6 +101,7 @@ async def reconcile_subscriptions(owner_id: str | None = None, limit: int | None
 
             now = now_utc()
             owner = sub["owner_id"]
+            plan_days = int(sub.get("plan_duration_days") or 30)
             try:
                 mp_data = await _fetch_preapproval(client, preapproval_id, settings.mp_access_token)
                 mapped = map_mp_preapproval_status(mp_data.get("status"))
@@ -113,7 +114,10 @@ async def reconcile_subscriptions(owner_id: str | None = None, limit: int | None
                     )
                     if is_recent_approved_payment(payment_data):
                         mapped = "active"
-                        next_payment = compute_next_period_end(payment_approved_at(payment_data) or now)
+                        next_payment = compute_next_period_end(
+                            payment_approved_at(payment_data) or now,
+                            days=plan_days,
+                        )
                 update: dict = {
                     "status": mapped,
                     "updated_at": now,
@@ -125,7 +129,10 @@ async def reconcile_subscriptions(owner_id: str | None = None, limit: int | None
                 if mapped == "active":
                     update["last_payment_at"] = now
                     update["grace_until"] = None
-                    update["current_period_end"] = next_payment or compute_next_period_end(now)
+                    update["current_period_end"] = next_payment or compute_next_period_end(
+                        now,
+                        days=plan_days,
+                    )
                 elif mapped == "past_due":
                     update["grace_until"] = compute_grace_until(now)
 
@@ -185,7 +192,10 @@ async def reconcile_subscriptions(owner_id: str | None = None, limit: int | None
                         "updated_at": now,
                         "last_payment_at": approved_at,
                         "grace_until": None,
-                        "current_period_end": compute_next_period_end(approved_at),
+                        "current_period_end": compute_next_period_end(
+                            approved_at,
+                            days=plan_days,
+                        ),
                         "meta.last_reconcile": {
                             "at": now,
                             "status": payment_data.get("status"),

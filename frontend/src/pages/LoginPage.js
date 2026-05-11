@@ -162,8 +162,11 @@ export default function LoginPage() {
 
       const shouldGoSubscription = ['landing', 'hero', 'pricing', 'contact', 'payment_required'].includes(origin);
       if (shouldGoSubscription && ['OWNER', 'MANAGER'].includes(role)) {
+        const subscriptionTarget = selectedPlan
+          ? `/admin/assinatura?plan=${encodeURIComponent(selectedPlan)}`
+          : '/admin/assinatura';
         toast.success('Login realizado. Continue para ativar sua assinatura.');
-        navigate('/admin/assinatura');
+        navigate(subscriptionTarget);
         return;
       }
 
