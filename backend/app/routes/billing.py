@@ -22,13 +22,13 @@ from app.models.billing import (
     SubscriptionEventOut,
     SubscriptionStatusOut,
 )
+from app.services.billing_reconcile import reconcile_subscriptions
 from app.services.mp_payments import (
     fetch_payment,
     payment_approved_at,
     payment_owner_id,
     payment_status_to_subscription_status,
 )
-from app.services.billing_reconcile import reconcile_subscriptions
 from app.services.observability import log_event
 from app.services.subscription import (
     compute_grace_until,
@@ -57,9 +57,7 @@ def _owner_billing_plan(plan_code: str | None, monthly_amount: float) -> dict:
     normalized = (plan_code or MEMBERSHIP_PLAN_CODE).strip().lower()
     base_amount = float(monthly_amount)
     quarterly_amount = (
-        369.90
-        if round(base_amount, 2) == 139.90
-        else round(base_amount * 3 * 0.88, 2)
+        369.90 if round(base_amount, 2) == 139.90 else round(base_amount * 3 * 0.88, 2)
     )
     plans = {
         "owner_monthly": {
@@ -530,29 +528,67 @@ async def create_checkout_for_owner(owner: dict, *, plan_code: str | None = None
     checkout_mode = "mock"
 
     if settings.mp_access_token:
-        if settings.mp_preapproval_plan_id and selected_plan_code == MEMBERSHIP_PLAN_CODE:
-            checkout_url = (
-                "https://www.mercadopago.com.br/subscriptions/checkout"
-                f"?preapproval_plan_id={settings.mp_preapproval_plan_id}"
-            )
-            checkout_mode = "preapproval_plan"
-        else:
-            payload = {
-                "reason": selected_plan["reason"],
-                "payer_email": owner["email"],
-                "back_url": settings.frontend_base_url,
-                "status": "pending",
-                "notification_url": f"{settings.app_base_url.rstrip('/')}/api/billing/webhook/mercadopago",
-                "external_reference": owner_id,
-                "metadata": {"owner_id": owner_id, "plan_code": selected_plan_code},
-                "auto_recurring": {
-                    "frequency": int(selected_plan["frequency"]),
-                    "frequency_type": selected_plan["frequency_type"],
-                    "transaction_amount": selected_amount,
-                    "currency_id": "BRL",
-                },
-            }
-            async with httpx.AsyncClient(timeout=15) as client:
+        notification_url = f"{settings.app_base_url.rstrip('/')}/api/billing/webhook/mercadopago"
+        metadata = {"owner_id": owner_id, "plan_code": selected_plan_code}
+
+        async with httpx.AsyncClient(timeout=15) as client:
+            if settings.mp_preapproval_plan_id and selected_plan_code == MEMBERSHIP_PLAN_CODE:
+                payload = {
+                    "preapproval_plan_id": settings.mp_preapproval_plan_id,
+                    "reason": selected_plan["reason"],
+                    "payer_email": owner["email"],
+                    "back_url": settings.frontend_base_url,
+                    "status": "pending",
+                    "notification_url": notification_url,
+                    "external_reference": owner_id,
+                    "metadata": metadata,
+                }
+                response = await client.post(
+                    "https://api.mercadopago.com/preapproval",
+                    headers={"Authorization": f"Bearer {settings.mp_access_token}"},
+                    json=payload,
+                )
+                if response.is_success:
+                    data = response.json()
+                    candidate_preapproval_id = str(data.get("id") or "").strip()
+                    if candidate_preapproval_id:
+                        checkout_url = (
+                            data.get("init_point") or data.get("sandbox_init_point") or checkout_url
+                        )
+                        preapproval_id = candidate_preapproval_id
+                        provider_reference = preapproval_id
+                        checkout_mode = "preapproval_plan"
+                    else:
+                        log_event(
+                            "billing_checkout_preapproval_plan_missing_id",
+                            owner_id=owner_id,
+                            plan_id=settings.mp_preapproval_plan_id,
+                        )
+                else:
+                    preapproval_body = response.text[:300]
+                    log_event(
+                        "billing_checkout_preapproval_plan_failed",
+                        owner_id=owner_id,
+                        status_code=response.status_code,
+                        detail=preapproval_body,
+                    )
+
+            if not provider_reference:
+                payload = {
+                    "reason": selected_plan["reason"],
+                    "payer_email": owner["email"],
+                    "back_url": settings.frontend_base_url,
+                    "status": "pending",
+                    "notification_url": notification_url,
+                    "external_reference": owner_id,
+                    "metadata": metadata,
+                    "auto_recurring": {
+                        "frequency": int(selected_plan["frequency"]),
+                        "frequency_type": selected_plan["frequency_type"],
+                        "transaction_amount": selected_amount,
+                        "currency_id": "BRL",
+                    },
+                }
                 response = await client.post(
                     "https://api.mercadopago.com/preapproval",
                     headers={"Authorization": f"Bearer {settings.mp_access_token}"},
