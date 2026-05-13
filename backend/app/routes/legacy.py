@@ -47,9 +47,7 @@ def _extract_notification_ids(payload: dict | None) -> list[str]:
         normalized.append(notif_id)
 
     if not normalized:
-        raise HTTPException(
-            status_code=422, detail="Selecione ao menos uma notificacao"
-        )
+        raise HTTPException(status_code=422, detail="Selecione ao menos uma notificacao")
 
     return normalized
 
@@ -83,9 +81,7 @@ async def plans_public():
 
 
 @router.post("/plans")
-async def create_plan(
-    payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))
-):
+async def create_plan(payload: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     return await gym_routes.create_plan(payload, actor)
 
 
@@ -99,9 +95,7 @@ async def update_plan(
 
 
 @router.delete("/plans/{plan_id}")
-async def delete_plan(
-    plan_id: str, actor: dict = Depends(require_roles("OWNER", "MANAGER"))
-):
+async def delete_plan(plan_id: str, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     return await gym_routes.delete_plan(plan_id, actor)
 
 
@@ -152,10 +146,10 @@ async def academy_billing(
 
 
 @router.post("/payments/academy/subscription/checkout")
-async def academy_checkout(
-    _: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))
-):
-    return await billing_routes.subscription_checkout(actor)
+async def academy_checkout(_: dict, actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
+    return await billing_routes.create_checkout_for_owner(
+        actor, plan_code=(_.get("plan_code") if _ else None)
+    )
 
 
 @router.get("/notifications")
@@ -200,9 +194,7 @@ async def notifications_check(actor: dict = Depends(require_admin_actor())):
 
 
 @router.put("/notifications/{notif_id}/read")
-async def notification_read(
-    notif_id: str, actor: dict = Depends(require_admin_actor())
-):
+async def notification_read(notif_id: str, actor: dict = Depends(require_admin_actor())):
     db = get_db()
     await db.notifications.update_one(
         {"notif_id": notif_id, "owner_id": actor["owner_id"]},
@@ -212,9 +204,7 @@ async def notification_read(
 
 
 @router.post("/notifications/read-bulk")
-async def notification_read_bulk(
-    payload: dict, actor: dict = Depends(require_admin_actor())
-):
+async def notification_read_bulk(payload: dict, actor: dict = Depends(require_admin_actor())):
     db = get_db()
     notif_ids = _extract_notification_ids(payload)
     result = await db.notifications.update_many(
@@ -229,20 +219,14 @@ async def notification_read_bulk(
 
 
 @router.delete("/notifications/{notif_id}")
-async def notification_delete(
-    notif_id: str, actor: dict = Depends(require_admin_actor())
-):
+async def notification_delete(notif_id: str, actor: dict = Depends(require_admin_actor())):
     db = get_db()
-    await db.notifications.delete_one(
-        {"notif_id": notif_id, "owner_id": actor["owner_id"]}
-    )
+    await db.notifications.delete_one({"notif_id": notif_id, "owner_id": actor["owner_id"]})
     return {"message": "ok"}
 
 
 @router.post("/notifications/delete-bulk")
-async def notification_delete_bulk(
-    payload: dict, actor: dict = Depends(require_admin_actor())
-):
+async def notification_delete_bulk(payload: dict, actor: dict = Depends(require_admin_actor())):
     db = get_db()
     notif_ids = _extract_notification_ids(payload)
     result = await db.notifications.delete_many(
@@ -281,9 +265,7 @@ async def catraca_command(payload: dict, actor: dict = Depends(require_admin_act
         "target_scope": turnstile_routes._normalize_control_scope(target_scope),
         "message": payload.get("message", ""),
         "status": status_value,
-        "command_type": (
-            "turnstile_control_state" if control_state else "legacy_forward"
-        ),
+        "command_type": ("turnstile_control_state" if control_state else "legacy_forward"),
         "created_at": datetime.now(UTC),
     }
     await db.catraca_commands.insert_one(doc)
@@ -414,9 +396,7 @@ async def export_access_excel(actor: dict = Depends(require_admin_actor())):
                 or log.get("employee_name")
                 or log.get("owner_name")
             ),
-            as_text(
-                log.get("subject_id") or log.get("student_id") or log.get("employee_id")
-            ),
+            as_text(log.get("subject_id") or log.get("student_id") or log.get("employee_id")),
             as_text(log.get("direction")),
             as_text(log.get("method")),
             as_text(
@@ -432,9 +412,7 @@ async def export_access_excel(actor: dict = Depends(require_admin_actor())):
 
 
 @router.get("/reports/financial/excel")
-async def export_financial_excel(
-    actor: dict = Depends(require_roles("OWNER", "MANAGER"))
-):
+async def export_financial_excel(actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
     db = get_db()
     invoices = (
         await db.invoices.find({"owner_id": actor["owner_id"]}, {"_id": 0})
@@ -536,9 +514,7 @@ async def student_progress_list(
 
 
 @router.post("/students/{student_id}/passkey/register")
-async def register_passkey(
-    student_id: str, _: dict, actor: dict = Depends(require_admin_actor())
-):
+async def register_passkey(student_id: str, _: dict, actor: dict = Depends(require_admin_actor())):
     return {
         "message": "Passkey placeholder",
         "student_id": student_id,
@@ -555,9 +531,7 @@ async def passkey_opts(student_id: str, actor: dict = Depends(require_admin_acto
 
 
 @router.post("/students/{student_id}/passkey/register/verify")
-async def passkey_verify(
-    student_id: str, _: dict, actor: dict = Depends(require_admin_actor())
-):
+async def passkey_verify(student_id: str, _: dict, actor: dict = Depends(require_admin_actor())):
     return {"message": "ok", "student_id": student_id, "owner_id": actor["owner_id"]}
 
 
