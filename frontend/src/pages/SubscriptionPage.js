@@ -50,6 +50,11 @@ const checkoutMessages = {
   },
 };
 
+const FALLBACK_OWNER_PLANS = [
+  { plan_id: 'owner_monthly', nome: 'GymBro Mensal', valor: 139.90, duracao_dias: 30, descricao: 'Plano mensal para 1 franquia' },
+  { plan_id: 'owner_quarterly', nome: 'GymBro Trimestral Pre-pago', valor: 369.90, duracao_dias: 90, descricao: 'Plano trimestral para 1 franquia' },
+];
+
 function DetailItem({ label, value }) {
   return (
     <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-soft)] px-4 py-3">
@@ -85,6 +90,9 @@ function getSubscriptionBanner(subscriptionMeta, data) {
 export default function SubscriptionPage() {
   const [searchParams] = useSearchParams();
   const [selectedDetail, setSelectedDetail] = React.useState(null);
+  const requestedPlan = searchParams.get('plan') || '';
+  const [plans, setPlans] = React.useState(FALLBACK_OWNER_PLANS);
+  const [selectedPlan, setSelectedPlan] = React.useState(requestedPlan || 'owner_monthly');
   const { data, loading, refreshing, error, reload, syncWithProvider } = useBillingOverview({
     invoiceLimit: 6,
     attemptLimit: 4,
@@ -98,6 +106,37 @@ export default function SubscriptionPage() {
   const actionItems = React.useMemo(() => getBillingActionItems(data), [data]);
   const checkoutState = checkoutMessages[searchParams.get('status')] || null;
   const banner = React.useMemo(() => getSubscriptionBanner(subscriptionMeta, data), [subscriptionMeta, data]);
+  const selectedPlanDoc = React.useMemo(
+    () => plans.find((plan) => plan.plan_id === selectedPlan) || plans[0] || FALLBACK_OWNER_PLANS[0],
+    [plans, selectedPlan]
+  );
+
+  React.useEffect(() => {
+    let active = true;
+    api.listPlansPublic()
+      .then((result) => {
+        if (!active) return;
+        if (Array.isArray(result) && result.length > 0) {
+          setPlans(result);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (requestedPlan) {
+      setSelectedPlan(requestedPlan);
+    }
+  }, [requestedPlan]);
+
+  React.useEffect(() => {
+    if (!plans.some((plan) => plan.plan_id === selectedPlan)) {
+      setSelectedPlan(plans[0]?.plan_id || 'owner_monthly');
+    }
+  }, [plans, selectedPlan]);
 
   const handleReload = async () => {
     try {
@@ -110,7 +149,7 @@ export default function SubscriptionPage() {
 
   const handleCheckout = async () => {
     try {
-      const result = await api.subscriptionCheckout();
+      const result = await api.subscriptionCheckout({ plan_code: selectedPlanDoc?.plan_id || selectedPlan });
       if (!result?.checkout_url) {
         toast.error('Checkout indisponivel no momento.');
         return;
@@ -178,6 +217,31 @@ export default function SubscriptionPage() {
       {checkoutState ? <Banner tone={checkoutState.tone} title={checkoutState.title} description={checkoutState.description} /> : null}
       {error ? <Banner tone="warning" title="Aviso de sincronizacao" description={error} /> : null}
       <Banner tone={banner.tone} title={banner.title} description={banner.description} />
+
+      <SectionCard
+        title="Plano de assinatura"
+        description="Selecione a vigencia comercial antes de abrir o checkout."
+        actions={<StatusBadge label={selectedPlanDoc?.nome || 'Plano'} tone="info" />}
+      >
+        <div className="grid gap-3 md:grid-cols-2">
+          {plans.map((plan) => {
+            const isSelected = selectedPlan === plan.plan_id;
+            return (
+              <button
+                key={plan.plan_id}
+                type="button"
+                onClick={() => setSelectedPlan(plan.plan_id)}
+                className={`min-h-[132px] rounded-md border px-4 py-4 text-left transition-colors ${isSelected ? 'border-[var(--brand-primary)] bg-[rgb(var(--brand-primary-rgb)/0.12)]' : 'border-[var(--surface-border)] bg-[var(--surface-soft)] hover:border-[var(--text-muted)]'}`}
+              >
+                <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">{plan.nome}</span>
+                <span className="mt-2 block font-mono text-xl font-bold tabular-nums text-[var(--text-primary)]">{formatBillingMoney(plan.valor)}</span>
+                <span className="mt-2 block text-sm text-[var(--text-secondary)]">{plan.duracao_dias || plan.duration_value || 30} dias</span>
+                {plan.descricao ? <span className="mt-2 block text-xs text-[var(--text-muted)]">{plan.descricao}</span> : null}
+              </button>
+            );
+          })}
+        </div>
+      </SectionCard>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard

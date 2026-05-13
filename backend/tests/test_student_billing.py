@@ -596,12 +596,16 @@ async def test_update_contract_discount_syncs_only_mutable_charges(monkeypatch):
     monkeypatch.setattr(student_billing, "get_db", lambda: db)
 
     actor = {"owner_id": "own_1", "gym_id": "gym_1", "role": "MANAGER"}
+    now = datetime.now(timezone.utc)
+    start_at = now - timedelta(days=5)
+    paid_at = start_at + timedelta(days=1)
+    period_end = start_at + timedelta(days=30)
     created = await student_billing.create_contract(
         payload=ContractCreateIn(
             student_id="std_1",
             plan_id="pln_1",
             amount=149.9,
-            start_at=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
+            start_at=start_at,
         ),
         actor=actor,
     )
@@ -615,15 +619,15 @@ async def test_update_contract_discount_syncs_only_mutable_charges(monkeypatch):
             "student_id": "std_1",
             "amount": 149.9,
             "currency": "BRL",
-            "due_at": datetime(2026, 4, 2, 12, 0, tzinfo=timezone.utc),
+            "due_at": paid_at,
             "status": "paid",
-            "paid_at": datetime(2026, 4, 2, 12, 0, tzinfo=timezone.utc),
+            "paid_at": paid_at,
             "payment_method": "pix",
             "amount_received": 149.9,
-            "period_start": datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
-            "period_end": datetime(2026, 5, 1, 12, 0, tzinfo=timezone.utc),
-            "created_at": datetime(2026, 4, 2, 12, 0, tzinfo=timezone.utc),
-            "updated_at": datetime(2026, 4, 2, 12, 0, tzinfo=timezone.utc),
+            "period_start": start_at,
+            "period_end": period_end,
+            "created_at": paid_at,
+            "updated_at": paid_at,
         }
     )
 

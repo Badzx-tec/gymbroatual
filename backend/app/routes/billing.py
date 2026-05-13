@@ -22,13 +22,13 @@ from app.models.billing import (
     SubscriptionEventOut,
     SubscriptionStatusOut,
 )
+from app.services.billing_reconcile import reconcile_subscriptions
 from app.services.mp_payments import (
     fetch_payment,
     payment_approved_at,
     payment_owner_id,
     payment_status_to_subscription_status,
 )
-from app.services.billing_reconcile import reconcile_subscriptions
 from app.services.observability import log_event
 from app.services.subscription import (
     compute_grace_until,
@@ -40,6 +40,10 @@ from app.services.subscription import (
 router = APIRouter()
 
 MEMBERSHIP_PLAN_CODE = "owner_monthly"
+OWNER_BILLING_PLAN_LABELS = {
+    "owner_monthly": "Mensal",
+    "owner_quarterly": "Trimestral Pre-pago",
+}
 ALLOWED_SUBSCRIPTION_EVENT_SOURCES = {
     "webhook",
     "reconcile",
@@ -47,6 +51,35 @@ ALLOWED_SUBSCRIPTION_EVENT_SOURCES = {
     "system",
     "super_admin",
 }
+
+
+def _owner_billing_plan(plan_code: str | None, monthly_amount: float) -> dict:
+    normalized = (plan_code or MEMBERSHIP_PLAN_CODE).strip().lower()
+    base_amount = float(monthly_amount)
+    quarterly_amount = (
+        369.90 if round(base_amount, 2) == 139.90 else round(base_amount * 3 * 0.88, 2)
+    )
+    plans = {
+        "owner_monthly": {
+            "plan_code": "owner_monthly",
+            "label": "Mensal",
+            "amount": round(base_amount, 2),
+            "duration_days": 30,
+            "frequency": 1,
+            "frequency_type": "months",
+            "reason": "Assinatura GymBro Mensal",
+        },
+        "owner_quarterly": {
+            "plan_code": "owner_quarterly",
+            "label": "Trimestral Pre-pago",
+            "amount": quarterly_amount,
+            "duration_days": 90,
+            "frequency": 3,
+            "frequency_type": "months",
+            "reason": "Assinatura GymBro Trimestral Pre-pago",
+        },
+    }
+    return plans.get(normalized, plans[MEMBERSHIP_PLAN_CODE])
 
 
 def status_from_action(action: str) -> str:
@@ -105,10 +138,14 @@ async def _sync_membership(owner_id: str, *, now: datetime | None = None) -> dic
     subscription = await db.subscriptions.find_one({"owner_id": owner_id}, {"_id": 0})
     if not subscription:
         raise HTTPException(status_code=404, detail="Assinatura nao encontrada")
+    membership_plan_code = str(subscription.get("plan_code") or MEMBERSHIP_PLAN_CODE)
+    membership_amount = float(
+        subscription.get("plan_amount") or settings.subscription_monthly_amount
+    )
 
     update = {
-        "plan_code": MEMBERSHIP_PLAN_CODE,
-        "amount": settings.subscription_monthly_amount,
+        "plan_code": membership_plan_code,
+        "amount": membership_amount,
         "currency": "BRL",
         "provider": "mercadopago",
         "status": subscription.get("status", "trialing"),
@@ -468,14 +505,22 @@ async def subscription_events(
 
 
 @router.post("/subscription/checkout", response_model=CheckoutOut)
-async def subscription_checkout(actor: dict = Depends(require_roles("OWNER", "MANAGER"))):
-    return await create_checkout_for_owner(actor)
+async def subscription_checkout(
+    payload: dict | None = None,
+    actor: dict = Depends(require_roles("OWNER", "MANAGER")),
+):
+    return await create_checkout_for_owner(actor, plan_code=(payload or {}).get("plan_code"))
 
 
-async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
+async def create_checkout_for_owner(owner: dict, *, plan_code: str | None = None) -> CheckoutOut:
     settings = get_settings()
     db = get_db()
     owner_id = owner["owner_id"]
+    selected_plan = _owner_billing_plan(plan_code, settings.subscription_monthly_amount)
+    selected_plan_code = selected_plan["plan_code"]
+    selected_amount = float(selected_plan["amount"])
+    selected_duration_days = int(selected_plan["duration_days"])
+    selected_label = selected_plan["label"]
 
     checkout_url = f"{settings.frontend_base_url}/admin/assinatura?mock=1&owner_id={owner_id}"
     preapproval_id: str | None = None
@@ -483,104 +528,153 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
     checkout_mode = "mock"
 
     if settings.mp_access_token:
-        payload = {
-            "reason": "Assinatura GymBro",
-            "payer_email": owner["email"],
-            "back_url": settings.frontend_base_url,
-            "status": "pending",
-            "notification_url": f"{settings.app_base_url.rstrip('/')}/api/billing/webhook/mercadopago",
-            "external_reference": owner_id,
-            "metadata": {"owner_id": owner_id},
-        }
-        if settings.mp_preapproval_plan_id:
-            payload["preapproval_plan_id"] = settings.mp_preapproval_plan_id
-        else:
-            payload["auto_recurring"] = {
-                "frequency": 1,
-                "frequency_type": "months",
-                "transaction_amount": settings.subscription_monthly_amount,
-                "currency_id": "BRL",
-            }
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.post(
-                "https://api.mercadopago.com/preapproval",
-                headers={"Authorization": f"Bearer {settings.mp_access_token}"},
-                json=payload,
-            )
-            if response.is_success:
-                data = response.json()
-                checkout_url = (
-                    data.get("init_point") or data.get("sandbox_init_point") or checkout_url
-                )
-                preapproval_id = str(data.get("id") or "").strip() or None
-                provider_reference = preapproval_id
-                checkout_mode = "preapproval"
-            else:
-                preapproval_body = response.text[:300]
-                log_event(
-                    "billing_checkout_preapproval_failed",
-                    owner_id=owner_id,
-                    status_code=response.status_code,
-                    detail=preapproval_body,
-                )
+        notification_url = f"{settings.app_base_url.rstrip('/')}/api/billing/webhook/mercadopago"
+        metadata = {"owner_id": owner_id, "plan_code": selected_plan_code}
 
-                preference_payload = {
-                    "items": [
-                        {
-                            "title": "Assinatura GymBro",
-                            "quantity": 1,
-                            "currency_id": "BRL",
-                            "unit_price": float(settings.subscription_monthly_amount),
-                        }
-                    ],
-                    "payer": {"email": owner["email"]},
+        async with httpx.AsyncClient(timeout=15) as client:
+            if settings.mp_preapproval_plan_id and selected_plan_code == MEMBERSHIP_PLAN_CODE:
+                payload = {
+                    "preapproval_plan_id": settings.mp_preapproval_plan_id,
+                    "reason": selected_plan["reason"],
+                    "payer_email": owner["email"],
+                    "back_url": settings.frontend_base_url,
+                    "status": "pending",
+                    "notification_url": notification_url,
                     "external_reference": owner_id,
-                    "notification_url": f"{settings.app_base_url.rstrip('/')}/api/billing/webhook/mercadopago",
-                    "back_urls": {
-                        "success": f"{settings.frontend_base_url.rstrip('/')}/admin/assinatura?status=success",
-                        "failure": f"{settings.frontend_base_url.rstrip('/')}/admin/assinatura?status=failure",
-                        "pending": f"{settings.frontend_base_url.rstrip('/')}/admin/assinatura?status=pending",
-                    },
-                    "auto_return": "approved",
-                    "metadata": {"owner_id": owner_id},
+                    "metadata": metadata,
                 }
-                pref_response = await client.post(
-                    "https://api.mercadopago.com/checkout/preferences",
+                response = await client.post(
+                    "https://api.mercadopago.com/preapproval",
                     headers={"Authorization": f"Bearer {settings.mp_access_token}"},
-                    json=preference_payload,
+                    json=payload,
                 )
-                if pref_response.is_success:
-                    pref_data = pref_response.json()
-                    checkout_url = (
-                        pref_data.get("init_point")
-                        or pref_data.get("sandbox_init_point")
-                        or checkout_url
-                    )
-                    provider_reference = str(pref_data.get("id") or "").strip() or None
-                    checkout_mode = "preference"
+                if response.is_success:
+                    data = response.json()
+                    candidate_preapproval_id = str(data.get("id") or "").strip()
+                    if candidate_preapproval_id:
+                        checkout_url = (
+                            data.get("init_point") or data.get("sandbox_init_point") or checkout_url
+                        )
+                        preapproval_id = candidate_preapproval_id
+                        provider_reference = preapproval_id
+                        checkout_mode = "preapproval_plan"
+                    else:
+                        log_event(
+                            "billing_checkout_preapproval_plan_missing_id",
+                            owner_id=owner_id,
+                            plan_id=settings.mp_preapproval_plan_id,
+                        )
                 else:
-                    pref_body = pref_response.text[:300]
-                    raise HTTPException(
-                        status_code=502,
-                        detail=(
-                            "Falha ao criar checkout no Mercado Pago "
-                            f"(preapproval {response.status_code}: {preapproval_body}; "
-                            f"preference {pref_response.status_code}: {pref_body})"
-                        ),
+                    preapproval_body = response.text[:300]
+                    log_event(
+                        "billing_checkout_preapproval_plan_failed",
+                        owner_id=owner_id,
+                        status_code=response.status_code,
+                        detail=preapproval_body,
                     )
+
+            if not provider_reference:
+                payload = {
+                    "reason": selected_plan["reason"],
+                    "payer_email": owner["email"],
+                    "back_url": settings.frontend_base_url,
+                    "status": "pending",
+                    "notification_url": notification_url,
+                    "external_reference": owner_id,
+                    "metadata": metadata,
+                    "auto_recurring": {
+                        "frequency": int(selected_plan["frequency"]),
+                        "frequency_type": selected_plan["frequency_type"],
+                        "transaction_amount": selected_amount,
+                        "currency_id": "BRL",
+                    },
+                }
+                response = await client.post(
+                    "https://api.mercadopago.com/preapproval",
+                    headers={"Authorization": f"Bearer {settings.mp_access_token}"},
+                    json=payload,
+                )
+                if response.is_success:
+                    data = response.json()
+                    checkout_url = (
+                        data.get("init_point") or data.get("sandbox_init_point") or checkout_url
+                    )
+                    preapproval_id = str(data.get("id") or "").strip() or None
+                    provider_reference = preapproval_id
+                    checkout_mode = "preapproval"
+                else:
+                    preapproval_body = response.text[:300]
+                    log_event(
+                        "billing_checkout_preapproval_failed",
+                        owner_id=owner_id,
+                        status_code=response.status_code,
+                        detail=preapproval_body,
+                    )
+
+                    preference_payload = {
+                        "items": [
+                            {
+                                "title": f"Assinatura GymBro {selected_label}",
+                                "quantity": 1,
+                                "currency_id": "BRL",
+                                "unit_price": selected_amount,
+                            }
+                        ],
+                        "payer": {"email": owner["email"]},
+                        "external_reference": owner_id,
+                        "notification_url": f"{settings.app_base_url.rstrip('/')}/api/billing/webhook/mercadopago",
+                        "back_urls": {
+                            "success": f"{settings.frontend_base_url.rstrip('/')}/admin/assinatura?status=success",
+                            "failure": f"{settings.frontend_base_url.rstrip('/')}/admin/assinatura?status=failure",
+                            "pending": f"{settings.frontend_base_url.rstrip('/')}/admin/assinatura?status=pending",
+                        },
+                        "auto_return": "approved",
+                        "metadata": {"owner_id": owner_id, "plan_code": selected_plan_code},
+                    }
+                    pref_response = await client.post(
+                        "https://api.mercadopago.com/checkout/preferences",
+                        headers={"Authorization": f"Bearer {settings.mp_access_token}"},
+                        json=preference_payload,
+                    )
+                    if pref_response.is_success:
+                        pref_data = pref_response.json()
+                        checkout_url = (
+                            pref_data.get("init_point")
+                            or pref_data.get("sandbox_init_point")
+                            or checkout_url
+                        )
+                        provider_reference = str(pref_data.get("id") or "").strip() or None
+                        checkout_mode = "preference"
+                    else:
+                        pref_body = pref_response.text[:300]
+                        raise HTTPException(
+                            status_code=502,
+                            detail=(
+                                "Falha ao criar checkout no Mercado Pago "
+                                f"(preapproval {response.status_code}: {preapproval_body}; "
+                                f"preference {pref_response.status_code}: {pref_body})"
+                            ),
+                        )
     else:
-        preapproval_id = f"mock_pre_{owner_id}"
+        preapproval_id = f"mock_pre_{owner_id}_{selected_plan_code}"
         provider_reference = preapproval_id
 
     current_now = now_utc()
     subscription_update = {
         "updated_at": current_now,
         "provider": "mercadopago",
+        "plan_code": selected_plan_code,
+        "plan_amount": selected_amount,
+        "plan_duration_days": selected_duration_days,
         "meta.last_checkout": {
             "at": current_now,
             "mode": checkout_mode,
             "preapproval_id": preapproval_id,
             "provider_reference": provider_reference,
+            "plan_code": selected_plan_code,
+            "plan_label": selected_label,
+            "amount": selected_amount,
+            "duration_days": selected_duration_days,
         },
     }
     if preapproval_id is not None:
@@ -595,7 +689,7 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
         status_value="open",
         paid=False,
         provider_reference=provider_reference,
-        amount=membership_doc.get("amount"),
+        amount=selected_amount,
         now=current_now,
     )
     await _record_payment_attempt(
@@ -603,9 +697,9 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
         subscription_status=membership_doc.get("status", "trialing"),
         provider_reference=provider_reference,
         reason="checkout_created",
-        payload={"stage": "checkout", "mode": checkout_mode},
+        payload={"stage": "checkout", "mode": checkout_mode, "plan_code": selected_plan_code},
         invoice_id=invoice_doc.get("invoice_id"),
-        amount=membership_doc.get("amount"),
+        amount=selected_amount,
         now=current_now,
     )
     await _record_subscription_event(
@@ -617,6 +711,9 @@ async def create_checkout_for_owner(owner: dict) -> CheckoutOut:
             "preapproval_id": preapproval_id,
             "provider_reference": provider_reference,
             "mode": checkout_mode,
+            "plan_code": selected_plan_code,
+            "plan_label": OWNER_BILLING_PLAN_LABELS.get(selected_plan_code, selected_label),
+            "amount": selected_amount,
         },
         now=current_now,
     )
@@ -717,6 +814,8 @@ async def webhook_mercadopago(request: Request, x_signature: str | None = Header
 
     if owner_id:
         reference_now = payment_approved_at(payment_details) or now
+        subscription_doc = await db.subscriptions.find_one({"owner_id": owner_id}, {"_id": 0})
+        plan_duration_days = int((subscription_doc or {}).get("plan_duration_days") or 30)
         update = {
             "status": status_value,
             "updated_at": now,
@@ -728,7 +827,10 @@ async def webhook_mercadopago(request: Request, x_signature: str | None = Header
             },
         }
         if status_value == "active":
-            update["current_period_end"] = compute_next_period_end(reference_now)
+            update["current_period_end"] = compute_next_period_end(
+                reference_now,
+                days=plan_duration_days,
+            )
             update["last_payment_at"] = reference_now
             update["grace_until"] = None
         elif status_value == "past_due":

@@ -184,7 +184,7 @@ async def test_checkout_webhook_populates_financial_domain(monkeypatch):
     }
 
     checkout = await billing.create_checkout_for_owner(owner)
-    assert checkout.preapproval_id == "mock_pre_own_1"
+    assert checkout.preapproval_id == "mock_pre_own_1_owner_monthly"
     assert "/admin/assinatura" in checkout.checkout_url
 
     actor = {"owner_id": "own_1", "role": "OWNER"}
@@ -203,7 +203,7 @@ async def test_checkout_webhook_populates_financial_domain(monkeypatch):
         "action": "preapproval.payment",
         "type": "subscription_preapproval",
         "external_reference": "own_1",
-        "data": {"id": "mock_pre_own_1", "status": "authorized"},
+        "data": {"id": "mock_pre_own_1_owner_monthly", "status": "authorized"},
     }
     response = await billing.webhook_mercadopago(DummyRequest(webhook_payload), x_signature=None)
     assert response["status"] == "ok"
@@ -219,6 +219,46 @@ async def test_checkout_webhook_populates_financial_domain(monkeypatch):
     assert attempts_after[0]["status"] == "succeeded"
     assert events_after[0]["source"] == "webhook"
     assert events_after[0]["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_checkout_with_quarterly_plan_sets_financial_amounts(monkeypatch):
+    db = FakeDb()
+    settings = SimpleNamespace(
+        mp_access_token=None,
+        mp_webhook_secret=None,
+        frontend_base_url="http://localhost:3000",
+        app_base_url="http://localhost:8000",
+        subscription_monthly_amount=139.90,
+        webhook_rate_limit=100,
+        webhook_window_seconds=60,
+    )
+
+    monkeypatch.setattr(billing, "get_db", lambda: db)
+    monkeypatch.setattr(billing, "get_settings", lambda: settings)
+
+    owner = {
+        "owner_id": "own_1",
+        "email": "owner@example.com",
+        "name": "Owner Test",
+    }
+
+    checkout = await billing.create_checkout_for_owner(owner, plan_code="owner_quarterly")
+    assert checkout.preapproval_id == "mock_pre_own_1_owner_quarterly"
+
+    subscription = await db.subscriptions.find_one({"owner_id": "own_1"})
+    assert subscription["plan_code"] == "owner_quarterly"
+    assert subscription["plan_amount"] == pytest.approx(369.9)
+    assert subscription["plan_duration_days"] == 90
+
+    actor = {"owner_id": "own_1", "role": "OWNER"}
+    membership = await billing.membership(actor=actor)
+    invoices = await billing.invoices(limit=20, actor=actor)
+    attempts = await billing.payment_attempts(limit=20, actor=actor)
+
+    assert membership["amount"] == pytest.approx(369.9)
+    assert invoices[0]["amount"] == pytest.approx(369.9)
+    assert attempts[0]["amount"] == pytest.approx(369.9)
 
 
 @pytest.mark.asyncio

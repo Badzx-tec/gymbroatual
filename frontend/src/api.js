@@ -294,7 +294,7 @@ export const api = {
 
   subscriptionStatus: () => request('/api/billing/subscription/status'),
   subscriptionStatusRefresh: () => request('/api/billing/subscription/status?refresh=true'),
-  subscriptionCheckout: () => request('/api/billing/subscription/checkout', { method: 'POST' }),
+  subscriptionCheckout: (data = {}) => request('/api/billing/subscription/checkout', { method: 'POST', body: JSON.stringify(data) }),
   subscriptionRefresh: () => request('/api/billing/subscription/refresh', { method: 'POST' }),
   billingOverview: (params = {}) => {
     const query = new URLSearchParams();

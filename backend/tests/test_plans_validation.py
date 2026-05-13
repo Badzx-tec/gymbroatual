@@ -1,7 +1,17 @@
+from types import SimpleNamespace
+
 import pytest
 from fastapi import HTTPException
 
 from app.routes import gyms
+
+
+class FakeCursor:
+    def __init__(self, docs: list[dict]):
+        self.docs = [dict(item) for item in docs]
+
+    async def to_list(self, _limit: int):
+        return list(self.docs)
 
 
 class FakeCollection:
@@ -25,10 +35,19 @@ class FakeCollection:
                 return dict(item)
         return None
 
+    def find(self, query: dict, _projection=None):
+        docs = [
+            item
+            for item in self.docs
+            if all(item.get(k) == v for k, v in query.items())
+        ]
+        return FakeCursor(docs)
+
 
 class FakeDb:
     def __init__(self):
         self.plans = FakeCollection()
+        self.public_plans = FakeCollection()
 
 
 @pytest.mark.asyncio
@@ -43,6 +62,25 @@ async def test_create_plan_rejects_invalid_payload(monkeypatch):
         )
 
     assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_public_plans_default_to_updated_owner_prices(monkeypatch):
+    db = FakeDb()
+    monkeypatch.setattr(gyms, "get_db", lambda: db)
+    monkeypatch.setattr(
+        gyms,
+        "get_settings",
+        lambda: SimpleNamespace(subscription_monthly_amount=139.90),
+    )
+
+    plans = await gyms.list_plans_public()
+
+    assert [plan["plan_id"] for plan in plans] == [
+        "owner_monthly",
+        "owner_quarterly",
+    ]
+    assert [plan["valor"] for plan in plans] == [139.90, 369.90]
 
 
 @pytest.mark.asyncio
