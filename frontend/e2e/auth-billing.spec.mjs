@@ -101,22 +101,25 @@ test('register + verify + payment gate + successful login', async ({ page }) => 
   await page.goto('/login');
 
   await page.getByRole('button', { name: /Criar conta/i }).click();
-  await page.locator('form input').nth(0).fill('Academia XPTO');
-  await page.locator('form input').nth(1).fill('Academia XPTO');
-  await page.locator('form input').nth(2).fill('owner@example.com');
-  await page.locator('form input').nth(3).fill('Senha123456');
+  await page.getByLabel('Nome do responsavel').fill('Dono XPTO');
+  await page.getByLabel('Nome da academia').fill('Academia XPTO');
+  await page.getByLabel('E-mail').fill('owner@example.com');
+  await page.getByLabel(/^Senha$/i).fill('Senha123456');
+  await page.getByLabel('Confirmar senha').fill('Senha123456');
   await page.getByRole('button', { name: /Criar Conta/i }).click();
 
-  await expect(page.getByText('Informe o codigo de 6 digitos')).toBeVisible();
-  await page.locator('input[maxlength="6"]').fill('123456');
-  await page.getByRole('button', { name: /Validar Codigo/i }).click();
+  await expect(page.getByRole('heading', { name: /Verificar e-mail/i })).toBeVisible();
+  await page.getByLabel('Codigo de verificacao').fill('123456');
+  await page.getByRole('button', { name: /Validar codigo/i }).click();
 
-  await expect(page.getByText('Acessar Painel')).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Entrar no painel/i })).toBeVisible();
+  await page.getByLabel('Login').fill('owner@example.com');
+  await page.getByLabel(/^Senha$/i).fill('Senha123456');
   await page.getByRole('button', { name: /Entrar/i }).click();
-  await expect(page.getByText('Assinatura necessaria')).toBeVisible();
+  await expect(page.getByText('Assinatura necessaria', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /Assinar agora/i })).toBeVisible();
 
   await page.getByRole('button', { name: /Entrar/i }).click();
   await expect(page).toHaveURL(/\/admin/);
-  await expect(page.getByText('Painel Administrativo')).toBeVisible();
+  await expect(page.getByTestId('dashboard-page')).toBeVisible();
 });
