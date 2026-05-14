@@ -3,6 +3,14 @@ from fastapi import Response
 from app.core.config import get_settings
 
 
+def _should_use_secure_cookie(settings) -> bool:
+    return bool(
+        settings.session_cookie_secure
+        or settings.environment == "prod"
+        or settings.app_base_url.startswith("https://")
+    )
+
+
 def set_auth_cookie(response: Response, token: str) -> None:
     settings = get_settings()
     max_age = max(int(settings.access_token_minutes) * 60, 60)
@@ -12,7 +20,7 @@ def set_auth_cookie(response: Response, token: str) -> None:
         max_age=max_age,
         expires=max_age,
         httponly=True,
-        secure=bool(settings.session_cookie_secure or settings.environment == "prod"),
+        secure=_should_use_secure_cookie(settings),
         samesite=settings.session_cookie_samesite,
         domain=settings.session_cookie_domain,
         path=settings.session_cookie_path,
@@ -25,6 +33,6 @@ def clear_auth_cookie(response: Response) -> None:
         key=settings.session_cookie_name,
         domain=settings.session_cookie_domain,
         path=settings.session_cookie_path,
-        secure=bool(settings.session_cookie_secure or settings.environment == "prod"),
+        secure=_should_use_secure_cookie(settings),
         samesite=settings.session_cookie_samesite,
     )

@@ -331,13 +331,23 @@ async def _enforce_auth_rate_limit(
     request: Request, email: str, *, scope: str, limit: int, window_seconds: int
 ) -> None:
     client_ip = get_client_ip(request)
+    # Two independent buckets: one per IP (blocks scanning from a single host)
+    # and one per email (blocks credential stuffing against a single account).
     await enforce_rate_limit(
-        scope=scope,
-        key=f"{client_ip}:{email}",
+        scope=f"{scope}.ip",
+        key=client_ip,
         limit=limit,
         window_seconds=window_seconds,
         error_detail="Muitas tentativas. Aguarde um instante e tente novamente.",
     )
+    if email:
+        await enforce_rate_limit(
+            scope=f"{scope}.email",
+            key=email,
+            limit=limit,
+            window_seconds=window_seconds,
+            error_detail="Muitas tentativas nesta conta. Aguarde um instante e tente novamente.",
+        )
 
 
 @router.post("/register")

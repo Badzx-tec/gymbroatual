@@ -223,7 +223,7 @@ async def _sync_student_contract_projection(contract: dict) -> None:
     now = utc_now()
     student = await db.students.find_one(
         {"owner_id": contract["owner_id"], "student_id": contract["student_id"]},
-        {"_id": 0, "status": 1, "auto_status_source": 1},
+        {"_id": 0, "status": 1, "auto_status_source": 1, "_proj_version": 1},
     )
     if not student:
         return
@@ -265,10 +265,23 @@ async def _sync_student_contract_projection(contract: dict) -> None:
 
     if contract.get("plan_id"):
         updates["plano_id"] = contract.get("plan_id")
-    await db.students.update_one(
-        {"owner_id": contract["owner_id"], "student_id": contract["student_id"]},
-        {"$set": updates},
+
+    # Optimistic concurrency: only write if _proj_version hasn't changed since we
+    # read the student. This prevents two concurrent syncs from trampling each other.
+    current_version = int(student.get("_proj_version") or 0)
+    result = await db.students.update_one(
+        {
+            "owner_id": contract["owner_id"],
+            "student_id": contract["student_id"],
+            "_proj_version": {"$in": [current_version, None]},
+        },
+        {"$set": updates, "$inc": {"_proj_version": 1}},
     )
+    if result.matched_count == 0:
+        logging.getLogger("gymbro.student_billing").warning(
+            "sync_student_projection skipped: version conflict for student_id=%s",
+            contract.get("student_id"),
+        )
 
 
 async def _load_contract_for_owner(

@@ -14,6 +14,7 @@ from app.services.internal_codes import (
     generate_unique_internal_code,
     normalize_internal_code,
 )
+from app.services.observability import log_event
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -222,6 +223,15 @@ async def create_employee(payload: dict, actor: dict = Depends(require_roles("OW
     except DuplicateKeyError as exc:
         raise HTTPException(status_code=409, detail="Dados de funcionario ja cadastrados") from exc
 
+    log_event(
+        "employee.created",
+        actor_id=actor.get("employee_id") or actor.get("owner_id"),
+        actor_type=actor.get("actor_type", "owner"),
+        target_id=employee["employee_id"],
+        target_type="employee",
+        owner_id=actor["owner_id"],
+        role=role,
+    )
     result = _safe_employee(employee)
     if bool(payload.get("sync_shadow_student", False)):
         shadow_student_id, shadow_sync_warning = await _sync_shadow_student_safe(employee)
@@ -325,6 +335,14 @@ async def delete_employee(
         raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
 
     await db.employees.delete_one({"employee_id": employee_id, "owner_id": actor["owner_id"]})
+    log_event(
+        "employee.deleted",
+        actor_id=actor.get("employee_id") or actor.get("owner_id"),
+        actor_type=actor.get("actor_type", "owner"),
+        target_id=employee_id,
+        target_type="employee",
+        owner_id=actor["owner_id"],
+    )
     await db.students.delete_one(
         {
             "owner_id": actor["owner_id"],
@@ -357,6 +375,14 @@ async def deactivate_employee(
         {"employee_id": employee_id, "owner_id": actor["owner_id"]},
         {"$set": {"is_active": False, "session_revoked_at": now, "updated_at": now}},
     )
+    log_event(
+        "employee.deactivated",
+        actor_id=actor.get("employee_id") or actor.get("owner_id"),
+        actor_type=actor.get("actor_type", "owner"),
+        target_id=employee_id,
+        target_type="employee",
+        owner_id=actor["owner_id"],
+    )
     return {"message": "Funcionario desativado"}
 
 
@@ -381,6 +407,14 @@ async def reset_password(
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Funcionario nao encontrado")
+    log_event(
+        "employee.password_reset",
+        actor_id=actor.get("employee_id") or actor.get("owner_id"),
+        actor_type=actor.get("actor_type", "owner"),
+        target_id=employee_id,
+        target_type="employee",
+        owner_id=actor["owner_id"],
+    )
     return {"message": "Senha redefinida", "temp_password": new_password}
 
 

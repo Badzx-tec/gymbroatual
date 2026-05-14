@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from app.core.deps import require_roles
 from app.core.time import UTC
 from app.db.mongo import get_db
+from app.services.observability import log_event
 from app.services.subscription import subscription_allows_login
 
 router = APIRouter()
@@ -288,6 +289,16 @@ async def grant_owner_grace(
             "created_at": now,
         }
     )
+    log_event(
+        "subscription.manual_grace_granted",
+        actor_id=actor.get("email") or actor.get("sub"),
+        actor_type="super_admin",
+        target_id=owner_id,
+        target_type="owner",
+        days=int(request_data.days),
+        reason=request_data.reason,
+        grace_until=str(grace_until),
+    )
 
     updated = await db.subscriptions.find_one(
         {"owner_id": owner_id},
@@ -349,6 +360,15 @@ async def clear_owner_grace(
         }
     )
 
+    log_event(
+        "subscription.manual_grace_cleared",
+        actor_id=actor.get("email") or actor.get("sub"),
+        actor_type="super_admin",
+        target_id=owner_id,
+        target_type="owner",
+        status_before=current_status,
+        status_after=next_status,
+    )
     updated = await db.subscriptions.find_one(
         {"owner_id": owner_id},
         {"_id": 0, "owner_id": 1, "status": 1, "grace_until": 1, "trial_ends_at": 1, "current_period_end": 1},
