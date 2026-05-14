@@ -31,16 +31,23 @@ Fluxo Toletus correto (NAT-safe):
 
 ## Variáveis de ambiente
 
-Copie e edite:
-
 ```bash
 cp .env.example .env
+bash scripts/gen-secrets.sh           # gera JWT_SECRET, FERNET_KEYS, MONGO_ROOT_PASSWORD
+bash scripts/gen-secrets.sh --with-admin   # também prompta para hash bcrypt do super admin
+# Copie os valores impressos para .env (ou para o secrets manager em prod).
+```
+
+`SUPER_ADMIN_PASSWORD` deve ser um hash bcrypt (começa com `$2`). Plaintext é rejeitado.
+Gere com:
+```bash
+python -c "from passlib.hash import bcrypt; print(bcrypt.hash('senha'))"
 ```
 
 Principais:
 - `MONGO_ROOT_USERNAME`, `MONGO_ROOT_PASSWORD`, `DB_NAME`
-- `JWT_SECRET`, `FERNET_KEY`
-- `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, `SUPER_ADMIN_NAME`
+- `JWT_SECRET` (≥32 chars em prod), `FERNET_KEYS` (comma-separated; primeira chave encripta, todas decriptam para rotação zero-downtime; `FERNET_KEY` legado ainda aceito)
+- `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` (hash bcrypt), `SUPER_ADMIN_NAME`
 - `APP_BASE_URL`, `FRONTEND_BASE_URL`, `CORS_ORIGINS`
 - `MP_ACCESS_TOKEN`, `MP_PUBLIC_KEY`, `MP_WEBHOOK_SECRET`
 - `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`

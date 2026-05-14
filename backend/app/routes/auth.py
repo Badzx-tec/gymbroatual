@@ -1,3 +1,4 @@
+import logging
 import secrets
 from datetime import datetime, timedelta
 
@@ -222,13 +223,19 @@ def _super_admin_profile_payload() -> dict:
 
 
 def _super_admin_password_matches(password: str, configured_password: str) -> bool:
-    # Allows plain text or bcrypt hash in environment configuration.
-    if configured_password.startswith("$2"):
-        try:
-            return verify_password(password, configured_password)
-        except Exception:
-            return False
-    return secrets.compare_digest(password, configured_password)
+    # SUPER_ADMIN_PASSWORD must be a bcrypt hash (starts with $2). Plaintext is
+    # rejected — generate a hash with:
+    #   python -c "from passlib.hash import bcrypt; print(bcrypt.hash('YOUR_PASSWORD'))"
+    if not configured_password.startswith("$2"):
+        logging.getLogger("gymbro.auth").error(
+            "SUPER_ADMIN_PASSWORD nao e um hash bcrypt; login do super admin sera negado. "
+            "Gere com: python -c \"from passlib.hash import bcrypt; print(bcrypt.hash('senha'))\""
+        )
+        return False
+    try:
+        return verify_password(password, configured_password)
+    except Exception:
+        return False
 
 
 def _set_auth_response_headers(response: Response) -> None:
@@ -1038,11 +1045,17 @@ async def update_profile(payload: dict, actor: dict = Depends(get_current_actor)
     if any(key in payload for key in ("theme_key", "color_mode", "logo_data_url", "remove_logo")):
         current_branding = dict(owner.get("branding") or {})
         if "theme_key" in payload:
-            current_branding["theme_key"] = _normalize_theme_key(payload.get("theme_key"), strict=True)
+            current_branding["theme_key"] = _normalize_theme_key(
+                payload.get("theme_key"), strict=True
+            )
         if "color_mode" in payload:
-            current_branding["color_mode"] = _normalize_color_mode(payload.get("color_mode"), strict=True)
+            current_branding["color_mode"] = _normalize_color_mode(
+                payload.get("color_mode"), strict=True
+            )
         if "logo_data_url" in payload:
-            current_branding["logo_data_url"] = _normalize_logo_data_url(payload.get("logo_data_url"))
+            current_branding["logo_data_url"] = _normalize_logo_data_url(
+                payload.get("logo_data_url")
+            )
         if payload.get("remove_logo"):
             current_branding["logo_data_url"] = None
         current_branding["updated_at"] = now

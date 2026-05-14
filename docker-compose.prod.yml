@@ -4,8 +4,8 @@ services:
     restart: unless-stopped
     command: ["--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?MONGO_ROOT_USERNAME is required}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?MONGO_ROOT_PASSWORD is required}
     volumes:
       - mongo_data:/data/db
     mem_limit: 400m
@@ -23,10 +23,13 @@ services:
       - .env
     environment:
       MONGO_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
-      DB_NAME: ${DB_NAME}
-      APP_BASE_URL: ${APP_BASE_URL}
-      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL}
-      CORS_ORIGINS: ${CORS_ORIGINS}
+      DB_NAME: ${DB_NAME:?DB_NAME is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      # FERNET_KEYS (comma-separated, preferred) or legacy FERNET_KEY.
+      FERNET_KEYS: ${FERNET_KEYS:-${FERNET_KEY:?FERNET_KEYS or FERNET_KEY is required}}
+      APP_BASE_URL: ${APP_BASE_URL:?APP_BASE_URL is required}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:?FRONTEND_BASE_URL is required}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
     depends_on:
       mongo:
         condition: service_healthy

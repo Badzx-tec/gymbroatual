@@ -1,5 +1,6 @@
 import hmac
 from datetime import datetime, timedelta
+from functools import lru_cache
 from hashlib import sha256
 from typing import Any
 
@@ -10,6 +11,8 @@ from app.core.config import get_settings
 from app.core.time import UTC
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+_VERIFICATION_CODE_LABEL = b"gymbro/verification-code/v1"
 
 
 def hash_password(password: str) -> str:
@@ -38,10 +41,21 @@ def decode_access_token(token: str) -> dict[str, Any]:
     return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
 
 
-def verification_code_hash(email: str, code: str) -> str:
+@lru_cache(maxsize=1)
+def _verification_code_key() -> bytes:
+    """Key for verification-code HMAC.
+
+    Derived from JWT_SECRET via labeled HMAC so we never use the JWT signing
+    key directly for another purpose. Cached because Settings is immutable
+    once loaded.
+    """
     settings = get_settings()
+    return hmac.new(settings.jwt_secret.encode("utf-8"), _VERIFICATION_CODE_LABEL, sha256).digest()
+
+
+def verification_code_hash(email: str, code: str) -> str:
     msg = f"{email.lower().strip()}:{code}".encode("utf-8")
-    return hmac.new(settings.jwt_secret.encode("utf-8"), msg, sha256).hexdigest()
+    return hmac.new(_verification_code_key(), msg, sha256).hexdigest()
 
 
 def safe_jwt_decode(token: str) -> dict[str, Any] | None:

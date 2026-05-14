@@ -3,11 +3,11 @@ services:
     image: mongo:7
     restart: unless-stopped
     command: ["--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
-    ports:
-      - "27017:27017"
+    # Mongo stays on the internal network only. To inspect locally, use:
+    #   docker compose exec mongo mongosh -u <user> -p
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-admin}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-change_me}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?MONGO_ROOT_USERNAME is required — run scripts/gen-secrets.sh}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?MONGO_ROOT_PASSWORD is required — run scripts/gen-secrets.sh}
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -23,10 +23,12 @@ services:
     env_file:
       - .env
     environment:
-      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:-change_me}@mongo:27017/?authSource=admin
+      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
       DB_NAME: ${DB_NAME:-gymbro}
-      JWT_SECRET: ${JWT_SECRET:-change_me_with_at_least_16_chars}
-      FERNET_KEY: ${FERNET_KEY:-YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required — run scripts/gen-secrets.sh}
+      # FERNET_KEYS (preferred, comma-separated for rotation) or FERNET_KEY (legacy single key).
+      # Backend reads FERNET_KEYS first; falls back to FERNET_KEY for backward compatibility.
+      FERNET_KEYS: ${FERNET_KEYS:-${FERNET_KEY:?FERNET_KEYS or FERNET_KEY is required — run scripts/gen-secrets.sh}}
       FRONTEND_BASE_URL: http://localhost:3000
       APP_BASE_URL: http://localhost:8000
       CORS_ORIGINS: http://localhost:3000

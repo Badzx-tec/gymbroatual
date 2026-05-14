@@ -745,7 +745,16 @@ async def webhook_mercadopago(request: Request, x_signature: str | None = Header
                 if part.strip().startswith("v1="):
                     signature_value = part.strip().split("=", 1)[1]
                     break
-        if signature_value and digest != signature_value and digest not in signature_value:
+
+        # fail-closed: when MP_WEBHOOK_SECRET is configured, the X-Signature
+        # header is REQUIRED. Empty/missing header is treated as invalid.
+        reject_reason: str | None = None
+        if not signature_value:
+            reject_reason = "missing_signature"
+        elif digest != signature_value and digest not in signature_value:
+            reject_reason = "invalid_signature"
+
+        if reject_reason:
             now = datetime.now(UTC)
             await db.billing_events.insert_one(
                 {
@@ -755,7 +764,7 @@ async def webhook_mercadopago(request: Request, x_signature: str | None = Header
                     or payload.get("metadata", {}).get("owner_id"),
                     "status": "rejected",
                     "payload": {
-                        "reason": "invalid_signature",
+                        "reason": reject_reason,
                         "ip": source_ip,
                         "type": payload.get("type"),
                         "action": payload.get("action"),
@@ -765,7 +774,7 @@ async def webhook_mercadopago(request: Request, x_signature: str | None = Header
             )
             log_event(
                 "billing_webhook_rejected",
-                reason="invalid_signature",
+                reason=reject_reason,
                 ip=source_ip,
                 action=payload.get("action"),
             )

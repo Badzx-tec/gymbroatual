@@ -1,89 +1,95 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # ==============================================================================
 # GymBro Development Server Startup Script
+# Run from the repo root: bash start-dev.sh
 # ==============================================================================
 
-set -e
+set -euo pipefail
 
-echo "🚀 Iniciando GymBro em modo desenvolvimento..."
-echo ""
+echo "Starting GymBro in dev mode..."
+echo
 
-# Cores para output
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
+
+# Validate prerequisites
+for tool in python3 npm node; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "error: required tool '$tool' not found in PATH" >&2
+        exit 1
+    fi
+done
+
+if [[ ! -f .env ]]; then
+    echo "error: .env not found. Generate secrets with: bash scripts/gen-secrets.sh" >&2
+    echo "       Then create .env from .env.example with the generated values." >&2
+    exit 1
+fi
+
+ROOT_DIR="$(pwd)"
+trap 'echo; echo "Stopping background processes..."; jobs -p | xargs -r kill 2>/dev/null || true' EXIT INT TERM
 
 # ==============================================================================
 # 1. BACKEND
 # ==============================================================================
-echo -e "${BLUE}📦 Iniciando Backend (FastAPI)...${NC}"
-cd backend
+echo -e "${BLUE}Starting Backend (FastAPI)...${NC}"
+cd "${ROOT_DIR}/backend"
 
-# Verificar se virtual env existe
-if [ ! -d "venv" ]; then
-    echo "Criando virtual environment..."
+if [[ ! -d venv ]]; then
+    echo "Creating virtual environment..."
     python3 -m venv venv
 fi
 
-# Ativar venv
+# shellcheck disable=SC1091
 source venv/bin/activate
 
-# Instalar dependências
-echo "Instalando dependências Python..."
+echo "Installing Python dependencies..."
 pip install -q --upgrade pip
 pip install -q -r requirements.txt
 
-# Iniciar servidor Backend em background
-echo -e "${GREEN}✅ Backend iniciado em http://localhost:8000${NC}"
+echo -e "${GREEN}Backend booting at http://localhost:8000${NC}"
 python server.py &
 BACKEND_PID=$!
 
-# Voltar para root
-cd ..
-
-echo ""
+cd "${ROOT_DIR}"
 
 # ==============================================================================
 # 2. FRONTEND
 # ==============================================================================
-echo -e "${BLUE}📦 Iniciando Frontend (React)...${NC}"
-cd frontend
+echo
+echo -e "${BLUE}Starting Frontend (React)...${NC}"
+cd "${ROOT_DIR}/frontend"
 
-# Verificar se node_modules existe
-if [ ! -d "node_modules" ]; then
-    echo "Instalando dependências npm..."
+if [[ ! -d node_modules ]]; then
+    echo "Installing npm dependencies..."
     npm install -q
 fi
 
-# Iniciar servidor Frontend em background
-echo -e "${GREEN}✅ Frontend iniciado em http://localhost:3000${NC}"
-REACT_APP_API_BASE=http://localhost:8000 npm start &
+echo -e "${GREEN}Frontend booting at http://localhost:3000${NC}"
+REACT_APP_API_BASE="http://localhost:8000" npm start &
 FRONTEND_PID=$!
 
-# Voltar para root
-cd ..
+cd "${ROOT_DIR}"
 
-echo ""
+echo
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}✨ GymBro está rodando!${NC}"
+echo -e "${GREEN}GymBro is running${NC}"
 echo -e "${GREEN}========================================${NC}"
-echo ""
+echo
 echo "URLs:"
-echo "  Frontend:  http://localhost:3000"
-echo "  Backend:   http://localhost:8000"
-echo "  Dashboard: http://localhost:3000/admin"
-echo "  Assinatura: http://localhost:3000/admin/assinatura"
-echo ""
-echo "Credenciais de Teste:"
-echo "  Email: teste@gymbro.local"
-echo "  Senha: Senha123456"
-echo ""
-echo "Para parar:"
-echo "  kill $BACKEND_PID  # Backend"
-echo "  kill $FRONTEND_PID # Frontend"
-echo ""
+echo "  Frontend:   http://localhost:3000"
+echo "  Backend:    http://localhost:8000"
+echo "  Admin:      http://localhost:3000/admin"
+echo "  Billing:    http://localhost:3000/admin/assinatura"
+echo
+echo "Seed a dev user (one-off):"
+echo "  cd backend && python -m scripts.seed_dev   # if available"
+echo
+echo "Stop:"
+echo "  kill ${BACKEND_PID}  # Backend"
+echo "  kill ${FRONTEND_PID} # Frontend"
+echo
 
-# Aguardar sinais de término
 wait
-

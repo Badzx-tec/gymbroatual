@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_JWT_SECRET = "change-me-dev-secret"
 DEFAULT_FERNET_KEY = "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="
+MIN_JWT_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -48,6 +49,12 @@ class Settings(BaseSettings):
     trial_days: int = 7
     payment_grace_days: int = 3
 
+    # Encryption keys for at-rest sensitive data (biometric templates, etc.).
+    # FERNET_KEYS (preferred): comma-separated list. First key encrypts new
+    # data; all keys are tried on decrypt — enables zero-downtime rotation.
+    # FERNET_KEY (legacy single key) is kept for backward compatibility and
+    # is appended to fernet_keys_list when FERNET_KEYS is unset.
+    fernet_keys: str = ""
     fernet_key: str = ""
 
     toletus_mode: Literal["mock", "real"] = "mock"
@@ -80,6 +87,16 @@ class Settings(BaseSettings):
     cors_allow_methods: str = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
     cors_allow_headers: str = "Authorization,Content-Type,X-Requested-With,X-Request-ID"
 
+    @property
+    def fernet_keys_list(self) -> list[str]:
+        """Resolved list of Fernet keys (FERNET_KEYS first, then legacy FERNET_KEY)."""
+        keys: list[str] = []
+        if self.fernet_keys:
+            keys.extend(k.strip() for k in self.fernet_keys.split(",") if k.strip())
+        if self.fernet_key and self.fernet_key not in keys:
+            keys.append(self.fernet_key.strip())
+        return keys
+
     @field_validator("jwt_secret")
     @classmethod
     def validate_jwt_secret(cls, value: str) -> str:
@@ -87,23 +104,29 @@ class Settings(BaseSettings):
             raise ValueError("JWT_SECRET must have at least 16 characters")
         return value
 
-    @field_validator("fernet_key")
-    @classmethod
-    def validate_fernet_key(cls, value: str) -> str:
-        if not value:
-            # dev fallback key; override in production
-            return DEFAULT_FERNET_KEY
-        return value
-
     @model_validator(mode="after")
     def validate_production_security(self):
+        # Fernet must always be configured (encryption cannot fall back silently).
+        if not self.fernet_keys_list:
+            raise ValueError("FERNET_KEYS (ou FERNET_KEY legacy) e obrigatorio")
+
+        # Never allow the public default key, in any environment.
+        if any(k == DEFAULT_FERNET_KEY for k in self.fernet_keys_list):
+            raise ValueError(
+                "FERNET key padrao (publica em .env.example) nao pode ser usada; "
+                "gere uma nova com scripts/gen-secrets.sh"
+            )
+
         if self.environment != "prod":
             return self
 
+        # --- production-only stricter checks ---
         if self.jwt_secret == DEFAULT_JWT_SECRET:
             raise ValueError("JWT_SECRET padrao nao pode ser usado em producao")
-        if self.fernet_key == DEFAULT_FERNET_KEY:
-            raise ValueError("FERNET_KEY padrao nao pode ser usado em producao")
+        if len(self.jwt_secret) < MIN_JWT_SECRET_LENGTH:
+            raise ValueError(
+                f"JWT_SECRET em producao deve ter pelo menos {MIN_JWT_SECRET_LENGTH} caracteres"
+            )
 
         origins = [item.strip() for item in self.cors_origins.split(",") if item.strip()]
         if not origins or "*" in origins:
@@ -113,6 +136,19 @@ class Settings(BaseSettings):
             raise ValueError(
                 "SESSION_COOKIE_SECURE deve ser true quando SESSION_COOKIE_SAMESITE=none"
             )
+
+        # MP webhook secret is required when MP integration is active.
+        if self.mp_access_token and not self.mp_webhook_secret:
+            raise ValueError(
+                "MP_WEBHOOK_SECRET e obrigatorio quando MP_ACCESS_TOKEN esta configurado"
+            )
+
+        # Super admin password, if present, must be a bcrypt hash (starts with $2).
+        if self.super_admin_password and not self.super_admin_password.startswith("$2"):
+            raise ValueError(
+                "SUPER_ADMIN_PASSWORD deve ser um hash bcrypt (gerar com passlib.hash.bcrypt)"
+            )
+
         return self
 
 
