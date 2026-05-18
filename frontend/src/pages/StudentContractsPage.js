@@ -17,13 +17,11 @@ import ContractsFilters from './contracts/ContractsFilters';
 import ContractsOverview from './contracts/ContractsOverview';
 import ContractsTable from './contracts/ContractsTable';
 import {
-  calculateContractEndAt,
-  formatDate,
   formatContractValueBreakdown,
-  formatDurationLabel,
   toIsoDate,
   toLocalDateInput,
 } from './contracts/contractsUtils';
+import CreateContractDialog from './contracts/CreateContractDialog';
 import {
   dateInputToIsoRangeEnd,
   dateInputToIsoRangeStart,
@@ -34,29 +32,6 @@ import {
 const SAVED_VIEW_KEY = 'gymbro_contracts_saved_view';
 const DEFAULT_SORT_BY = 'student';
 const DEFAULT_SORT_DIR = 'asc';
-
-const createFormDefault = {
-  student_id: '',
-  plan_id: '',
-  amount: '',
-  discount_amount: '',
-  duration_value: '',
-  duration_unit: 'days',
-  start_at: '',
-  end_at: '',
-  billing_day: '',
-  auto_renew: false,
-  create_initial_charge: true,
-  payment_method: 'pix',
-};
-
-const paymentMethods = [
-  ['pix', 'PIX'],
-  ['card', 'Cartao'],
-  ['cash', 'Dinheiro'],
-  ['boleto', 'Boleto'],
-  ['transfer', 'Transferencia'],
-];
 
 function parseIntOr(value, fallback) {
   const parsed = Number.parseInt(String(value || ''), 10);
@@ -244,8 +219,6 @@ export default function StudentContractsPage() {
   const [detailData, setDetailData] = useState(null);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState(createFormDefault);
-  const [manualEndEdited, setManualEndEdited] = useState(false);
   const [actionDialog, setActionDialog] = useState(null);
 
   const user = useMemo(() => getStoredUser(), []);
@@ -1224,65 +1197,11 @@ export default function StudentContractsPage() {
     );
   };
 
-  const recalcCreateEndAt = useCallback((nextForm) => {
-    if (manualEndEdited) return nextForm;
-    const selectedPlan = plansById.get(nextForm.plan_id);
-    const durationUnit = nextForm.duration_unit || selectedPlan?.duration_unit || 'days';
-    const durationValue = Number(
-      nextForm.duration_value
-        || selectedPlan?.duration_value
-        || selectedPlan?.duracao_dias
-        || 0
-    );
-    if (!nextForm.start_at || durationValue <= 0) return nextForm;
-    const endAt = calculateContractEndAt(nextForm.start_at, durationUnit, durationValue);
-    return endAt ? { ...nextForm, end_at: endAt } : nextForm;
-  }, [manualEndEdited, plansById]);
-
-  const openCreateModal = () => {
-    const startAt = toLocalDateInput(new Date().toISOString());
-    const billingDay = String(
-      Math.min(
-        Math.max(Number(String(startAt).split('T')[0]?.split('-')[2] || 1), 1),
-        28
-      )
-    );
-    setCreateForm({ ...createFormDefault, start_at: startAt, billing_day: billingDay });
-    setManualEndEdited(false);
-    setCreateOpen(true);
-  };
-
-  const handleCreate = async (event) => {
-    event.preventDefault();
+  const handleCreateSubmit = async (payload) => {
     if (!canCreateContracts) {
       toast.error('Sem permissao para criar contrato.');
       return;
     }
-    const baseAmount = Number(createForm.amount || 0);
-    const discountAmount = Number(createForm.discount_amount || 0);
-    if (discountAmount < 0) {
-      toast.error('Informe um desconto valido.');
-      return;
-    }
-    if (baseAmount > 0 && discountAmount >= baseAmount) {
-      toast.error('O desconto precisa ser menor que o valor base do contrato.');
-      return;
-    }
-    const payload = {
-      student_id: createForm.student_id,
-      plan_id: createForm.plan_id || undefined,
-      amount: createForm.amount ? Number(createForm.amount) : undefined,
-      discount_amount: createForm.discount_amount ? Number(createForm.discount_amount) : 0,
-      duration_value: createForm.duration_value ? Number(createForm.duration_value) : undefined,
-      duration_unit: createForm.duration_unit || 'days',
-      start_at: toIsoDate(createForm.start_at) || undefined,
-      end_at: toIsoDate(createForm.end_at) || undefined,
-      billing_day: createForm.billing_day ? Number(createForm.billing_day) : undefined,
-      auto_renew: Boolean(createForm.auto_renew),
-      create_initial_charge: Boolean(createForm.create_initial_charge),
-      payment_method: createForm.payment_method || undefined,
-    };
-
     setBusyAction(true);
     try {
       await api.createStudentContract(payload);
@@ -1296,31 +1215,6 @@ export default function StudentContractsPage() {
     }
   };
 
-  const createValueBreakdown = useMemo(() => {
-    const baseAmount = Number(createForm.amount || 0);
-    const discountAmount = Math.max(0, Number(createForm.discount_amount || 0));
-    const finalAmount = Math.max(0, baseAmount - discountAmount);
-    return formatContractValueBreakdown({
-      original_amount: baseAmount,
-      discount_amount: discountAmount,
-      amount: finalAmount,
-    });
-  }, [createForm.amount, createForm.discount_amount]);
-
-  const createDurationLabel = useMemo(() => {
-    const selectedPlan = plansById.get(createForm.plan_id);
-    return formatDurationLabel(
-      createForm.duration_value || selectedPlan?.duration_value,
-      createForm.duration_unit || selectedPlan?.duration_unit,
-      selectedPlan?.duracao_dias
-    );
-  }, [createForm.duration_unit, createForm.duration_value, createForm.plan_id, plansById]);
-
-  const createEndPreviewLabel = useMemo(() => {
-    const endAtIso = toIsoDate(createForm.end_at);
-    return endAtIso ? formatDate(endAtIso) : '-';
-  }, [createForm.end_at]);
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -1329,7 +1223,7 @@ export default function StudentContractsPage() {
         subtitle="Gerencie contratos, renovacoes, pendencias e cobrancas em uma superficie mais operacional."
         actions={
           <>
-            <Button type="button" onClick={openCreateModal} disabled={!canCreateContracts} variant="primary" size="sm">
+            <Button type="button" onClick={() => setCreateOpen(true)} disabled={!canCreateContracts} variant="primary" size="sm">
               <Plus className="h-4 w-4" />
               Novo contrato
             </Button>
@@ -1426,7 +1320,7 @@ export default function StudentContractsPage() {
         isFiltered={hasActiveFilters}
         onClearFilters={clearFilters}
         canCreateContracts={canCreateContracts}
-        onCreateContract={openCreateModal}
+        onCreateContract={() => setCreateOpen(true)}
       />
 
       <ContractsFilters
@@ -1450,6 +1344,7 @@ export default function StudentContractsPage() {
         onAction={onRowAction}
         canManageContractRules={canManageContractRules}
         canSettleOverdue={canSettleOverdue}
+        busy={busyAction}
       />
 
       <Dialog
@@ -1477,209 +1372,15 @@ export default function StudentContractsPage() {
         {renderActionDialogBody()}
       </Dialog>
 
-      <Dialog
+      <CreateContractDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="Novo contrato"
-        description="Cadastro rapido com calculo automatico da validade em America/Sao_Paulo e configuracao financeira separada."
-        size="lg"
-        actions={
-          <>
-            <Button type="button" onClick={() => setCreateOpen(false)} variant="ghost">
-              Cancelar
-            </Button>
-            <Button type="submit" form="contract-create-form" disabled={busyAction} variant="primary">
-              Criar contrato
-            </Button>
-          </>
-        }
-      >
-        <form id="contract-create-form" onSubmit={handleCreate} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <SelectField
-            label="Aluno"
-            required
-            className="md:col-span-2"
-            value={createForm.student_id}
-            onChange={(event) => setCreateForm((prev) => ({ ...prev, student_id: event.target.value }))}
-          >
-            <option value="">Selecione um aluno</option>
-            {students.map((student) => (
-              <option key={student.student_id} value={student.student_id}>
-                {student.nome}
-              </option>
-            ))}
-          </SelectField>
-
-          <SelectField
-            label="Plano"
-            value={createForm.plan_id}
-            onChange={(event) => {
-              const next = { ...createForm, plan_id: event.target.value };
-              const plan = plansById.get(event.target.value);
-              if ((plan?.duration_value || plan?.duracao_dias) && !createForm.duration_value) {
-                next.duration_value = String(plan.duration_value || plan.duracao_dias);
-                next.duration_unit = plan.duration_unit || 'days';
-              }
-              if (plan?.valor && !createForm.amount) next.amount = String(plan.valor);
-              if (plan && !createForm.billing_day && next.start_at) {
-                const startDay = Number(String(next.start_at).split('T')[0]?.split('-')[2] || 1);
-                next.billing_day = String(Math.min(Math.max(startDay, 1), 28));
-              }
-              setCreateForm(recalcCreateEndAt(next));
-            }}
-          >
-            <option value="">Sem plano vinculado</option>
-            {plans.map((plan) => (
-              <option key={plan.plan_id} value={plan.plan_id}>
-                {plan.nome}
-              </option>
-            ))}
-          </SelectField>
-
-          <SelectField
-            label="Forma de pagamento"
-            value={createForm.payment_method}
-            onChange={(event) => setCreateForm((prev) => ({ ...prev, payment_method: event.target.value }))}
-          >
-            {paymentMethods.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </SelectField>
-
-          <TextField
-            label="Valor"
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={createForm.amount}
-            onChange={(event) => setCreateForm((prev) => ({ ...prev, amount: event.target.value }))}
-            placeholder="0,00"
-          />
-
-          <TextField
-            label="Desconto"
-            type="number"
-            min="0"
-            step="0.01"
-            value={createForm.discount_amount}
-            onChange={(event) => setCreateForm((prev) => ({ ...prev, discount_amount: event.target.value }))}
-            placeholder="0,00"
-          />
-
-          <TextField
-            label="Quantidade"
-            type="number"
-            min="1"
-            value={createForm.duration_value}
-            onChange={(event) => setCreateForm((prev) => recalcCreateEndAt({ ...prev, duration_value: event.target.value }))}
-            placeholder="1"
-          />
-
-          <SelectField
-            label="Unidade de duracao"
-            value={createForm.duration_unit}
-            onChange={(event) => setCreateForm((prev) => recalcCreateEndAt({ ...prev, duration_unit: event.target.value }))}
-          >
-            <option value="days">Dias</option>
-            <option value="months">Meses</option>
-          </SelectField>
-
-          <TextField
-            label="Inicio da validade"
-            type="datetime-local"
-            value={createForm.start_at}
-            onChange={(event) => setCreateForm((prev) => recalcCreateEndAt({ ...prev, start_at: event.target.value }))}
-          />
-
-          <TextField
-            label="Validade do contrato"
-            type="datetime-local"
-            value={createForm.end_at}
-            onChange={(event) => {
-              setManualEndEdited(Boolean(event.target.value));
-              setCreateForm((prev) => ({ ...prev, end_at: event.target.value }));
-            }}
-          />
-
-          <TextField
-            label="Dia de cobranca"
-            type="number"
-            min="1"
-            max="28"
-            value={createForm.billing_day}
-            onChange={(event) => setCreateForm((prev) => ({ ...prev, billing_day: event.target.value }))}
-            placeholder="10"
-          />
-
-          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Resumo de vigencia</p>
-            <p className="mt-2 text-sm text-[var(--text-primary)]">{createDurationLabel}</p>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">Fim calculado: {createEndPreviewLabel}</p>
-          </div>
-
-          <label className="flex items-start gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
-            <input
-              type="checkbox"
-              className="mt-1 accent-[var(--brand-primary)]"
-              checked={createForm.auto_renew}
-              onChange={(event) => setCreateForm((prev) => ({ ...prev, auto_renew: event.target.checked }))}
-            />
-            <span>
-              Renovacao automatica
-            </span>
-          </label>
-
-          <label className="flex items-start gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-3 text-sm text-[var(--text-secondary)]">
-            <input
-              type="checkbox"
-              className="mt-1 accent-[var(--brand-primary)]"
-              checked={createForm.create_initial_charge}
-              onChange={(event) => setCreateForm((prev) => ({ ...prev, create_initial_charge: event.target.checked }))}
-            />
-            <span>
-              Criar cobranca inicial ao salvar
-            </span>
-          </label>
-
-          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] px-4 py-4 md:col-span-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
-              Resumo financeiro e de vigencia
-            </p>
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
-              <div>
-                <p className="text-xs text-[var(--text-muted)]">Valor base</p>
-                <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{createValueBreakdown.originalLabel}</p>
-              </div>
-              <div>
-                <p className="text-xs text-[var(--text-muted)]">Desconto</p>
-                <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">
-                  {createValueBreakdown.hasDiscount ? `- ${createValueBreakdown.discountLabel}` : 'Nenhum'}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-[var(--text-muted)]">Valor final</p>
-                <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{createValueBreakdown.finalLabel}</p>
-              </div>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <div>
-                <p className="text-xs text-[var(--text-muted)]">Duracao</p>
-                <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{createDurationLabel}</p>
-              </div>
-              <div>
-                <p className="text-xs text-[var(--text-muted)]">Validade final</p>
-                <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{createEndPreviewLabel}</p>
-              </div>
-              <div>
-                <p className="text-xs text-[var(--text-muted)]">Dia de cobranca</p>
-                <p className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{createForm.billing_day || '-'}</p>
-              </div>
-            </div>
-          </div>
-        </form>
-      </Dialog>
+        students={students}
+        plans={plans}
+        plansById={plansById}
+        busy={busyAction}
+        onSubmit={handleCreateSubmit}
+      />
     </div>
   );
 }

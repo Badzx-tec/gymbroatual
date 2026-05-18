@@ -23,6 +23,8 @@ node_modules/
 dist/
 build/
 coverage/
+.coverage
+**/.coverage
 
 # Logs
 *.log
@@ -42,5 +44,7 @@ deploy/www/
 backups/
 frontend/playwright-report/
 frontend/test-results/
-.gitignore
+
+# Claude Code agent state
+.claude/
 .skills

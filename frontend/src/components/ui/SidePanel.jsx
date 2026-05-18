@@ -3,11 +3,15 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
+import useFocusTrap from '../../lib/useFocusTrap';
 import IconButton from './IconButton';
 
 export default function SidePanel({ open, onClose, title, description, actions, children }) {
   const reduceMotion = useReducedMotion();
   const titleId = React.useId();
+  const panelRef = React.useRef(null);
+
+  useFocusTrap(panelRef, open);
 
   React.useEffect(() => {
     if (!open) return undefined;
@@ -44,6 +48,7 @@ export default function SidePanel({ open, onClose, title, description, actions, 
           }}
         >
           <motion.aside
+            ref={panelRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby={title ? titleId : undefined}

@@ -23,6 +23,7 @@ import { applyBrandingToDocument, loadBranding, saveBranding } from '../branding
 import { clearSession, getStoredUser, updateStoredUser } from '../lib/session';
 import { roleLabel } from '../utils/labels';
 import BrandMark from './ui/BrandMark';
+import ErrorBoundary from './ErrorBoundary';
 import IconButton from './ui/IconButton';
 
 const navItems = [
@@ -357,7 +358,9 @@ export default function AdminLayout() {
 
           <main className="flex-1 pt-6">
             <div className="mx-auto w-full max-w-[1460px]">
-              <Outlet />
+              <ErrorBoundary key={location.pathname}>
+                <Outlet />
+              </ErrorBoundary>
             </div>
           </main>
         </div>

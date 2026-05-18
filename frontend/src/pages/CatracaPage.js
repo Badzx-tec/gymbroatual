@@ -22,7 +22,6 @@ import PageHeader from '../components/ui/PageHeader';
 import SearchInput from '../components/ui/SearchInput';
 import SectionCard from '../components/ui/SectionCard';
 import SelectField from '../components/ui/SelectField';
-import SidePanel from '../components/ui/SidePanel';
 import StatCard from '../components/ui/StatCard';
 import StatusBadge from '../components/ui/StatusBadge';
 import TextField from '../components/ui/TextField';
@@ -32,160 +31,20 @@ import {
   pushCredentialHistory,
 } from '../utils/credentialHistory';
 import { getStoredUser } from '../lib/session';
-import { directionLabel, subjectTypeLabel } from '../utils/labels';
+import { SAO_PAULO_TIME_ZONE } from '../utils/timezone';
+
+import CatracaAccessHistory from './catraca/CatracaAccessHistory';
 import {
-  SAO_PAULO_TIME_ZONE,
-  formatDateTimeInTimeZone,
-} from '../utils/timezone';
-
-const REASON_LABELS = {
-  ok: 'Acesso valido',
-  biometry_required: 'Biometria obrigatoria',
-  credential_required: 'Credencial obrigatoria',
-  credential_not_found: 'Credencial nao encontrada',
-  passage_without_authorization: 'Passagem sem credencial/autorizacao',
-  student_not_found: 'Aluno nao encontrado',
-  student_inactive: 'Aluno inativo',
-  student_manual_block: 'Bloqueio manual do aluno',
-  student_blocked_until: 'Aluno bloqueado temporariamente',
-  outside_allowed_weekday: 'Dia fora da regra de acesso',
-  outside_allowed_time: 'Horario fora da regra de acesso',
-  plan_expired: 'Plano vencido',
-  contract_access_blocked: 'Contrato bloqueado',
-  employee_not_found: 'Funcionario nao encontrado',
-  employee_inactive: 'Funcionario inativo',
-  employee_manual_block: 'Bloqueio manual do funcionario',
-  employee_blocked_until: 'Funcionario bloqueado temporariamente',
-  employee_outside_allowed_weekday: 'Dia fora da regra do funcionario',
-  employee_outside_allowed_time: 'Horario fora da regra do funcionario',
-  owner_not_found: 'Dono da academia nao encontrado',
-  owner_inactive: 'Dono da academia inativo',
-  owner_manual_block: 'Bloqueio manual do dono da academia',
-  owner_blocked_until: 'Dono da academia bloqueado temporariamente',
-  owner_outside_allowed_weekday: 'Dia fora da regra do dono da academia',
-  owner_outside_allowed_time: 'Horario fora da regra do dono da academia',
-  turnstile_direction_locked: 'Fluxo travado na catraca',
-  academy_subscription_inactive: 'Assinatura da academia inativa',
-};
-
-const CONTROL_ACTIONS = [
-  { key: 'lock_entry', label: 'Travar entrada', kind: 'lock' },
-  { key: 'lock_exit', label: 'Travar saida', kind: 'lock' },
-  { key: 'lock_both', label: 'Travar ambas', kind: 'lock' },
-  { key: 'unlock_entry', label: 'Desbloquear entrada', kind: 'unlock' },
-  { key: 'unlock_exit', label: 'Desbloquear saida', kind: 'unlock' },
-  { key: 'unlock_both', label: 'Desbloquear ambas', kind: 'unlock' },
-];
-
-const CONTROL_SCOPE_OPTIONS = [
-  { value: 'all', label: 'Todos os perfis' },
-  { value: 'students', label: 'Somente alunos' },
-  { value: 'employees', label: 'Somente funcionarios' },
-  { value: 'owners', label: 'Somente dono da academia' },
-];
-
-const CATRACA_TOKEN_HISTORY_KEY = 'gymbro_catraca_token_history';
-
-function formatDateTime(value) {
-  return formatDateTimeInTimeZone(value);
-}
-
-function reasonLabel(reason) {
-  const key = String(reason || '').toLowerCase();
-  if (!key) return '-';
-  return REASON_LABELS[key] || key.replaceAll('_', ' ');
-}
-
-function actionLabel(action) {
-  const key = String(action || '').toLowerCase();
-  const mapped = CONTROL_ACTIONS.find((item) => item.key === key);
-  if (mapped) return mapped.label;
-  return key || '-';
-}
-
-function scopeLabel(scope) {
-  const key = String(scope || '').toLowerCase();
-  const mapped = CONTROL_SCOPE_OPTIONS.find((item) => item.value === key);
-  return mapped?.label || 'Todos os perfis';
-}
-
-function decisionTone(decision) {
-  return String(decision || '').toLowerCase() === 'allow' ? 'success' : 'danger';
-}
-
-function normalizeControlState(state) {
-  const base = {
-    student: { entry_locked: false, exit_locked: false },
-    employee: { entry_locked: false, exit_locked: false },
-    owner: { entry_locked: false, exit_locked: false },
-  };
-  const controls = state?.subject_controls;
-  if (!controls || typeof controls !== 'object') return base;
-  const next = { ...base };
-  ['student', 'employee', 'owner'].forEach((subject) => {
-    if (controls[subject] && typeof controls[subject] === 'object') {
-      next[subject] = {
-        entry_locked: Boolean(controls[subject].entry_locked),
-        exit_locked: Boolean(controls[subject].exit_locked),
-      };
-    }
-  });
-  return next;
-}
-
-function extractReasonDetail(log) {
-  const detail = log?.reason_detail;
-  if (!detail || typeof detail !== 'object') return '';
-  if (detail.contract_access_status === 'blocked' || detail.contract_access_status === 'suspended') {
-    return 'Contrato sem liberacao de acesso.';
-  }
-  if (detail.grace_until) {
-    return `Periodo de carencia ate ${formatDateTime(detail.grace_until)}.`;
-  }
-  if (detail.blocked_until) {
-    return `Bloqueado ate ${formatDateTime(detail.blocked_until)}.`;
-  }
-  if (detail.rule === 'turnstile_control_state') {
-    const requested = directionLabel(detail.requested_direction);
-    return `Fluxo ${requested.toLowerCase()} travado para este perfil.`;
-  }
-  if (detail.rule === 'biometry_required') {
-    return 'Entrada e saida exigem leitura biometrica.';
-  }
-  if (detail.rule === 'credential_required') {
-    return 'Entrada e saida exigem credencial valida: biometria, RFID, senha ou matricula.';
-  }
-  if (detail.rule === 'passage_without_authorization') {
-    return 'A catraca registrou passagem sem liberacao previa por credencial.';
-  }
-  return '';
-}
-
-function matchesAccessSearch(log, query) {
-  if (!query) return true;
-  const haystack = [
-    log?.subject_name,
-    log?.student_name,
-    log?.employee_name,
-    log?.owner_name,
-    log?.subject_id,
-    log?.device_id,
-    log?.method,
-    log?.reason,
-    log?.credential_masked,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  return haystack.includes(query);
-}
-
-function isRecent(value, minutes = 5) {
-  if (!value) return false;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return false;
-  return Date.now() - date.getTime() <= minutes * 60 * 1000;
-}
+  CATRACA_TOKEN_HISTORY_KEY,
+  CONTROL_ACTIONS,
+  CONTROL_SCOPE_OPTIONS,
+  actionLabel,
+  formatDateTime,
+  isRecent,
+  matchesAccessSearch,
+  normalizeControlState,
+  scopeLabel,
+} from './catraca/catracaUtils';
 
 export default function CatracaPage() {
   const user = useMemo(() => getStoredUser(), []);
@@ -875,138 +734,15 @@ export default function CatracaPage() {
         </SectionCard>
       </div>
 
-      <SectionCard
-        title="Filtros de acessos"
-        description="Combine filtro de backend com busca local para encontrar eventos especificos com rapidez."
-        actions={
-          <div className="grid w-full gap-2 xl:grid-cols-[minmax(260px,1fr)_170px_170px_220px_170px_150px]">
-            <SearchInput
-              value={accessSearch}
-              onChange={(event) => setAccessSearch(event.target.value)}
-              placeholder="Buscar por pessoa, dispositivo, metodo ou credencial"
-            />
-            <SelectField
-              label=""
-              value={filters.decision}
-              onChange={(event) => setFilters((current) => ({ ...current, decision: event.target.value }))}
-            >
-              <option value="">Todas as decisoes</option>
-              <option value="allow">Somente liberados</option>
-              <option value="deny">Somente negados</option>
-            </SelectField>
-            <SelectField
-              label=""
-              value={filters.subject_type}
-              onChange={(event) => setFilters((current) => ({ ...current, subject_type: event.target.value }))}
-            >
-              <option value="">Todos os perfis</option>
-              <option value="student">Alunos</option>
-              <option value="employee">Funcionarios</option>
-              <option value="owner">Dono da academia</option>
-            </SelectField>
-            <TextField
-              label=""
-              value={filters.reason}
-              onChange={(event) =>
-                setFilters((current) => ({ ...current, reason: event.target.value.trim().toLowerCase() }))
-              }
-              placeholder="Motivo tecnico"
-            />
-            <SelectField
-              label=""
-              value={filters.since_minutes}
-              onChange={(event) =>
-                setFilters((current) => ({ ...current, since_minutes: Number(event.target.value) || 60 }))
-              }
-            >
-              <option value={15}>Ultimos 15 min</option>
-              <option value={60}>Ultimos 60 min</option>
-              <option value={180}>Ultimas 3 h</option>
-              <option value={1440}>Ultimas 24 h</option>
-            </SelectField>
-            <SelectField
-              label=""
-              value={filters.limit}
-              onChange={(event) =>
-                setFilters((current) => ({ ...current, limit: Number(event.target.value) || 80 }))
-              }
-            >
-              <option value={50}>50 linhas</option>
-              <option value={80}>80 linhas</option>
-              <option value={120}>120 linhas</option>
-              <option value={200}>200 linhas</option>
-            </SelectField>
-          </div>
-        }
-        bodyClassName="p-0"
-      >
-        {visibleLogs.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1120px] text-sm">
-              <thead>
-                <tr className="border-b border-[var(--surface-border)] text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
-                  <th className="px-5 py-4">Data</th>
-                  <th className="px-5 py-4">Pessoa</th>
-                  <th className="px-5 py-4">Perfil</th>
-                  <th className="px-5 py-4">Direcao</th>
-                  <th className="px-5 py-4">Metodo</th>
-                  <th className="px-5 py-4">Decisao</th>
-                  <th className="px-5 py-4">Motivo</th>
-                  <th className="px-5 py-4 text-right">Detalhes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleLogs.map((log) => (
-                  <tr key={log.access_id || `${log.created_at}-${log.credential_masked}`} className="group/row border-b border-[var(--surface-border)] transition-colors hover:bg-[var(--surface-soft)]">
-                    <td className="px-5 py-3 font-mono text-xs text-[var(--text-secondary)] whitespace-nowrap">{formatDateTime(log.created_at || log.timestamp)}</td>
-                    <td className="px-5 py-3">
-                      <p className="font-semibold text-[var(--text-primary)] transition-colors group-hover/row:text-[var(--brand-primary)]">
-                        {log.subject_name || log.student_name || log.employee_name || log.owner_name || log.subject_id || '-'}
-                      </p>
-                      <p className="mt-1 font-mono text-xs text-[var(--text-muted)]">{log.device_id || '-'}</p>
-                    </td>
-                    <td className="px-5 py-3">
-                      <StatusBadge label={subjectTypeLabel(log.subject_type)} tone="neutral" />
-                    </td>
-                    <td className="px-5 py-3 text-xs text-[var(--text-secondary)]">{directionLabel(log.direction)}</td>
-                    <td className="px-5 py-3 text-xs text-[var(--text-secondary)]">{log.method || '-'}</td>
-                    <td className="px-5 py-4">
-                      <StatusBadge
-                        label={String(log.decision || '-').toLowerCase() === 'allow' ? 'Liberado' : 'Negado'}
-                        tone={decisionTone(log.decision)}
-                      />
-                    </td>
-                    <td className="px-5 py-3 text-xs text-[var(--text-muted)]">
-                      <div>{reasonLabel(log.reason)}</div>
-                      {extractReasonDetail(log) ? (
-                        <div className="mt-1 text-xs text-[var(--text-muted)]/70">{extractReasonDetail(log)}</div>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedLog(log)}
-                        aria-label="Ver detalhe"
-                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-transparent text-[var(--text-muted)] transition hover:border-[var(--surface-border-strong)] hover:bg-[var(--surface-soft)] hover:text-[var(--text-primary)]"
-                      >
-                        <ScanLine className="h-3.5 w-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="p-5">
-            <EmptyState
-              icon={ScanLine}
-              title="Nenhum acesso encontrado"
-              description="Ajuste os filtros ou a busca local para localizar outro evento da catraca."
-            />
-          </div>
-        )}
-      </SectionCard>
+      <CatracaAccessHistory
+        visibleLogs={visibleLogs}
+        filters={filters}
+        setFilters={setFilters}
+        accessSearch={accessSearch}
+        setAccessSearch={setAccessSearch}
+        selectedLog={selectedLog}
+        setSelectedLog={setSelectedLog}
+      />
 
       <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <SectionCard title="Alertas operacionais" description="Leitura rapida de incidentes vindos da camada operacional do backend.">
@@ -1070,76 +806,6 @@ export default function CatracaPage() {
         />
       ) : null}
 
-      <SidePanel
-        open={Boolean(selectedLog)}
-        onClose={() => setSelectedLog(null)}
-        title={selectedLog ? `Acesso ${String(selectedLog.decision || '').toLowerCase() === 'allow' ? 'liberado' : 'negado'}` : 'Detalhe do acesso'}
-        description="Detalhes tecnicos do evento retornado pela catraca e pela regra de autorizacao."
-        actions={
-          <Button variant="ghost" onClick={() => setSelectedLog(null)}>
-            Fechar
-          </Button>
-        }
-      >
-        {selectedLog ? (
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge
-                label={String(selectedLog.decision || '-').toLowerCase() === 'allow' ? 'Liberado' : 'Negado'}
-                tone={decisionTone(selectedLog.decision)}
-              />
-              <StatusBadge label={subjectTypeLabel(selectedLog.subject_type)} tone="neutral" />
-              <StatusBadge label={directionLabel(selectedLog.direction)} tone="info" />
-            </div>
-
-            <div className="grid gap-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-4 md:grid-cols-2">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Pessoa</p>
-                <p className="mt-1 text-sm text-[var(--text-primary)]">
-                  {selectedLog.subject_name || selectedLog.student_name || selectedLog.employee_name || selectedLog.owner_name || '-'}
-                </p>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Data</p>
-                <p className="mt-1 font-mono text-sm text-[var(--text-primary)]">{formatDateTime(selectedLog.created_at || selectedLog.timestamp)}</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Dispositivo</p>
-                <p className="mt-1 font-mono text-sm text-[var(--text-primary)]">{selectedLog.device_id || '-'}</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Metodo</p>
-                <p className="mt-1 text-sm text-[var(--text-primary)]">{selectedLog.method || '-'}</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">ID do sujeito</p>
-                <p className="mt-1 font-mono text-sm text-[var(--text-primary)]">{selectedLog.subject_id || '-'}</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Credencial mascarada</p>
-                <p className="mt-1 font-mono text-sm text-[var(--text-primary)]">{selectedLog.credential_masked || '-'}</p>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Motivo principal</p>
-              <p className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{reasonLabel(selectedLog.reason)}</p>
-              {extractReasonDetail(selectedLog) ? (
-                <p className="mt-2 text-sm text-[var(--text-secondary)]">{extractReasonDetail(selectedLog)}</p>
-              ) : null}
-            </div>
-
-            {selectedLog.reason_detail ? (
-              <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-soft)] p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">Contexto tecnico</p>
-                <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-xs text-[var(--text-secondary)]">
-                  {JSON.stringify(selectedLog.reason_detail, null, 2)}
-                </pre>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </SidePanel>
     </div>
   );
 }

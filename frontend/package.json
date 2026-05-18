@@ -18,7 +18,8 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "lint": "eslint src --ext .js,.jsx"
+    "lint": "eslint src --ext .js,.jsx",
+    "typecheck": "tsc --noEmit"
   },
   "browserslist": {
     "production": [">0.2%", "not dead", "not op_mini all"],

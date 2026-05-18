@@ -11,6 +11,56 @@ from app.services.subscription import subscription_allows_login
 
 router = APIRouter()
 
+_CONTACT_SETTINGS_ID = "platform_contact"
+
+_CONTACT_DEFAULTS = {
+    "email": "contato@gymbro.dev.br",
+    "phone": "",
+    "phone_link": "",
+    "address": "",
+    "whatsapp_link": "",
+}
+
+
+class ContactSettingsIn(BaseModel):
+    email: str = Field("", max_length=200)
+    phone: str = Field("", max_length=80)
+    phone_link: str = Field("", max_length=40)
+    address: str = Field("", max_length=200)
+    whatsapp_link: str = Field("", max_length=200)
+
+
+@router.get("/contact")
+async def get_platform_contact():
+    """Public — returns contact info shown on the landing page."""
+    db = get_db()
+    doc = await db.platform_settings.find_one({"_id": _CONTACT_SETTINGS_ID})
+    if not doc:
+        return _CONTACT_DEFAULTS
+    doc.pop("_id", None)
+    return {**_CONTACT_DEFAULTS, **doc}
+
+
+@router.put("/contact")
+async def update_platform_contact(
+    body: ContactSettingsIn,
+    actor: dict = Depends(require_roles("SUPER_ADMIN")),
+):
+    db = get_db()
+    data = body.model_dump()
+    await db.platform_settings.update_one(
+        {"_id": _CONTACT_SETTINGS_ID},
+        {"$set": {**data, "updated_at": datetime.now(UTC)}},
+        upsert=True,
+    )
+    log_event(
+        "platform.contact_updated",
+        actor_id=actor.get("sub"),
+        actor_type="super_admin",
+        changes=data,
+    )
+    return {"ok": True}
+
 
 class OwnerGraceIn(BaseModel):
     days: int = Field(default=3, ge=1, le=90)

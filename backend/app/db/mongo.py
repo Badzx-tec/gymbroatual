@@ -194,3 +194,8 @@ async def init_indexes() -> None:
     await db.audit_logs.create_index([("owner_id", 1), ("created_at", -1)])
     await db.audit_logs.create_index([("event", 1), ("created_at", -1)])
     await db.rate_limits.create_index("expires_at", expireAfterSeconds=0)
+    await db.client_errors.create_index("ttl_at", expireAfterSeconds=0)
+    await db.client_errors.create_index([("owner_id", 1), ("created_at", -1)])
+    await db.csp_reports.create_index(
+        "created_at", expireAfterSeconds=60 * 60 * 24 * 90
+    )

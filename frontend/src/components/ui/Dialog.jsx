@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 import { cn } from '../../lib/cn';
+import useFocusTrap from '../../lib/useFocusTrap';
 import IconButton from './IconButton';
 
 const sizeMap = {
@@ -22,8 +23,10 @@ export default function Dialog({
   children,
 }) {
   const reduceMotion = useReducedMotion();
-
   const titleId = React.useId();
+  const panelRef = React.useRef(null);
+
+  useFocusTrap(panelRef, open);
 
   React.useEffect(() => {
     if (!open) return undefined;
@@ -60,6 +63,7 @@ export default function Dialog({
           }}
         >
           <motion.div
+            ref={panelRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby={title ? titleId : undefined}

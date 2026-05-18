@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.core.deps import require_student_actor
 from app.core.time import UTC
 from app.db.mongo import get_db
-from app.services.student_contracts import clean_doc, refresh_contract_state, resolve_authoritative_contract_for_student
+from app.services.student_contracts import (
+    clean_doc,
+    refresh_contract_state,
+    resolve_authoritative_contract_for_student,
+)
 
 router = APIRouter()
 

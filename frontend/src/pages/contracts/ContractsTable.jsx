@@ -166,9 +166,55 @@ export default function ContractsTable({
     );
   }
 
+  // Mobile card list (< md breakpoint)
+  const MobileList = () => (
+    <div className="divide-y divide-[var(--surface-border)] md:hidden">
+      {loading
+        ? Array.from({ length: 4 }).map((_, index) => (
+            <div key={`m_sk_${index}`} className="space-y-2 p-4">
+              <div className="h-4 w-40 animate-pulse rounded bg-[var(--surface-soft)]" />
+              <div className="h-3 w-32 animate-pulse rounded bg-[var(--surface-soft)]" />
+            </div>
+          ))
+        : rows.map((row) => {
+            const contract = contractBadge(row.contract_status);
+            const financial = financialBadge(row.financial_status);
+            const access = accessBadge(row.access_status);
+            const valueBreakdown = formatContractValueBreakdown(row);
+            return (
+              <div key={row.contract_id} className="flex items-start justify-between gap-3 p-4">
+                <button
+                  type="button"
+                  onClick={() => onOpenDetails(row.contract_id)}
+                  className="flex-1 text-left"
+                >
+                  <p className="font-semibold text-[var(--text-primary)]">{row.student_name}</p>
+                  <p className="mt-0.5 text-xs text-[var(--text-muted)]">{row.plan_name || row.plan_id || '-'}</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap ${contract.className}`}>{contract.label}</span>
+                    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap ${financial.className}`}>{financial.label}</span>
+                    <span className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap ${access.className}`}>{access.label}</span>
+                  </div>
+                  <p className="mt-1 font-mono font-semibold text-[var(--text-primary)]">{valueBreakdown.finalLabel}</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onAction('detail', row)}
+                  className="shrink-0 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-soft)] p-2 transition-colors hover:bg-[var(--surface-soft-hover)]"
+                  aria-label={`Acoes do contrato ${row.contract_id}`}
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+              </div>
+            );
+          })}
+    </div>
+  );
+
   return (
     <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] overflow-hidden">
-      <div className="overflow-x-auto">
+      <MobileList />
+      <div className="hidden md:block overflow-x-auto">
         <table className="min-w-[960px] w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--surface-border)] bg-[var(--surface-soft)] text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">

@@ -54,6 +54,7 @@ export default function ContractDetailsDrawer({
   onAction,
   canManageContractRules,
   canSettleOverdue,
+  busy = false,
 }) {
   const contract = detail?.contract || null;
   const charges = detail?.charges || [];
@@ -136,13 +137,13 @@ export default function ContractDetailsDrawer({
                 </div>
               </div>
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
-                <Button variant="secondary" size="sm" onClick={() => onAction('renew', contract)}>
+                <Button variant="secondary" size="sm" disabled={busy} onClick={() => onAction('renew', contract)}>
                   Renovar
                 </Button>
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={!canManageContractRules}
+                  disabled={busy || !canManageContractRules}
                   onClick={() => onAction('adjustValidity', contract)}
                 >
                   Ajustar validade
@@ -150,7 +151,7 @@ export default function ContractDetailsDrawer({
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={!canManageContractRules}
+                  disabled={busy || !canManageContractRules}
                   onClick={() => onAction('adjustBilling', contract)}
                 >
                   Ajustar cobranca
@@ -158,7 +159,7 @@ export default function ContractDetailsDrawer({
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={!canSettleOverdue}
+                  disabled={busy || !canSettleOverdue}
                   onClick={() => onAction('settle', contract)}
                 >
                   Colocar em dia
@@ -166,7 +167,7 @@ export default function ContractDetailsDrawer({
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={!canManageContractRules}
+                  disabled={busy || !canManageContractRules}
                   onClick={() => onAction('pause', contract)}
                 >
                   Pausar
@@ -174,12 +175,12 @@ export default function ContractDetailsDrawer({
                 <Button
                   variant="danger"
                   size="sm"
-                  disabled={!canManageContractRules}
+                  disabled={busy || !canManageContractRules}
                   onClick={() => onAction('cancel', contract)}
                 >
                   Cancelar
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => onAction('pdf', contract)}>
+                <Button variant="ghost" size="sm" disabled={busy} onClick={() => onAction('pdf', contract)}>
                   Baixar PDF
                 </Button>
               </div>
@@ -243,6 +244,8 @@ export default function ContractDetailsDrawer({
                           <Button
                             variant="ghost"
                             size="sm"
+                            loading={busy}
+                            disabled={busy}
                             onClick={() =>
                               onAction('unpayCharge', { ...charge, contract_id: contract.contract_id })
                             }
@@ -254,6 +257,8 @@ export default function ContractDetailsDrawer({
                           <Button
                             variant="secondary"
                             size="sm"
+                            loading={busy}
+                            disabled={busy}
                             onClick={() =>
                               onAction('payCharge', { ...charge, contract_id: contract.contract_id })
                             }

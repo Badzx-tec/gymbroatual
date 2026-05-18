@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import { api } from './api';
 import { loadBranding } from './branding';
 import AdminLayout from './components/AdminLayout';
+import ErrorBoundary from './components/ErrorBoundary';
 import StudentLayout from './components/StudentLayout';
 import LoadingScreen from './components/ui/LoadingScreen';
 import { clearSession, getSessionToken, getStoredUser, migrateLegacySession, storeSession } from './lib/session';
@@ -182,11 +183,13 @@ export default function App() {
   }, []);
 
   return (
-    <BrowserRouter>
-      <Toaster position="top-right" richColors theme={branding.color_mode === 'light' ? 'light' : 'dark'} />
-      <React.Suspense fallback={<LoadingScreen fullscreen label="Carregando aplicacao..." />}>
-        <AppRouter />
-      </React.Suspense>
-    </BrowserRouter>
+    <ErrorBoundary fullscreen>
+      <BrowserRouter>
+        <Toaster position="top-right" richColors theme={branding.color_mode === 'light' ? 'light' : 'dark'} />
+        <React.Suspense fallback={<LoadingScreen fullscreen label="Carregando aplicacao..." />}>
+          <AppRouter />
+        </React.Suspense>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }

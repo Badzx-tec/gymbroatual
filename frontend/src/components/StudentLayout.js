@@ -7,6 +7,7 @@ import { APP_BRAND, applyBrandingToDocument, loadBranding, saveBranding } from '
 import { api } from '../api';
 import BrandMark from './ui/BrandMark';
 import Button from './ui/Button';
+import ErrorBoundary from './ErrorBoundary';
 import { clearSession, getStoredUser, updateStoredUser } from '../lib/session';
 
 const navItems = [
@@ -125,7 +126,9 @@ export default function StudentLayout() {
         </section>
 
         <section aria-label="Conteudo do portal do aluno">
-          <Outlet />
+          <ErrorBoundary key={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </section>
       </main>
     </div>
