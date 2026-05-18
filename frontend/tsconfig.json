@@ -1,0 +1,44 @@
+{
+  "compilerOptions": {
+    /* ── Language / Emit ──────────────────────────────── */
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "node",
+    "noEmit": true,
+
+    /* ── JavaScript checking (no migration to TS needed) ─ */
+    "allowJs": true,
+    "checkJs": true,
+    "noImplicitAny": false,
+    "strict": false,
+    "strictNullChecks": false,
+
+    /* ── Paths & resolution ───────────────────────────── */
+    "baseUrl": "src",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    /* ── JSX ──────────────────────────────────────────── */
+    "jsx": "react-jsx",
+
+    /* ── Output ───────────────────────────────────────── */
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/api.js",
+    "src/lib/**/*.js",
+    "src/utils/**/*.js",
+    "src/config.js",
+    "src/features/**/*.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "src/pages/**/*",
+    "src/components/**/*",
+    "src/App.js",
+    "src/index.js"
+  ]
+}

@@ -1,7 +1,32 @@
+/**
+ * @fileoverview Centralized API client for the GymBro frontend.
+ *
+ * All server communication goes through the {@link request} function which
+ * attaches the session JWT, handles 401 auto-logout, and normalises error
+ * messages before re-throwing them.
+ *
+ * The exported {@link api} object is the single entry point for callers.
+ */
+
 import { apiUrl, API_BASE } from './config';
 import { clearSession, getSessionToken } from './lib/session';
 import { dateInputToIsoRangeEnd, dateInputToIsoRangeStart } from './utils/timezone';
 
+/**
+ * @typedef {Object} ApiError
+ * @property {number}      status       HTTP status code
+ * @property {string|null} code         Structured error code (e.g. "AUTH_INVALID_SESSION")
+ * @property {string}      detail       Human-readable message
+ * @property {string|null} checkout_url Redirect URL for subscription-gate errors
+ * @property {string|null} request_id   Correlation ID for support
+ */
+
+/**
+ * Converts a FastAPI validation-error `detail` field to a readable string.
+ *
+ * @param {unknown} detail
+ * @returns {string}
+ */
 function stringifyDetail(detail) {
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail)) {
@@ -19,8 +44,9 @@ function stringifyDetail(detail) {
       .join(' | ');
   }
   if (detail && typeof detail === 'object') {
-    if (typeof detail.message === 'string') return detail.message;
-    if (typeof detail.detail === 'string') return detail.detail;
+    const obj = /** @type {Record<string, any>} */ (detail);
+    if (typeof obj.message === 'string') return obj.message;
+    if (typeof obj.detail === 'string') return obj.detail;
     try {
       return JSON.stringify(detail);
     } catch {
@@ -30,6 +56,12 @@ function stringifyDetail(detail) {
   return String(detail || '');
 }
 
+/**
+ * Parses a non-OK fetch Response into a structured {@link ApiError}.
+ *
+ * @param {Response} res
+ * @returns {Promise<ApiError>}
+ */
 async function parseError(res) {
   const fallback = { detail: 'Erro na requisicao' };
   const body = await res.json().catch(() => fallback);
@@ -49,6 +81,14 @@ async function parseError(res) {
   };
 }
 
+/**
+ * Returns true when a 401 response should trigger an automatic logout + redirect.
+ *
+ * @param {string}      path
+ * @param {string}      detail
+ * @param {string|null} code
+ * @returns {boolean}
+ */
 function shouldLogoutOnUnauthorized(path, detail, code) {
   if (path.includes('/auth/login') || path.includes('/auth/register')) return false;
   const normalizedCode = String(code || '').trim().toUpperCase();
@@ -70,6 +110,14 @@ function shouldLogoutOnUnauthorized(path, detail, code) {
   return invalidSessionSignals.some((signal) => normalizedDetail.includes(signal));
 }
 
+/**
+ * Core fetch wrapper — attaches auth, normalises errors, handles blobs.
+ *
+ * @param {string} path           API path (e.g. "/api/students")
+ * @param {RequestInit & { isBlob?: boolean }} [options]
+ * @returns {Promise<any>}        Parsed JSON, Blob, or null (204)
+ * @throws {Error & { status: number, code: string|null, checkout_url: string|null, request_id: string|null }}
+ */
 async function request(path, options = {}) {
   const token = getSessionToken();
   const headers = { ...(options.headers || {}) };
@@ -93,7 +141,7 @@ async function request(path, options = {}) {
       clearSession();
       if (!path.includes('/auth/')) window.location.href = '/login';
     }
-    const e = new Error(err.detail);
+    const e = /** @type {Error & ApiError} */ (new Error(err.detail));
     e.status = err.status;
     e.code = err.code;
     e.checkout_url = err.checkout_url;
@@ -106,6 +154,13 @@ async function request(path, options = {}) {
   return res.json();
 }
 
+/**
+ * Triggers a file download in the browser from a Blob.
+ *
+ * @param {Blob}   blob
+ * @param {string} filename
+ * @returns {void}
+ */
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

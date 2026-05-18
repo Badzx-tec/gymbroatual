@@ -1,8 +1,13 @@
 import asyncio
+import smtplib
 import time
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from threading import Lock
+from typing import Any
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -125,16 +130,127 @@ async def api_health() -> dict:
     return {"status": "ok", "service": settings.app_name, "version": "3.0.0"}
 
 
+# ── Readiness probe cache ────────────────────────────────────────────────────
+# Healthy results cache for 5 min (rare external API calls).
+# Degraded results cache for 10s only — so the service recovers visibility
+# quickly once MongoDB/MP/SMTP come back online.
+_READY_CACHE_TTL_OK = 300        # 5 minutes when status == "ready"
+_READY_CACHE_TTL_DEGRADED = 10   # 10 seconds when status == "degraded"
+
+
+@dataclass
+class _ReadyCache:
+    _lock: Lock = field(default_factory=Lock, repr=False)
+    _data: dict[str, Any] = field(default_factory=dict)
+    _checked_at: float = 0.0
+
+    def get(self) -> dict[str, Any] | None:
+        with self._lock:
+            if not self._data:
+                return None
+            cached_status = self._data.get("status")
+            ttl = _READY_CACHE_TTL_OK if cached_status == "ready" else _READY_CACHE_TTL_DEGRADED
+            if time.time() - self._checked_at < ttl:
+                return dict(self._data)
+            return None
+
+    def set(self, data: dict[str, Any]) -> None:
+        with self._lock:
+            self._data = dict(data)
+            self._checked_at = time.time()
+
+
+_READY_CACHE = _ReadyCache()
+
+
+async def _check_mongo() -> dict[str, Any]:
+    try:
+        await asyncio.wait_for(get_db().command("ping"), timeout=5.0)
+        return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+async def _check_mp() -> dict[str, Any]:
+    """Lightweight connectivity probe to the MercadoPago API."""
+    if not settings.mp_access_token:
+        return {"ok": True, "skipped": True, "reason": "mp_access_token not configured"}
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(
+                "https://api.mercadopago.com/users/me",
+                headers={"Authorization": f"Bearer {settings.mp_access_token}"},
+            )
+            # 200 = auth OK; 401 = bad token but API is reachable (still counts as up)
+            if r.status_code in {200, 401}:
+                return {"ok": True, "status_code": r.status_code}
+            return {"ok": False, "status_code": r.status_code}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _check_smtp_sync() -> dict[str, Any]:
+    """Synchronous SMTP connectivity check (run in thread pool)."""
+    if not settings.smtp_host:
+        return {"ok": True, "skipped": True, "reason": "smtp_host not configured"}
+    try:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=8) as conn:
+            if settings.smtp_starttls:
+                conn.ehlo()
+                conn.starttls()
+            return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+async def _check_smtp() -> dict[str, Any]:
+    return await asyncio.to_thread(_check_smtp_sync)
+
+
+async def _build_readiness_payload() -> tuple[dict[str, Any], bool]:
+    """Run all probes concurrently and build the readiness response.
+    Returns (payload, is_ready)."""
+    mongo_result, mp_result, smtp_result = await asyncio.gather(
+        _check_mongo(),
+        _check_mp(),
+        _check_smtp(),
+        return_exceptions=False,
+    )
+    checks = {
+        "mongodb": mongo_result,
+        "mercadopago": mp_result,
+        "smtp": smtp_result,
+    }
+    # MongoDB is the only hard dependency; MP and SMTP are optional probes.
+    is_ready = bool(mongo_result.get("ok"))
+    payload = {
+        "status": "ready" if is_ready else "degraded",
+        "service": settings.app_name,
+        "version": "3.0.0",
+        "checks": checks,
+    }
+    return payload, is_ready
+
+
 @app.get("/health/ready")
-async def health_ready() -> dict:
-    await get_db().command("ping")
-    return {"status": "ready", "service": settings.app_name, "version": "3.0.0"}
+async def health_ready():
+    cached = _READY_CACHE.get()
+    if cached is not None:
+        is_ready = cached.get("status") == "ready"
+        if not is_ready:
+            return JSONResponse(status_code=503, content=cached)
+        return cached
+
+    payload, is_ready = await _build_readiness_payload()
+    _READY_CACHE.set(payload)
+    if not is_ready:
+        return JSONResponse(status_code=503, content=payload)
+    return payload
 
 
 @app.get("/api/health/ready")
-async def api_health_ready() -> dict:
-    await get_db().command("ping")
-    return {"status": "ready", "service": settings.app_name, "version": "3.0.0"}
+async def api_health_ready():
+    return await health_ready()
 
 
 @app.exception_handler(RequestValidationError)

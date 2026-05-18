@@ -29,7 +29,7 @@ from app.services.mp_payments import (
     payment_owner_id,
     payment_status_to_subscription_status,
 )
-from app.services.observability import log_event
+from app.services.observability import log_event, record_webhook
 from app.services.subscription import (
     compute_grace_until,
     compute_next_period_end,
@@ -772,6 +772,7 @@ async def webhook_mercadopago(request: Request, x_signature: str | None = Header
                     "received_at": now,
                 }
             )
+            record_webhook(accepted=False)
             log_event(
                 "billing_webhook_rejected",
                 reason=reject_reason,
@@ -788,6 +789,14 @@ async def webhook_mercadopago(request: Request, x_signature: str | None = Header
         event_id = hashlib.sha256(raw).hexdigest()[:24]
 
     if await db.billing_events.find_one({"event_id": event_id}):
+        # Count as accepted (signature was valid and event was already processed once).
+        record_webhook(accepted=True)
+        log_event(
+            "webhook.received",
+            event_id=event_id,
+            ip=source_ip,
+            duplicate=True,
+        )
         return {"status": "ignored", "reason": "duplicate"}
 
     now = datetime.now(UTC)
@@ -901,7 +910,25 @@ async def webhook_mercadopago(request: Request, x_signature: str | None = Header
             "received_at": now,
         }
     )
-    if status_value in {"past_due", "canceled", "expired"}:
+    record_webhook(accepted=True)
+    log_event(
+        "webhook.received",
+        event_id=event_id,
+        owner_id=owner_id,
+        action=action,
+        status=status_value,
+        ip=source_ip,
+    )
+    if status_value == "active":
+        log_event(
+            "payment.paid",
+            event_id=event_id,
+            owner_id=owner_id,
+            payment_id=(payment_details or {}).get("id"),
+            amount=(payment_details or {}).get("transaction_amount"),
+            ip=source_ip,
+        )
+    elif status_value in {"past_due", "canceled", "expired"}:
         log_event(
             "billing_webhook_failure",
             owner_id=owner_id,

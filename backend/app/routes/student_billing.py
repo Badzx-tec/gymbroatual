@@ -11,12 +11,12 @@ from app.models.student_billing import (
     BillingOverviewOut,
     ChargeCleanupIn,
     ChargeCleanupOut,
-    ContractAdjustBillingIn,
-    ContractAdjustValidityIn,
     ChargeCreateIn,
     ChargeMarkPaidIn,
     ChargeMarkUnpaidIn,
     ChargeOut,
+    ContractAdjustBillingIn,
+    ContractAdjustValidityIn,
     ContractCancelIn,
     ContractChangePlanIn,
     ContractCreateIn,
@@ -27,14 +27,17 @@ from app.models.student_billing import (
     ContractUpdateIn,
     ReconcileRunOut,
 )
+from app.services.observability import log_event
 from app.services.student_contracts import (
     ACTIVE_LIKE_CONTRACT_STATUSES,
     MANAGEABLE_CONTRACT_STATUSES,
     TERMINAL_CONTRACT_STATUSES,
     append_manual_override,
+    billing_cycle_from_duration_fields,
     clean_doc,
     coerce_datetime_utc,
     derive_student_operational_status,
+    duration_days_compatibility,
     ensure_transition,
     infer_access_status,
     legacy_status,
@@ -43,8 +46,6 @@ from app.services.student_contracts import (
     resolve_authoritative_contract_for_student,
     resolve_contract_amounts,
     resolve_duration_fields,
-    duration_days_compatibility,
-    billing_cycle_from_duration_fields,
     sync_contract_amount_fields,
     utc_now,
 )
@@ -955,6 +956,17 @@ async def create_contract(
             "initial_charge_id": (initial_charge or {}).get("charge_id"),
         },
         actor=actor,
+    )
+    log_event(
+        "contract.created",
+        contract_id=contract["contract_id"],
+        student_id=contract["student_id"],
+        owner_id=contract["owner_id"],
+        plan_id=contract.get("plan_id"),
+        amount=contract.get("amount"),
+        contract_status=contract.get("contract_status"),
+        actor_id=actor.get("user_id") or actor.get("sub"),
+        actor_role=actor.get("role"),
     )
     return {"contract": clean_doc(contract), "initial_charge": clean_doc(initial_charge)}
 
@@ -2258,6 +2270,20 @@ async def cancel_contract(
                 actor={"actor_type": "system", "role": "SYSTEM"},
             )
     await _sync_student_contract_projection(refreshed)
+    # Emit structured audit event when a definitive cancellation is recorded.
+    final_status = str(refreshed.get("contract_status") or "").lower()
+    if final_status in {"canceled", "ended"} and not (payload and payload.cancel_recurrence_only):
+        log_event(
+            "contract.canceled",
+            contract_id=refreshed["contract_id"],
+            student_id=refreshed.get("student_id"),
+            owner_id=refreshed.get("owner_id"),
+            contract_status=final_status,
+            cancel_reason=refreshed.get("cancel_reason"),
+            mode=getattr(payload, "mode", "end_of_period") if payload else "end_of_period",
+            actor_id=actor.get("user_id") or actor.get("sub"),
+            actor_role=actor.get("role"),
+        )
     return refreshed
 
 
