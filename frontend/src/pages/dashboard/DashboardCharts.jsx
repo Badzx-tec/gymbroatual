@@ -30,25 +30,60 @@ function ChartTooltip({ active, payload, label }) {
 }
 
 /**
+ * Visually-hidden data table for screen readers. WCAG 1.1.1 + 1.3.1.
+ * Renders the same data as the chart in a structured, navigable form.
+ */
+function AccessibleChartTable({ caption, columns, rows }) {
+  if (!rows || rows.length === 0) return null;
+  return (
+    <table className="sr-only">
+      <caption>{caption}</caption>
+      <thead>
+        <tr>{columns.map((col) => <th key={col} scope="col">{col}</th>)}</tr>
+      </thead>
+      <tbody>
+        {rows.map((row, idx) => (
+          <tr key={idx}>
+            {row.map((cell, cellIdx) => (
+              <td key={cellIdx}>{cell}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/**
  * Lazy-loaded chart panels for the Dashboard.
  * Keeping Recharts in a separate chunk reduces the initial bundle by ~45 KB.
+ * Each chart is paired with a visually-hidden <table> so screen readers can
+ * navigate the underlying data.
  */
 export default function DashboardCharts({ charts = {}, canSeeFinancial = false }) {
+  const receitaPlano = charts?.receita_por_plano || [];
+  const acessosHora = charts?.acessos_por_hora || [];
+  const receitaMensal = charts?.receita_mensal || [];
+
   return (
     <>
       <div className={`grid grid-cols-1 ${canSeeFinancial ? 'lg:grid-cols-3' : ''} gap-4 md:gap-6`}>
         {canSeeFinancial ? (
-          <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)] lg:col-span-1">
+          <figure
+            role="figure"
+            aria-label="Receita por plano: distribuicao de receita entre planos contratados"
+            className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)] lg:col-span-1"
+          >
             <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-4">
               Receita por Plano
             </h3>
-            {(charts?.receita_por_plano || []).length > 0 ? (
+            {receitaPlano.length > 0 ? (
               <>
-                <div className="h-52">
+                <div className="h-52" aria-hidden="true">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={charts?.receita_por_plano || []}
+                        data={receitaPlano}
                         dataKey="valor"
                         nameKey="plano"
                         cx="50%"
@@ -57,7 +92,7 @@ export default function DashboardCharts({ charts = {}, canSeeFinancial = false }
                         outerRadius={75}
                         paddingAngle={3}
                       >
-                        {(charts?.receita_por_plano || []).map((_, index) => (
+                        {receitaPlano.map((_, index) => (
                           <Cell key={`slice-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
                         ))}
                       </Pie>
@@ -66,32 +101,45 @@ export default function DashboardCharts({ charts = {}, canSeeFinancial = false }
                   </ResponsiveContainer>
                 </div>
                 <div className="flex flex-wrap gap-3 mt-2">
-                  {(charts?.receita_por_plano || []).map((item, index) => (
+                  {receitaPlano.map((item, index) => (
                     <div key={`${item.plano}-${index}`} className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
                       <span
                         className="w-2.5 h-2.5 rounded-full"
                         style={{ background: CHART_COLORS[index % CHART_COLORS.length] }}
+                        aria-hidden="true"
                       />
                       {item.plano}
                     </div>
                   ))}
                 </div>
+                <AccessibleChartTable
+                  caption="Receita por plano em reais"
+                  columns={['Plano', 'Valor (R$)']}
+                  rows={receitaPlano.map((item) => [
+                    item.plano,
+                    Number(item.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+                  ])}
+                />
               </>
             ) : (
               <div className="h-52 flex items-center justify-center text-[var(--text-muted)] text-sm">
                 Sem dados de receita por plano.
               </div>
             )}
-          </div>
+          </figure>
         ) : null}
 
-        <div className={`rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)] ${canSeeFinancial ? 'lg:col-span-2' : ''}`}>
+        <figure
+          role="figure"
+          aria-label="Acessos por hora nas ultimas 24 horas"
+          className={`rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)] ${canSeeFinancial ? 'lg:col-span-2' : ''}`}
+        >
           <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-4">
             Acessos por Hora (24h)
           </h3>
-          <div className="h-52">
+          <div className="h-52" aria-hidden="true">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={charts?.acessos_por_hora || []}>
+              <AreaChart data={acessosHora}>
                 <defs>
                   <linearGradient id="colorAccess" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--brand-primary)" stopOpacity={0.3} />
@@ -105,17 +153,26 @@ export default function DashboardCharts({ charts = {}, canSeeFinancial = false }
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        </div>
+          <AccessibleChartTable
+            caption="Acessos por hora"
+            columns={['Hora', 'Acessos']}
+            rows={acessosHora.map((item) => [item.hora, String(item.acessos ?? 0)])}
+          />
+        </figure>
       </div>
 
       {canSeeFinancial ? (
-        <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)]">
+        <figure
+          role="figure"
+          aria-label="Receita mensal dos ultimos 6 meses"
+          className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-card-bg)] p-5 shadow-[var(--shadow-soft)]"
+        >
           <h3 className="font-heading text-sm font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-4">
             Receita Mensal (6 meses)
           </h3>
-          <div className="h-52">
+          <div className="h-52" aria-hidden="true">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={charts?.receita_mensal || []}>
+              <BarChart data={receitaMensal}>
                 <XAxis dataKey="mes" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip content={<ChartTooltip />} />
@@ -123,7 +180,15 @@ export default function DashboardCharts({ charts = {}, canSeeFinancial = false }
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+          <AccessibleChartTable
+            caption="Receita mensal em reais"
+            columns={['Mes', 'Receita']}
+            rows={receitaMensal.map((item) => [
+              item.mes,
+              Number(item.valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+            ])}
+          />
+        </figure>
       ) : null}
     </>
   );
