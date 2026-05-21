@@ -20,6 +20,7 @@ import Button from '../components/ui/Button';
 import LoadingScreen from '../components/ui/LoadingScreen';
 import PageHeader from '../components/ui/PageHeader';
 import SectionCard from '../components/ui/SectionCard';
+import { SkeletonChart } from '../components/ui/Skeleton';
 import StatCard from '../components/ui/StatCard';
 import StatusBadge from '../components/ui/StatusBadge';
 import { getStoredUser } from '../lib/session';
@@ -430,7 +431,15 @@ export default function Dashboard() {
         </SectionCard>
       )}
 
-      <Suspense fallback={<div className="h-52 flex items-center justify-center text-[var(--text-muted)] text-sm">Carregando graficos...</div>}>
+      <Suspense
+        fallback={
+          <div className={`grid grid-cols-1 ${canSeeFinancial ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-4 md:gap-6`}>
+            <SkeletonChart />
+            <SkeletonChart />
+            {canSeeFinancial && <SkeletonChart />}
+          </div>
+        }
+      >
         <DashboardCharts charts={charts} canSeeFinancial={canSeeFinancial} />
       </Suspense>
 

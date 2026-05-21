@@ -1,6 +1,8 @@
 import React from 'react';
 import { ChevronDown, ChevronUp, MoreHorizontal, RefreshCw } from 'lucide-react';
 
+import { SkeletonTableRows } from '../../components/ui/Skeleton';
+
 import {
   accessBadge,
   contractBadge,
@@ -246,19 +248,7 @@ export default function ContractsTable({
           </thead>
           <tbody>
             {loading
-              ? Array.from({ length: 8 }).map((_, index) => (
-                  <tr key={`skeleton_${index}`} className="border-b border-[var(--surface-border)]">
-                    <td className="px-3 py-3"><div className="h-4 w-4 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
-                    <td className="px-2 py-3"><div className="h-4 w-40 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
-                    <td className="px-2 py-3"><div className="h-4 w-28 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
-                    <td className="px-2 py-3"><div className="h-4 w-24 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
-                    <td className="px-2 py-3"><div className="h-4 w-24 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
-                    <td className="px-2 py-3"><div className="h-6 w-28 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
-                    <td className="px-2 py-3"><div className="h-4 w-20 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
-                    <td className="px-2 py-3"><div className="h-4 w-28 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
-                    <td className="px-2 py-3"><div className="h-8 w-8 animate-pulse rounded bg-[var(--surface-soft)]" /></td>
-                  </tr>
-                ))
+              ? <SkeletonTableRows rows={8} columns={9} />
               : rows.map((row) => {
                   const contract = contractBadge(row.contract_status);
                   const financial = financialBadge(row.financial_status);
