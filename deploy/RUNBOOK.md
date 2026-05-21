@@ -296,7 +296,35 @@ docker compose -f /opt/gymbroatual/docker-compose.prod.yml logs --tail=5 gateway
 
 ---
 
-## 12. Escalonamento de incidentes
+## 12. Lighthouse — auditoria de performance e a11y
+
+Thresholds (definidos em `frontend/.lighthouserc.json`):
+
+| Categoria | Mínimo | Falha CI |
+|---|---|---|
+| Performance | 0.85 | error |
+| Accessibility | 0.90 | error |
+| Best-practices | 0.90 | warn |
+| SEO | 0.85 | warn |
+
+**Rodar local** (após `npm install`):
+```bash
+cd frontend
+npm run lighthouse
+# Abre o report HTML em .lighthouseci/
+```
+
+**Quando Lighthouse cair em PR**:
+1. Ver o report no log do job `frontend-lighthouse`
+2. Categorias mais comuns que despencam:
+   - **Performance**: bundle maior que 250KB → checar `npm run build` size
+   - **A11y**: contraste cor ↓; algum input sem `<label>`; img sem `alt`
+   - **Best-practices**: console errors; libs com vulnerabilities (npm audit)
+3. Para passar temporariamente, rebaixar threshold para `warn` no `.lighthouserc.json` (não merge!), criar issue para subir de volta
+
+---
+
+## 13. Escalonamento de incidentes
 
 | Severidade | Critério | Ação |
 |---|---|---|

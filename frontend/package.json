@@ -19,7 +19,8 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "lint": "eslint src --ext .js,.jsx",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lighthouse": "npm run build && npx --yes @lhci/cli@0.14.0 autorun --config=./.lighthouserc.json"
   },
   "browserslist": {
     "production": [">0.2%", "not dead", "not op_mini all"],
